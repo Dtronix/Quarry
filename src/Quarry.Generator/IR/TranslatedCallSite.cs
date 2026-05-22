@@ -70,6 +70,7 @@ internal sealed class TranslatedCallSite : IEquatable<TranslatedCallSite>
     public ProjectionInfo? ProjectionInfo => Bound.Raw.ProjectionInfo;
     public InsertInfo? InsertInfo => Bound.InsertInfo;
     public InsertInfo? UpdateInfo => Bound.UpdateInfo;
+    public PatchInfo? PatchInfo => Bound.PatchInfo;
     public string? JoinedEntityTypeName => Bound.JoinedEntity?.EntityName ?? Bound.Raw.JoinedEntityTypeName;
     public System.Collections.Generic.IReadOnlyList<string>? JoinedEntityTypeNames => Bound.JoinedEntityTypeNames;
     public bool IsNavigationJoin => Bound.Raw.IsNavigationJoin;

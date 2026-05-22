@@ -86,6 +86,14 @@ UPDATE [accounts] SET [Balance] = @p0 WHERE [AccountId] = 1
 
 ---
 
+### Accounts().Update().Set(...).Where(...).Prepare().ToDiagnostics()
+
+```sql
+UPDATE [accounts]{__PATCH_SET__} WHERE [AccountId] = 1
+```
+
+---
+
 ### Accounts().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -421,6 +429,14 @@ SELECT [Total] FROM [orders] WHERE [Total] > 100
 
 ```sql
 UPDATE [orders] SET [Priority] = 2 WHERE [OrderId] = 1
+```
+
+---
+
+### Orders().Update().Set(...).Where(...).Prepare().ToDiagnostics()
+
+```sql
+UPDATE [orders]{__PATCH_SET__} WHERE [OrderId] = 1
 ```
 
 ---
@@ -2354,6 +2370,14 @@ UPDATE [users] SET [UserName] = @p0, [IsActive] = @p1 WHERE [UserId] = 3
 |-----------|------|
 | `@p0` | `string` |
 | `@p1` | `bool` |
+
+---
+
+### Users().Update().Where(...).Set(...).Prepare().ToDiagnostics()
+
+```sql
+UPDATE [users]{__PATCH_SET__} WHERE [UserId] = 1
+```
 
 ---
 
@@ -5033,7 +5057,7 @@ WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 556 |
+| Total discovered | 560 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 97 |
-| Rendered | 459 |
+| Consolidated (deduped) | 98 |
+| Rendered | 462 |

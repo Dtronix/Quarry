@@ -1284,6 +1284,120 @@ internal class CrossDialectUpdateTests
 
     #endregion
 
+    #region UpdateSetPatch — integration matrix (Phase 9)
+
+    [Test]
+    public async Task Update_SetPatch_FkColumn_BindsEntityRef()
+    {
+        // Account.Patch.UserId is EntityRef<User, int>; the per-column binder must
+        // extract the .Id value (not bind the whole struct). The implicit conversion
+        // from int → EntityRef<User, int> lets us assign a literal.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var ltPatch = new Account.Patch { UserId = 2, AccountName = "Repointed" };
+        var pgPatch = new Pg.Account.Patch { UserId = 2, AccountName = "Repointed" };
+        var myPatch = new My.Account.Patch { UserId = 2, AccountName = "Repointed" };
+        var ssPatch = new Ss.Account.Patch { UserId = 2, AccountName = "Repointed" };
+
+        var lt = Lite.Accounts().Update().Set(ltPatch).Where(a => a.AccountId == 1).Prepare();
+        var pg = Pg.Accounts().Update().Set(pgPatch).Where(a => a.AccountId == 1).Prepare();
+        var my = My.Accounts().Update().Set(myPatch).Where(a => a.AccountId == 1).Prepare();
+        var ss = Ss.Accounts().Update().Set(ssPatch).Where(a => a.AccountId == 1).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "UPDATE \"accounts\" SET \"UserId\" = @p0, \"AccountName\" = @p1 WHERE \"AccountId\" = 1",
+            pg:     "UPDATE \"accounts\" SET \"UserId\" = $1, \"AccountName\" = $2 WHERE \"AccountId\" = 1",
+            mysql:  "UPDATE `accounts` SET `UserId` = ?, `AccountName` = ? WHERE `AccountId` = 1",
+            ss:     "UPDATE [accounts] SET [UserId] = @p0, [AccountName] = @p1 WHERE [AccountId] = 1");
+    }
+
+    [Test]
+    public async Task Update_SetPatch_EnumColumn_CastsUnderlying()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var ltPatch = new Order.Patch { Priority = OrderPriority.Urgent };
+        var pgPatch = new Pg.Order.Patch { Priority = OrderPriority.Urgent };
+        var myPatch = new My.Order.Patch { Priority = OrderPriority.Urgent };
+        var ssPatch = new Ss.Order.Patch { Priority = OrderPriority.Urgent };
+
+        var lt = Lite.Orders().Update().Set(ltPatch).Where(o => o.OrderId == 1).Prepare();
+        var pg = Pg.Orders().Update().Set(pgPatch).Where(o => o.OrderId == 1).Prepare();
+        var my = My.Orders().Update().Set(myPatch).Where(o => o.OrderId == 1).Prepare();
+        var ss = Ss.Orders().Update().Set(ssPatch).Where(o => o.OrderId == 1).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "UPDATE \"orders\" SET \"Priority\" = @p0 WHERE \"OrderId\" = 1",
+            pg:     "UPDATE \"orders\" SET \"Priority\" = $1 WHERE \"OrderId\" = 1",
+            mysql:  "UPDATE `orders` SET `Priority` = ? WHERE `OrderId` = 1",
+            ss:     "UPDATE [orders] SET [Priority] = @p0 WHERE [OrderId] = 1");
+    }
+
+    [Test]
+    public async Task Update_SetPatch_CustomMapper_InvokesToDb()
+    {
+        // Account.Patch.Balance is Money mapped via MoneyMapping.ToDb. The
+        // per-column binder must route through the mapper rather than calling
+        // Convert.ChangeType on the Money struct directly.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var ltPatch = new Account.Patch { Balance = new Money(250m) };
+        var pgPatch = new Pg.Account.Patch { Balance = new Money(250m) };
+        var myPatch = new My.Account.Patch { Balance = new Money(250m) };
+        var ssPatch = new Ss.Account.Patch { Balance = new Money(250m) };
+
+        var lt = Lite.Accounts().Update().Set(ltPatch).Where(a => a.AccountId == 1).Prepare();
+        var pg = Pg.Accounts().Update().Set(pgPatch).Where(a => a.AccountId == 1).Prepare();
+        var my = My.Accounts().Update().Set(myPatch).Where(a => a.AccountId == 1).Prepare();
+        var ss = Ss.Accounts().Update().Set(ssPatch).Where(a => a.AccountId == 1).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "UPDATE \"accounts\" SET \"Balance\" = @p0 WHERE \"AccountId\" = 1",
+            pg:     "UPDATE \"accounts\" SET \"Balance\" = $1 WHERE \"AccountId\" = 1",
+            mysql:  "UPDATE `accounts` SET `Balance` = ? WHERE `AccountId` = 1",
+            ss:     "UPDATE [accounts] SET [Balance] = @p0 WHERE [AccountId] = 1");
+    }
+
+    [Test]
+    public async Task Update_SetPatch_ExecutableUpdateBuilder_WhereFirst()
+    {
+        // Set comes AFTER Where — exercises the IExecutableUpdateBuilder<T>
+        // extension overload (separate signature from IUpdateBuilder<T>).
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var ltPatch = new User.Patch { UserName = "PostWhere" };
+        var pgPatch = new Pg.User.Patch { UserName = "PostWhere" };
+        var myPatch = new My.User.Patch { UserName = "PostWhere" };
+        var ssPatch = new Ss.User.Patch { UserName = "PostWhere" };
+
+        var lt = Lite.Users().Update().Where(u => u.UserId == 1).Set(ltPatch).Prepare();
+        var pg = Pg.Users().Update().Where(u => u.UserId == 1).Set(pgPatch).Prepare();
+        var my = My.Users().Update().Where(u => u.UserId == 1).Set(myPatch).Prepare();
+        var ss = Ss.Users().Update().Where(u => u.UserId == 1).Set(ssPatch).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0 WHERE \"UserId\" = 1",
+            pg:     "UPDATE \"users\" SET \"UserName\" = $1 WHERE \"UserId\" = 1",
+            mysql:  "UPDATE `users` SET `UserName` = ? WHERE `UserId` = 1",
+            ss:     "UPDATE [users] SET [UserName] = @p0 WHERE [UserId] = 1");
+
+        Assert.That(await lt.ExecuteNonQueryAsync(), Is.EqualTo(1));
+    }
+
+    #endregion
+
     #region UpdateSetPatchAction — lambda form
 
     [Test]

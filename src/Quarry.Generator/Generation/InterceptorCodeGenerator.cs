@@ -121,6 +121,11 @@ internal static partial class InterceptorCodeGenerator
                         AddIfMissing(mappings, GetMappingFieldName(col.CustomTypeMappingClass), col.CustomTypeMappingClass);
                 }
             }
+            // Patch columns intentionally aren't collected here. The per-Patch-column
+            // binder lives on the file-scoped Chain_N carrier class (`_BindPatchParams`),
+            // not inside the file static interceptor class — so the file-scope private
+            // mapper field is unreachable from the binder's body. CarrierEmitter emits
+            // its own per-carrier mapper field alongside `_PatchFragments`.
 
             // From projection columns
             if (site.ProjectionInfo != null)

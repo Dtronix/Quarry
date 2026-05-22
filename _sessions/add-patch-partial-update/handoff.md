@@ -69,8 +69,8 @@ See `workflow.md ## Decisions` 2026-05-22 entry and `plan.md` Phase 3 for full i
 
 ## Progress
 
-- Phase: IMPLEMENT phase 8 complete. Ready to start phase 9.
-- Phases complete: 8 / 10.
+- Phase: IMPLEMENT phase 9 complete. Ready to start phase 10 (docs).
+- Phases complete: 9 / 10.
 
 ## Current State
 

@@ -1386,6 +1386,21 @@ internal static class CarrierEmitter
         if (patchInfo == null || patchInfo.Columns.Count == 0)
             return;
 
+        // Per-carrier mapper fields. The Patch binder runs inside the file-scoped
+        // Chain_N carrier class, so it can't reach the file static interceptor
+        // class's private `_mapper_*` fields. Emit one mirror field per unique
+        // custom-mapper FQN referenced by Patch columns. The field name matches
+        // the file-scope convention (InterceptorCodeGenerator.GetMappingFieldName)
+        // so the generator templates reuse the same identifier expression.
+        var emittedMappers = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var col in patchInfo.Columns)
+        {
+            if (col.CustomTypeMappingClass == null) continue;
+            if (!emittedMappers.Add(col.CustomTypeMappingClass)) continue;
+            var mapperField = InterceptorCodeGenerator.GetMappingFieldName(col.CustomTypeMappingClass);
+            sb.AppendLine($"    private static readonly {col.CustomTypeMappingClass} {mapperField} = new();");
+        }
+
         // _PatchFragments: (Bit, Prefix) per column. Prefix is `"col" = ` with the
         // column already dialect-quoted. The inline SQL builder appends the prefix,
         // then the dialect-correct placeholder, then advances __setShift.
