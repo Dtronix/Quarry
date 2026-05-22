@@ -22,16 +22,17 @@ None — first session.
 
 ## Progress
 
-- Phase: IMPLEMENT phase 1 complete. Ready to start phase 2.
-- Phases complete: 1 / 10.
+- Phase: IMPLEMENT phase 2 complete. Ready to start phase 3.
+- Phases complete: 2 / 10.
 
 ## Current State
 
-- Working tree: clean. Phase 1 commit folded into the prior WIP via amend (message rewritten to drop `[WIP]`).
+- Working tree: clean.
 - Branch: `add-patch-partial-update` at base `master` (`b758e83 Fix nested int-aggregate projection type resolution (#294) (#298)`).
-- Tests green: 146 + 201 + 3156 = **3,503** (baseline 3,496 + 7 new `PatchInfoTests`).
-- Phase 1 added: `Models/PatchInfo.cs` (reuses `WriteColumnInfo` for column shape, per the open-question lean), `InterceptorKind.UpdateSetPatch` + `InterceptorKind.UpdateSetPatchAction`, `BoundCallSite.PatchInfo` (threaded through `WithRaw` and `WithJoinedEntities`), `src/Quarry/PatchAction.cs` delegate, `DiagnosticDescriptors.PatchColumnLimitExceeded` (QRY045).
-- Refactor follow-up: `InsertColumnInfo` renamed to `WriteColumnInfo` and moved to its own `Models/WriteColumnInfo.cs` since it is now shared between insert and patch (and future write-side flows). Consumers updated: `InsertInfo`, `PatchInfo`, `TerminalEmitHelpers.GetInsertColumnBinding`.
+- Tests green: 146 + 201 + 3169 = **3,516** (baseline 3,496 + 7 PatchInfoTests + 13 EntityCodeGeneratorPatchTests).
+- Phase 1 added: `Models/PatchInfo.cs` (reuses `WriteColumnInfo` for column shape), `InterceptorKind.UpdateSetPatch` + `InterceptorKind.UpdateSetPatchAction`, `BoundCallSite.PatchInfo`, `src/Quarry/PatchAction.cs` delegate, `DiagnosticDescriptors.PatchColumnLimitExceeded` (QRY045).
+- Phase 1 refactor: `InsertColumnInfo` renamed to `WriteColumnInfo` (`Models/WriteColumnInfo.cs`).
+- Phase 2 added: `EntityCodeGenerator.GeneratePatchStruct` + `GeneratePatchProperty` emit a nested `public struct Patch` on every entity with 1–64 updatable columns. Backing-field nullability resolved from `ColumnInfo.IsValueType` (authoritative semantic-analysis value), not the `IsReferenceTypeName` name-heuristic — fixes mis-classification of user-defined value-type columns (e.g. custom-mapped `Money`). `EntityCodeGenerator.CountUpdatableColumns` + `PatchColumnLimit = 64` exposed for the caller. QRY045 reported from `QuarryGenerator.GenerateAllSources` before emission; struct emission self-suppresses for >64 updatable columns.
 
 ## Known Issues / Bugs
 

@@ -337,6 +337,20 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                     }
                 }
 
+                // Report QRY045 when the entity has more updatable (non-Identity,
+                // non-Computed) columns than the Patch ulong mask can address.
+                // The Patch struct itself is suppressed inside GenerateEntityClass
+                // for the same condition — keep the two checks in sync.
+                int updatableCount = EntityCodeGenerator.CountUpdatableColumns(entity);
+                if (updatableCount > EntityCodeGenerator.PatchColumnLimit)
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        DiagnosticDescriptors.PatchColumnLimitExceeded,
+                        entity.Location,
+                        entity.EntityName,
+                        updatableCount));
+                }
+
                 var entitySource = EntityCodeGenerator.GenerateEntityClass(entity, contextInfo.Namespace);
                 var entityFileName = $"{contextInfo.Namespace}.{entity.EntityName}.g.cs";
                 context.AddSource(entityFileName, entitySource);

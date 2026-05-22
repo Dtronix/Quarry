@@ -64,9 +64,132 @@ internal static class EntityCodeGenerator
             GenerateSingleNavigationProperty(sb, singleNav);
         }
 
+        // Generate the nested Patch struct used by Update().Set(Entity.Patch)
+        // and Update().Set(PatchAction<Entity.Patch>) partial-update overloads.
+        // Returns silently if there are zero updatable columns or if the count
+        // exceeds the 64-bit __mask cap — QRY045 reporting happens at the
+        // generator entry point (QuarryGenerator) where SourceProductionContext
+        // is available.
+        GeneratePatchStruct(sb, entity);
+
         sb.AppendLine("}");
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Returns the count of columns that participate in a Patch struct — i.e. columns
+    /// that are neither Identity nor Computed. Mirrors the filter used by
+    /// <c>InsertInfo.FromEntityInfo</c> / <c>PatchInfo.FromEntityInfo</c>.
+    /// </summary>
+    public static int CountUpdatableColumns(EntityInfo entity)
+    {
+        int count = 0;
+        foreach (var c in entity.Columns)
+        {
+            if (c.Modifiers.IsIdentity) continue;
+            if (c.Modifiers.IsComputed) continue;
+            count++;
+        }
+        return count;
+    }
+
+    /// <summary>The hard cap on updatable columns per entity for Patch generation; see QRY045.</summary>
+    public const int PatchColumnLimit = 64;
+
+    private static void GeneratePatchStruct(StringBuilder sb, EntityInfo entity)
+    {
+        var updatable = new List<ColumnInfo>();
+        foreach (var c in entity.Columns)
+        {
+            if (c.Modifiers.IsIdentity) continue;
+            if (c.Modifiers.IsComputed) continue;
+            updatable.Add(c);
+        }
+
+        // No updatable columns → no Patch struct.
+        if (updatable.Count == 0) return;
+
+        // Over the ulong mask cap → no Patch struct (QRY045 reported separately).
+        if (updatable.Count > PatchColumnLimit) return;
+
+        sb.AppendLine();
+        sb.AppendLine("    /// <summary>");
+        sb.AppendLine($"    /// Mutable partial-update payload for {entity.EntityName}. Property setters track which");
+        sb.AppendLine("    /// fields were assigned via the <c>__mask</c> bitmask; the chain runtime reads the mask");
+        sb.AppendLine("    /// at execute time to emit a SET clause covering only the touched columns.");
+        sb.AppendLine("    /// </summary>");
+        sb.AppendLine("    /// <remarks>");
+        sb.AppendLine("    /// Reading a property that has not been assigned returns the field's default value");
+        sb.AppendLine("    /// — Patch instances are intended for write-up assembly, not arbitrary read-back.");
+        sb.AppendLine("    /// </remarks>");
+        sb.AppendLine("    public struct Patch");
+        sb.AppendLine("    {");
+        sb.AppendLine("        /// <summary>Bitmask of assigned columns; bit position matches the column's order in the entity schema (excluding Identity and Computed).</summary>");
+        sb.AppendLine("        internal ulong __mask;");
+
+        // Mask bit constants — grouped together for readability and to keep
+        // bit-position assignment obviously tied to declaration order.
+        sb.AppendLine();
+        for (int i = 0; i < updatable.Count; i++)
+        {
+            var col = updatable[i];
+            var hex = $"0x{(1UL << i):X}UL";
+            sb.AppendLine($"        internal const ulong _Mask_{col.PropertyName} = {hex};");
+        }
+
+        // Tracked properties.
+        foreach (var col in updatable)
+        {
+            GeneratePatchProperty(sb, col);
+        }
+
+        sb.AppendLine("    }");
+    }
+
+    private static void GeneratePatchProperty(StringBuilder sb, ColumnInfo column)
+    {
+        // Compute the public property type using the same rules as the entity
+        // property (FK → EntityRef<T,K>, otherwise the column's CLR type with
+        // nullable annotation if appropriate).
+        string propertyType;
+        switch (column.Kind)
+        {
+            case ColumnKind.ForeignKey:
+                propertyType = $"EntityRef<{column.ReferencedEntityName}, {GetNullableType(column.FullClrType, column.IsNullable)}>";
+                break;
+            case ColumnKind.PrimaryKey:
+            case ColumnKind.Standard:
+            default:
+                propertyType = GetNullableType(column.FullClrType, column.IsNullable);
+                break;
+        }
+
+        // Backing field: for non-nullable reference types, declare as nullable
+        // (T?) to satisfy CS8618 without an initializer (struct instance fields
+        // can't have initializers prior to C# 11+). The property getter then
+        // suppresses the nullability with `!` — reading an unset reference-
+        // typed property returns null (default(T)), matching struct semantics.
+        // Use the column's authoritative IsValueType from semantic analysis
+        // rather than the IsReferenceTypeName name-heuristic, which mis-
+        // classifies user-defined structs (e.g. custom-mapped value types) as
+        // reference types.
+        bool isNonNullableReference =
+            column.Kind != ColumnKind.ForeignKey                // EntityRef<,> is itself a struct
+            && !column.IsNullable
+            && !column.IsValueType;
+
+        string fieldType = isNonNullableReference ? propertyType + "?" : propertyType;
+        string getterExpr = isNonNullableReference ? $"__{column.PropertyName}!" : $"__{column.PropertyName}";
+
+        sb.AppendLine();
+        sb.AppendLine($"        private {fieldType} __{column.PropertyName};");
+        sb.AppendLine($"        /// <summary>Gets or sets the {column.PropertyName} value. Setting flips <c>_Mask_{column.PropertyName}</c> in <c>__mask</c>.</summary>");
+        sb.AppendLine($"        public {propertyType} {column.PropertyName}");
+        sb.AppendLine("        {");
+        sb.AppendLine($"            get => {getterExpr};");
+        sb.AppendLine($"            set {{ __{column.PropertyName} = value; __mask |= _Mask_{column.PropertyName}; }}");
+        sb.AppendLine("        }");
     }
 
     /// <summary>

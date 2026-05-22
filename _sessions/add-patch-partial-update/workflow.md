@@ -12,7 +12,7 @@ issue: discussion
 pr:
 session: 2
 phases-total: 10
-phases-complete: 1
+phases-complete: 2
 
 ## Problem Statement
 
