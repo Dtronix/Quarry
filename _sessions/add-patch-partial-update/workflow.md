@@ -7,12 +7,12 @@ base-branch: master
 
 ## State
 phase: IMPLEMENT
-status: suspended
+status: active
 issue: discussion
 pr:
-session: 4
+session: 5
 phases-total: 10
-phases-complete: 6
+phases-complete: 7
 
 ## Problem Statement
 
@@ -33,6 +33,38 @@ Both paths are Tier=Opaque: runtime SET assembly using a per-chain fragment tabl
 **Baseline tests:** 3,496 passing, 0 failing across Quarry.Analyzers.Tests (146), Quarry.Migration.Tests (201), Quarry.Tests (3149). No pre-existing failures to exclude.
 
 ## Decisions
+
+### 2026-05-22 — Phase 7 cleanup: ChainAnalyzer ClauseRole map + SqlAssembler space
+Two latent gaps blocked Phase 7 from emitting interceptor bodies even after the
+syntax-only Phase 3 classifier started routing calls correctly:
+
+1. `ChainAnalyzer.MapInterceptorKindToClauseRole` did not list
+   `UpdateSetPatch` / `UpdateSetPatchAction`. They fell through to `_ => null`,
+   so `AssembledPlan.GetClauseEntries()` silently dropped Patch sites; that
+   meant `carrierClauseLookup` never registered them in `FileEmitter`, and
+   the carrier-only emission gate (`if (!isCarrierSite) return;`) skipped
+   them — no `Set_xxx(this IUpdateBuilder<User>, User.Patch patch)` ever
+   emitted. Fixed by adding both kinds → `ClauseRole.UpdateSet`.
+
+2. `SqlAssembler.RenderUpdateSql` emitted `UPDATE "users" {__PATCH_SET__}` —
+   trailing space before the token. The runtime emitter then prepends
+   `" SET "` (with leading space), producing `UPDATE "users"  SET ...` (two
+   spaces). Fixed by dropping the assembler's space; the runtime emitter now
+   owns the entire SET clause spacing. `UPDATE "users"{__PATCH_SET__} WHERE ...`
+   parses to `Literal("UPDATE \"users\"") + PatchSet + Literal(" WHERE ...")`
+   and the runtime writer adds `" SET "` → `UPDATE "users" SET ... WHERE ...`.
+
+Why: Phase 5 tests (SqlAssemblerPatchTests) had baked the trailing-space form
+into their assertions, masking the issue until end-to-end execution exercised
+the round-trip. Updated assertions to match the new IR string.
+
+### 2026-05-22 — Patch construction syntactic detection extended to `default(X.Patch)`
+The plan's IsPatchObjectCreation only accepted ObjectCreationExpressionSyntax.
+The empty-mask test uses `var empty = default(User.Patch);` which is a
+DefaultExpressionSyntax. Renamed the helper to `IsPatchConstructionExpression`
+and extended to accept DefaultExpressionSyntax as well. Both forms still
+require the inner TypeSyntax to end in `.Patch`, so the breadth stays
+intentional (no false positives on unrelated `default(X)`).
 
 ### 2026-05-22 — API shape
 Two new Set overloads backed by a generated `User.Patch` struct. The existing `Set(new User { ... })` path is unchanged and remains the optimal choice for literal column sets. Patch is the minimum addition needed to cover the cases POCO write-tracking cannot reach.
@@ -96,6 +128,10 @@ Two `IIncrementalGenerator` instances don't help — they each receive the same 
 Initially tried adding the new patch overloads as default interface methods (DIMs) alongside the existing `Set(T)` and `Set(Action<T>)` on `IUpdateBuilder<T>` / `IExecutableUpdateBuilder<T>`. With the generic DIMs in place, the existing `Set(T entity)` interceptors stopped binding — Roslyn no longer routed the user's `.Set(new User { ... })` call through the emitted `Set_<id>(this IUpdateBuilder<User>, User entity)` interceptor, even though overload resolution clearly picked the non-generic Set(T) DIM and the interceptor signature matched. Switched to extension methods in a static helper class (`UpdateBuilderPatchExtensions`) — instance-method lookup still picks up the existing DIMs for non-Patch args (interceptor binds fine), and extension lookup finds the Patch overloads when DIMs aren't applicable (User.Patch isn't a User, lambdas with `ref TPatch` parameter aren't `Action<T>`). Same compile-time enforcement via `IPatchFor<T>` constraint; no impact on the existing UpdateSetPoco / UpdateSetAction paths.
 
 ## Suspend State
+
+_No active suspend — session 5 completed Phase 7. Resume at Phase 8._
+
+<!-- Historical session-4 suspend state preserved below for traceability. -->
 
 **Current phase:** IMPLEMENT — mid Phase 7 of 10. Phases 1–6 complete and committed.
 
@@ -164,3 +200,4 @@ Initially tried adding the new patch overloads as default interface methods (DIM
 | 2 | 2026-05-22 IMPLEMENT (resume) | 2026-05-22 IMPLEMENT (suspended after Phase 3) | Resumed from suspend. Completed Phases 1–3 of 10. Phase 1 (IR foundations) + a follow-on refactor renaming `InsertColumnInfo` → `WriteColumnInfo`. Phase 2 (Patch struct emission) — mid-phase fix to use `ColumnInfo.IsValueType` instead of name-heuristic for non-nullable-reference detection (custom-mapped value types like `Money` broke otherwise). Phase 3 (call-site discovery) — initial DIM attempt broke existing `Set(T entity)` interceptor binding; pivoted to extension methods (`UpdateBuilderPatchExtensions` + `IPatchFor<T>` marker), discovery classifies via `methodSymbol.Parameters[0].Type`. WIP commit `3432ac2` left as predecessor (FINALIZE squash-merge will collapse it). Tests: 3,522/0. Branch +4 unpushed commits at suspend. |
 | 3 | 2026-05-22 IMPLEMENT (resume Phase 4) | 2026-05-22 IMPLEMENT Phase 6 complete (suspended before Phase 7) | Resumed from suspend. Baseline reverified: 3,522/0. Phase 4 complete: `CallSiteBinder` populates `PatchInfo` for UpdateSetPatch/UpdateSetPatchAction kinds; added `CallSiteBinderPatchTests` (7). Phase 5 complete: new `SqlExprKind.PatchSetPlaceholder` + `PatchSetPlaceholderExpr` node renders as literal `{__PATCH_SET__}`; ChainAnalyzer emits a single sentinel SetTerm for Patch sites (zero per-column QueryParameters); `SqlAssembler.RenderUpdateSql` detects the placeholder and skips the ` SET ` keyword (runtime emitter owns it); `TerminalEmitHelpers.ParseSqlSegments` adds `SqlSegmentKind.PatchSet` recognition. Added `SqlAssemblerPatchTests` (7) + `ParseSqlSegmentsPatchTests` (6). Phase 6 complete: `EmitInlineSqlBuilder` handles `SqlSegmentKind.PatchSet` — declares `int __setShift = 0;` at top when any PatchSet segment exists, scalar segments add `+ __setShift` to their index expression, PatchSet case emits the empty-mask guard + ` SET ` literal + per-fragment runtime loop (dialect-correct placeholder via `__setShift + __colShift`, or `__setShift + 1 + __colShift` for PG, or `?` for MySQL). New `patchFragmentsRef` parameter (default `__patchFragments`) lets Phase 7 wire in the real per-chain table reference. `ComputeShiftExprForIndex` Patch-awareness deferred to Phase 9 (diagnostic-path concern). Added `EmitInlineSqlBuilderPatchTests` (10). Tests: 3,552/0. Post-suspend: discussed failure discoveries with user (OptimizationTier.Opaque mismatch + Phase 7 fragment-table shape problem); locked revised fragment-table shape — `(ulong Bit, string Prefix)[]` + separate `_BindPatchParams` static method — in `## Decisions` (`8db3bb8`). |
 | 4 | 2026-05-22 IMPLEMENT (resume Phase 7) | 2026-05-22 IMPLEMENT mid-Phase-7 (suspended after discovery rewrite decision) | Resumed from suspend. Baseline verified 3,552/0. Implemented the Phase 7 fragment-table + binder emission (`FieldRole.Patch`, CarrierAnalyzer Patch fields, `EmitPatchSqlDispatch`, `EmitPatchSupport` with `_PatchFragments[]` and unrolled `_BindPatchParams`, shift-aware WHERE-side parameter names in `EmitCarrierCommandBinding`, `ClauseBodyEmitter.EmitUpdateSetPatch` / `EmitUpdateSetPatchAction`, `FileEmitter` dispatch, `InterceptorRouter` Clause entries) and refactored `EmitInlineSqlBuilder` so the caller owns `int __setShift = 0;` (updated Phase 6 test assertions accordingly). Added cross-dialect `Update_SetPatch_*` tests in `CrossDialectUpdateTests.cs`; build fails with CS9144 because Phase 3 discovery emits a SetPoco-shaped interceptor at Patch call sites. Investigated three semantic fixes (containing-type check, GetTypeInfo on argument, relaxed `IsPatchType` name fallback) — none worked because the SyntaxProvider's `SemanticModel` doesn't see the generator-emitted `Entity.Patch` struct at discovery time, so Roslyn binds `Set(somePatch)` to the SetPoco DIM. Discussed three architectural fixes with user (two generators — ruled out, generators don't see each other's outputs; supplemental compilation — too heavy; syntax-only classification — small, local, cheap). Decision: **syntax-only classification** locked in `## Decisions` and Phase 3 of plan.md rewritten. Suspended to hand off the rewrite to the next session. |
+| 5 | 2026-05-22 IMPLEMENT (resume Phase 3 rewrite) | 2026-05-22 IMPLEMENT Phase 7 complete | Resumed from session-4 suspend (`241b52b`). Rewrote `UsageSiteDiscovery` Patch classification to syntax-only inspection (drops `IsPatchType`/`IsPatchActionDelegateType` semantic checks; adds `IsPatchConstructionExpression` covering `new X.Patch{}` + `default(X.Patch)` and `IsPatchVariableReference` walking back to enclosing member declaration for capture-into-lambda support). Added 4 real-generator regression tests in `UsageSiteDiscoveryPatchTests` (no `RunGeneratorsAndUpdateCompilation` pre-run). Discovered two unrelated Phase 7 gaps: `ChainAnalyzer.MapInterceptorKindToClauseRole` was missing entries for `UpdateSetPatch`/`UpdateSetPatchAction` (silently dropped Patch clause sites from the carrier lookup, so no Set interceptor body was emitted), and `SqlAssembler.RenderUpdateSql` emitted a trailing space before `{__PATCH_SET__}` while the runtime emitter prepended one (`UPDATE "users"  SET ...` double-space). Both fixed; `SqlAssemblerPatchTests` updated. Refactored `Update_SetPatch_EmptyMask_Throws` test to build the chain inside the `Assert.ThrowsAsync` lambda (avoids QRY035 from capturing a Prepare() result). Tests: 146 + 201 + 3214 = **3,561 / 0** (+9 from baseline). |

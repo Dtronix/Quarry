@@ -1270,13 +1270,16 @@ internal class CrossDialectUpdateTests
     {
         // Default-constructed Patch has __mask = 0 — generated terminal must throw
         // because an empty SET clause is invalid SQL in every dialect.
+        //
+        // The chain is built inside the Assert.ThrowsAsync lambda so we don't
+        // hoist a Prepare()-returned variable into a captured lambda, which
+        // would trigger QRY035 (PreparedQuery escaping the declaring scope).
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, _, _, _) = t;
 
         var empty = default(User.Patch);
-        var lt = Lite.Users().Update().Set(empty).Where(u => u.UserId == 1).Prepare();
-
-        Assert.ThrowsAsync<System.InvalidOperationException>(async () => await lt.ExecuteNonQueryAsync());
+        Assert.ThrowsAsync<System.InvalidOperationException>(
+            async () => await Lite.Users().Update().Set(empty).Where(u => u.UserId == 1).ExecuteNonQueryAsync());
     }
 
     #endregion

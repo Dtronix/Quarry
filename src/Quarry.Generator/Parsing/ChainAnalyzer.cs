@@ -2808,6 +2808,8 @@ internal static class ChainAnalyzer
             InterceptorKind.DeleteWhere => ClauseRole.DeleteWhere,
             InterceptorKind.UpdateSetAction => ClauseRole.UpdateSet,
             InterceptorKind.UpdateSetPoco => ClauseRole.UpdateSet,
+            InterceptorKind.UpdateSetPatch => ClauseRole.UpdateSet,
+            InterceptorKind.UpdateSetPatchAction => ClauseRole.UpdateSet,
             InterceptorKind.UpdateWhere => ClauseRole.UpdateWhere,
             InterceptorKind.Limit => ClauseRole.Limit,
             InterceptorKind.Offset => ClauseRole.Offset,

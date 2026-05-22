@@ -138,15 +138,95 @@ public class Svc
         Assert.That(kind, Is.EqualTo(InterceptorKind.UpdateSetPatchAction));
     }
 
+    // ── Regression tests: real-generator pipeline (no pre-run) ──────────
+    //
+    // The real IIncrementalGenerator pipeline runs discovery against the
+    // pre-generator compilation — so the SemanticModel doesn't see the
+    // generated Entity.Patch struct. Classification must therefore work
+    // from argument syntax alone, not from semantic overload resolution.
+    // These tests skip RunGeneratorsAndUpdateCompilation to exercise that
+    // path exactly.
+
+    [Test]
+    public void Set_PatchValue_PreGeneratorCompilation_ClassifiedAsUpdateSetPatch()
+    {
+        var kind = DiscoverFirstSetKind(@"
+public class Svc
+{
+    private readonly TestApp.TestDbContext _db;
+    public Svc(TestApp.TestDbContext db) { _db = db; }
+    public async Task Run()
+    {
+        var patch = new User.Patch { UserName = ""x"" };
+        await _db.Users().Update().Set(patch).Where(u => u.UserId == 1).ExecuteNonQueryAsync();
+    }
+}", preRunGenerator: false);
+        Assert.That(kind, Is.EqualTo(InterceptorKind.UpdateSetPatch));
+    }
+
+    [Test]
+    public void Set_PatchObjectCreationInline_PreGeneratorCompilation_ClassifiedAsUpdateSetPatch()
+    {
+        var kind = DiscoverFirstSetKind(@"
+public class Svc
+{
+    private readonly TestApp.TestDbContext _db;
+    public Svc(TestApp.TestDbContext db) { _db = db; }
+    public async Task Run()
+    {
+        await _db.Users().Update().Set(new User.Patch { UserName = ""x"" }).Where(u => u.UserId == 1).ExecuteNonQueryAsync();
+    }
+}", preRunGenerator: false);
+        Assert.That(kind, Is.EqualTo(InterceptorKind.UpdateSetPatch));
+    }
+
+    [Test]
+    public void Set_PatchActionLambda_PreGeneratorCompilation_ClassifiedAsUpdateSetPatchAction()
+    {
+        var kind = DiscoverFirstSetKind(@"
+public class Svc
+{
+    private readonly TestApp.TestDbContext _db;
+    public Svc(TestApp.TestDbContext db) { _db = db; }
+    public async Task Run()
+    {
+        await _db.Users().Update().Set((ref User.Patch p) => p.UserName = ""x"").Where(u => u.UserId == 1).ExecuteNonQueryAsync();
+    }
+}", preRunGenerator: false);
+        Assert.That(kind, Is.EqualTo(InterceptorKind.UpdateSetPatchAction));
+    }
+
+    [Test]
+    public void Set_PocoEntity_PreGeneratorCompilation_ClassifiedAsUpdateSetPoco()
+    {
+        // Regression: non-Patch Set forms must continue routing correctly when
+        // discovery runs against the pre-generator compilation.
+        var kind = DiscoverFirstSetKind(@"
+public class Svc
+{
+    private readonly TestApp.TestDbContext _db;
+    public Svc(TestApp.TestDbContext db) { _db = db; }
+    public async Task Run()
+    {
+        await _db.Users().Update().Set(new User { UserName = ""x"" }).Where(u => u.UserId == 1).ExecuteNonQueryAsync();
+    }
+}", preRunGenerator: false);
+        Assert.That(kind, Is.EqualTo(InterceptorKind.UpdateSetPoco));
+    }
+
     // ── Harness ─────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Compiles the schema + user code (with generator-applied trees added so
-    /// User.Patch is visible to the user code), locates the first
-    /// <c>.Set(...)</c> invocation in the user code, and returns its
-    /// discovered <see cref="InterceptorKind"/>.
+    /// Compiles the schema + user code, locates the first <c>.Set(...)</c>
+    /// invocation in the user code, and returns its discovered
+    /// <see cref="InterceptorKind"/>. When <paramref name="preRunGenerator"/>
+    /// is true (the default), the generator runs once first to merge the
+    /// generated <c>Entity.Patch</c> struct into the compilation — this is the
+    /// historical harness shape kept for the existing tests. When false,
+    /// discovery runs against the pre-generator compilation, exactly mirroring
+    /// the real <c>IIncrementalGenerator</c> pipeline.
     /// </summary>
-    private static InterceptorKind DiscoverFirstSetKind(string userCode)
+    private static InterceptorKind DiscoverFirstSetKind(string userCode, bool preRunGenerator = true)
     {
         var fullSource = SharedSchema + userCode;
         var parseOptions = new CSharpParseOptions(LanguageVersion.Latest);
@@ -157,12 +237,15 @@ public class Svc
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
                 .WithNullableContextOptions(NullableContextOptions.Enable));
 
-        // Run the generator once to surface the User.Patch nested struct
-        // (the user code needs it to overload-resolve Set(User.Patch)).
-        var generator = new Quarry.Generators.QuarryGenerator();
-        GeneratorDriver driver = CSharpGeneratorDriver.Create(generator);
-        driver = driver.RunGeneratorsAndUpdateCompilation(compilation, out var updatedCompilation, out _);
-        compilation = (CSharpCompilation)updatedCompilation;
+        if (preRunGenerator)
+        {
+            // Run the generator once to surface the User.Patch nested struct
+            // (the user code needs it to overload-resolve Set(User.Patch)).
+            var generator = new Quarry.Generators.QuarryGenerator();
+            GeneratorDriver driver = CSharpGeneratorDriver.Create(generator);
+            driver = driver.RunGeneratorsAndUpdateCompilation(compilation, out var updatedCompilation, out _);
+            compilation = (CSharpCompilation)updatedCompilation;
+        }
 
         // Locate the first .Set(...) invocation across the original source tree.
         SyntaxTree? userTree = null;

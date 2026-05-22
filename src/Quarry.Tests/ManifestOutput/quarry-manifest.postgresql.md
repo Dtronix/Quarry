@@ -2365,39 +2365,6 @@ UPDATE "users" SET "UserName" = $1 WHERE "UserId" = 1
 ### Users().Update().Set(...).Where(...).Prepare().ToDiagnostics()
 
 ```sql
-UPDATE "users" SET "UserName" = $1, "Email" = $2, "IsActive" = $3, "CreatedAt" = $4, "LastLogin" = $5 WHERE "UserId" = $6
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `string` |
-| `@p1` | `string` |
-| `@p2` | `bool` |
-| `@p3` | `DateTime` |
-| `@p4` | `DateTime` |
-| `@p5` | `int` |
-
----
-
-### Users().Update().Set(...).Where(...).Prepare().ToDiagnostics()
-
-```sql
-UPDATE "users" SET "UserName" = $1, "Email" = $2, "IsActive" = $3, "CreatedAt" = $4, "LastLogin" = $5 WHERE "UserId" = 1
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `string` |
-| `@p1` | `string` |
-| `@p2` | `bool` |
-| `@p3` | `DateTime` |
-| `@p4` | `DateTime` |
-
----
-
-### Users().Update().Set(...).Where(...).Prepare().ToDiagnostics()
-
-```sql
 UPDATE "users" SET "UserName" = $1, "IsActive" = $2 WHERE "UserId" = 1
 ```
 
@@ -2452,6 +2419,26 @@ UPDATE "users" SET "UserName" = 'x' WHERE "UserId" = $1
 
 ```sql
 UPDATE "users" SET "UserName" = 'x', "IsActive" = FALSE WHERE "UserId" = 1
+```
+
+---
+
+### Users().Update().Set(...).Where(...).Prepare().ToDiagnostics()
+
+```sql
+UPDATE "users"{__PATCH_SET__} WHERE "UserId" = $1
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Users().Update().Set(...).Where(...).Prepare().ToDiagnostics()
+
+```sql
+UPDATE "users"{__PATCH_SET__} WHERE "UserId" = 1
 ```
 
 ---

@@ -24,28 +24,28 @@ public class SqlAssemblerPatchTests
     public void RenderUpdateSql_PatchPlaceholder_SQLite_EmitsTokenAndNoSetKeyword()
     {
         var sql = RenderUpdate(GenSqlDialect.SQLite);
-        Assert.That(sql, Is.EqualTo("UPDATE \"users\" {__PATCH_SET__} WHERE \"UserId\" = @p0"));
+        Assert.That(sql, Is.EqualTo("UPDATE \"users\"{__PATCH_SET__} WHERE \"UserId\" = @p0"));
     }
 
     [Test]
     public void RenderUpdateSql_PatchPlaceholder_PostgreSQL_EmitsTokenAndNoSetKeyword()
     {
         var sql = RenderUpdate(GenSqlDialect.PostgreSQL);
-        Assert.That(sql, Is.EqualTo("UPDATE \"users\" {__PATCH_SET__} WHERE \"UserId\" = $1"));
+        Assert.That(sql, Is.EqualTo("UPDATE \"users\"{__PATCH_SET__} WHERE \"UserId\" = $1"));
     }
 
     [Test]
     public void RenderUpdateSql_PatchPlaceholder_MySQL_EmitsTokenAndNoSetKeyword()
     {
         var sql = RenderUpdate(GenSqlDialect.MySQL);
-        Assert.That(sql, Is.EqualTo("UPDATE `users` {__PATCH_SET__} WHERE `UserId` = ?"));
+        Assert.That(sql, Is.EqualTo("UPDATE `users`{__PATCH_SET__} WHERE `UserId` = ?"));
     }
 
     [Test]
     public void RenderUpdateSql_PatchPlaceholder_SqlServer_EmitsTokenAndNoSetKeyword()
     {
         var sql = RenderUpdate(GenSqlDialect.SqlServer);
-        Assert.That(sql, Is.EqualTo("UPDATE [users] {__PATCH_SET__} WHERE [UserId] = @p0"));
+        Assert.That(sql, Is.EqualTo("UPDATE [users]{__PATCH_SET__} WHERE [UserId] = @p0"));
     }
 
     [Test]

@@ -2265,39 +2265,6 @@ UPDATE [users] SET [UserName] = @p0 WHERE [UserId] = 1
 ### Users().Update().Set(...).Where(...).Prepare().ToDiagnostics()
 
 ```sql
-UPDATE [users] SET [UserName] = @p0, [Email] = @p1, [IsActive] = @p2, [CreatedAt] = @p3, [LastLogin] = @p4 WHERE [UserId] = 1
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `string` |
-| `@p1` | `string` |
-| `@p2` | `bool` |
-| `@p3` | `DateTime` |
-| `@p4` | `DateTime` |
-
----
-
-### Users().Update().Set(...).Where(...).Prepare().ToDiagnostics()
-
-```sql
-UPDATE [users] SET [UserName] = @p0, [Email] = @p1, [IsActive] = @p2, [CreatedAt] = @p3, [LastLogin] = @p4 WHERE [UserId] = @p5
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `string` |
-| `@p1` | `string` |
-| `@p2` | `bool` |
-| `@p3` | `DateTime` |
-| `@p4` | `DateTime` |
-| `@p5` | `int` |
-
----
-
-### Users().Update().Set(...).Where(...).Prepare().ToDiagnostics()
-
-```sql
 UPDATE [users] SET [UserName] = @p0, [IsActive] = 0 WHERE [UserId] = 1
 ```
 
@@ -2317,6 +2284,26 @@ UPDATE [users] SET [UserName] = @p0, [IsActive] = @p1 WHERE [UserId] = 1
 |-----------|------|
 | `@p0` | `string` |
 | `@p1` | `bool` |
+
+---
+
+### Users().Update().Set(...).Where(...).Prepare().ToDiagnostics()
+
+```sql
+UPDATE [users]{__PATCH_SET__} WHERE [UserId] = 1
+```
+
+---
+
+### Users().Update().Set(...).Where(...).Prepare().ToDiagnostics()
+
+```sql
+UPDATE [users]{__PATCH_SET__} WHERE [UserId] = @p0
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
 
 ---
 

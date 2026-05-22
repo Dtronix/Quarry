@@ -473,48 +473,49 @@ internal static class UsageSiteDiscovery
         if (methodName == "Set" && containingType.Name.Contains("UpdateBuilder")
             && invocation.ArgumentList.Arguments.Count == 1)
         {
-            // Classification priority for the four Set forms:
-            // 1. Containing type identity. The new Patch overloads live on the
-            //    <c>UpdateBuilderPatchExtensions</c> static class — when Roslyn binds
-            //    the call to one of those overloads, containing-type identity is a
-            //    direct signal even if the substituted TPatch is unrecognized.
-            // 2. Argument type. The receiver-method resolution may pick a wrong DIM
-            //    overload when the generated <c>Entity.Patch</c> nested struct isn't
-            //    yet visible (Phase 2 output is added back into a later compilation,
-            //    but the SyntaxProvider running this discovery may see a stale
-            //    snapshot). In that case the *argument expression's* type still
-            //    resolves to <c>User.Patch</c> (the variable's declared type is
-            //    inferred from <c>new User.Patch { ... }</c>), and <c>IsPatchType</c>
-            //    detects the struct's <c>IPatchFor&lt;T&gt;</c> interface.
-            // 3. Lambda syntax fallback for the non-Patch instance forms.
+            // Syntax-only classification of the four Set(...) overloads.
+            //
+            // Semantic overload-resolution (methodSymbol.Parameters[0].Type +
+            // IPatchFor<T> detection) doesn't work in the real IIncrementalGenerator
+            // pipeline: the SyntaxProvider's SemanticModel sees the pre-generator
+            // compilation, so the generated Entity.Patch nested struct isn't visible
+            // and Roslyn binds Set(somePatch) to the SetPoco DIM. Discovery would
+            // emit a SetPoco-shaped interceptor and the user build fails CS9144 at
+            // the call site once Phase 2 emission makes User.Patch visible.
+            //
+            // Patch detection therefore inspects the argument SYNTAX directly:
+            //   Set(new X.Patch { ... })            → UpdateSetPatch
+            //   Set(somePatchVar) when its           → UpdateSetPatch
+            //       declarator initializer is
+            //       new X.Patch { ... }
+            //   Set((ref X.Patch p) => ...)         → UpdateSetPatchAction
+            //   Set(other lambda)                    → UpdateSetAction (existing path)
+            //   Set(other arg) when !IsGenericMethod → UpdateSetPoco (existing path)
+            //
+            // Out-of-scope shapes (factory return, ternary over patches, captured
+            // PatchAction variable) fall through to UpdateSetPoco / UpdateSetAction
+            // and surface as CS9144 at the user's call site — actionable: switch to
+            // a local-variable form.
             var singleArg = invocation.ArgumentList.Arguments[0].Expression;
-            var argTypeInfo = semanticModel.GetTypeInfo(singleArg, cancellationToken);
-            var argType = argTypeInfo.Type ?? argTypeInfo.ConvertedType;
 
-            if (containingType.Name == "UpdateBuilderPatchExtensions"
-                || IsPatchType(argType))
+            if (IsPatchConstructionExpression(singleArg))
             {
                 kind = InterceptorKind.UpdateSetPatch;
             }
-            else if (IsPatchActionDelegateType(argType))
+            else if (singleArg is IdentifierNameSyntax identifierArg
+                && IsPatchVariableReference(identifierArg))
+            {
+                kind = InterceptorKind.UpdateSetPatch;
+            }
+            else if (singleArg is ParenthesizedLambdaExpressionSyntax parLambda
+                && parLambda.ParameterList.Parameters.Count == 1
+                && parLambda.ParameterList.Parameters[0].Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.RefKeyword)))
             {
                 kind = InterceptorKind.UpdateSetPatchAction;
             }
             else if (singleArg is LambdaExpressionSyntax)
             {
-                // PatchAction<TPatch> lambdas are syntactically `(ref TPatch p) => ...`
-                // — the `ref` parameter is the discriminator. Action<T> lambdas have
-                // no `ref` on their parameter; check the lambda's parameter list.
-                if (singleArg is ParenthesizedLambdaExpressionSyntax parLambda
-                    && parLambda.ParameterList.Parameters.Count == 1
-                    && parLambda.ParameterList.Parameters[0].Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.RefKeyword)))
-                {
-                    kind = InterceptorKind.UpdateSetPatchAction;
-                }
-                else
-                {
-                    kind = InterceptorKind.UpdateSetAction;
-                }
+                kind = InterceptorKind.UpdateSetAction;
             }
             else if (!methodSymbol.IsGenericMethod)
             {
@@ -2643,76 +2644,60 @@ internal static class UsageSiteDiscovery
 
 
     /// <summary>
-    /// True when <paramref name="type"/> is the runtime <c>Quarry.PatchAction&lt;TPatch&gt;</c>
-    /// delegate. Used to discriminate <c>Set(PatchAction&lt;...&gt;)</c> overload resolution
-    /// from <c>Set(Action&lt;T&gt;)</c> in the Set classification block.
+    /// True when the expression constructs or default-initializes a Patch
+    /// struct — i.e. <c>new X.Patch { ... }</c>, <c>new X.Patch(...)</c>, or
+    /// <c>default(X.Patch)</c>. The type must end in a <c>.Patch</c> identifier
+    /// (qualified or alias-qualified); a bare <c>new Patch(...)</c> is not
+    /// recognized.
     /// </summary>
-    private static bool IsPatchActionDelegateType(ITypeSymbol? type)
+    private static bool IsPatchConstructionExpression(ExpressionSyntax expr)
     {
-        if (type is not INamedTypeSymbol named) return false;
-        if (named.Name != "PatchAction") return false;
-        if (named.TypeArguments.Length != 1) return false;
-        var ns = named.ContainingNamespace;
-        return ns != null && !ns.IsGlobalNamespace && ns.Name == "Quarry" && ns.ContainingNamespace?.IsGlobalNamespace == true;
+        return expr switch
+        {
+            ObjectCreationExpressionSyntax oc => TypeSyntaxEndsInPatch(oc.Type),
+            DefaultExpressionSyntax de => TypeSyntaxEndsInPatch(de.Type),
+            _ => false,
+        };
+    }
+
+    private static bool TypeSyntaxEndsInPatch(TypeSyntax type)
+    {
+        return type switch
+        {
+            QualifiedNameSyntax q => q.Right.Identifier.Text == "Patch",
+            AliasQualifiedNameSyntax a => a.Name.Identifier.Text == "Patch",
+            _ => false,
+        };
     }
 
     /// <summary>
-    /// True when <paramref name="type"/> is a struct that implements
-    /// <c>Quarry.IPatchFor&lt;T&gt;</c> — i.e. a generated <c>Entity.Patch</c> nested
-    /// struct. Covers both the constructed form (e.g. <c>User.Patch</c>) and the
-    /// unconstrained type parameter form (TPatch with an <c>IPatchFor</c>
-    /// constraint) returned by Roslyn for the reduced extension-method symbol.
-    /// Also accepts an unresolved-interface fallback: any value-type nested
-    /// struct named <c>Patch</c> — needed because the generated struct's
-    /// <c>IPatchFor&lt;T&gt;</c> interface list is sometimes empty in the
-    /// SemanticModel snapshot the generator's own SyntaxProvider sees (the
-    /// nested struct's metadata can lag the outer entity's by one compilation
-    /// pass). Outside the generator, the IPatchFor check covers the same cases.
+    /// True when <paramref name="id"/> refers to a local whose declarator
+    /// initializer is a Patch construction (e.g. <c>var p = new X.Patch { ... };</c>
+    /// or <c>var p = default(X.Patch);</c>). Walks back to the enclosing
+    /// member declaration and looks for a single matching
+    /// <c>VariableDeclaratorSyntax</c> — this covers both same-scope locals
+    /// and variables captured into nested lambdas. Fail-soft: any failure
+    /// (declarator not found, ambiguous shadowing, non-Patch initializer)
+    /// returns false and lets classification fall through to the existing
+    /// SetPoco / SetAction paths.
     /// </summary>
-    private static bool IsPatchType(ITypeSymbol? type)
+    private static bool IsPatchVariableReference(IdentifierNameSyntax id)
     {
-        if (type is null) return false;
+        var variableName = id.Identifier.Text;
+        var member = id.FirstAncestorOrSelf<MemberDeclarationSyntax>();
+        if (member is null) return false;
 
-        // Constructed struct case (e.g. User.Patch) — common when discovery is
-        // called on a fully-bound extension-method invocation.
-        if (type is INamedTypeSymbol named && named.IsValueType)
+        VariableDeclaratorSyntax? matchingDeclarator = null;
+        foreach (var decl in member.DescendantNodes().OfType<VariableDeclaratorSyntax>())
         {
-            foreach (var iface in named.AllInterfaces)
-            {
-                if (IsIPatchForInterface(iface)) return true;
-            }
-
-            // Fallback for the generator-time SemanticModel: a nested struct
-            // literally named "Patch" inside another type matches the generator's
-            // emission pattern (<c>partial class Entity { public struct Patch ... }</c>).
-            // Narrow heuristic — won't fire for an unrelated user type because the
-            // double constraint (nested + IsValueType + name == "Patch") is rare
-            // outside the generator's own emission shape.
-            if (named.Name == "Patch" && named.ContainingType != null)
-                return true;
+            if (decl.Identifier.Text != variableName) continue;
+            if (matchingDeclarator is not null) return false;
+            matchingDeclarator = decl;
         }
 
-        // Type-parameter case (e.g. TPatch in the un-substituted extension
-        // signature) — kept for robustness across Roslyn symbol projections.
-        if (type is ITypeParameterSymbol tp)
-        {
-            foreach (var constraint in tp.ConstraintTypes)
-            {
-                if (constraint is INamedTypeSymbol nt && IsIPatchForInterface(nt))
-                    return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static bool IsIPatchForInterface(INamedTypeSymbol candidate)
-    {
-        if (candidate.Name != "IPatchFor") return false;
-        if (candidate.TypeArguments.Length != 1) return false;
-        var ns = candidate.ContainingNamespace;
-        return ns != null && !ns.IsGlobalNamespace && ns.Name == "Quarry"
-            && ns.ContainingNamespace?.IsGlobalNamespace == true;
+        if (matchingDeclarator is null) return false;
+        var init = matchingDeclarator.Initializer?.Value;
+        return init is not null && IsPatchConstructionExpression(init);
     }
 
     /// <summary>

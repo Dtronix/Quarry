@@ -743,10 +743,11 @@ internal static class SqlAssembler
         {
             // Patch SET: emit the literal token in place of " SET col = @pN, ..." —
             // the runtime emitter expands it from the per-chain fragment table at execute
-            // time. No SET keyword in the prefix; the runtime writer emits it together
-            // with the active columns. Patch contributes zero compile-time parameters,
-            // so paramIndex (the WHERE base) is unchanged.
-            sb.Append(' ');
+            // time. The runtime writer owns the entire SET clause (including its leading
+            // space and the SET keyword), so no space is emitted between the table ref
+            // and the placeholder — assembled form is `UPDATE "users"{__PATCH_SET__} WHERE`.
+            // Patch contributes zero compile-time parameters, so paramIndex (the WHERE
+            // base) is unchanged.
             sb.Append(PatchSetPlaceholderExpr.Token);
         }
         else if (activeSetTerms.Count > 0)

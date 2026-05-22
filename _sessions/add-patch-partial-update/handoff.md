@@ -10,7 +10,22 @@
 - **`__setShift` runtime shift variable**: joins existing `__colShift` in `ComputeShiftExprForIndex` to renumber WHERE / collection placeholders behind the runtime-assembled SET clause.
 - **Carrier fields**: chains with Patch SET get `Patch` + `PatchMask` fields on the generated carrier class.
 
-## Completions (This Session — Session 4)
+## Completions (This Session — Session 5)
+
+- Resumed from session-4 suspend (commit `241b52b`).
+- **Phase 3 rewrite — syntax-only Patch classification** in `UsageSiteDiscovery.cs`:
+  - Dropped semantic helpers `IsPatchType(ITypeSymbol)` / `IsPatchActionDelegateType(ITypeSymbol)` / `IsIPatchForInterface` from the discovery path (no longer used).
+  - Added `IsPatchConstructionExpression(ExpressionSyntax)` matching `ObjectCreationExpressionSyntax` *and* `DefaultExpressionSyntax` whose inner TypeSyntax ends in a `.Patch` identifier (qualified or alias-qualified).
+  - Added `IsPatchVariableReference(IdentifierNameSyntax)` that walks back to the enclosing `MemberDeclarationSyntax` (not the immediate function body) so variables declared in the outer method but captured into nested lambdas resolve correctly. Fails soft on ambiguous shadowing.
+  - Kept the `ref`-modifier lambda detection unchanged for `UpdateSetPatchAction`.
+  - The four-way Set classifier order is now: object-creation → variable-walk → `ref` lambda → other lambda → non-generic POCO fallback.
+- **`UsageSiteDiscoveryPatchTests` regression coverage:** added 4 new tests exercising classification against the pre-generator SemanticModel (no `RunGeneratorsAndUpdateCompilation` pre-run). Confirms the real-pipeline scenario where Roslyn binds `Set(somePatch)` to the SetPoco DIM but syntactic classification still picks UpdateSetPatch.
+- **`ChainAnalyzer.MapInterceptorKindToClauseRole`** added entries for `UpdateSetPatch` → `ClauseRole.UpdateSet` and `UpdateSetPatchAction` → `ClauseRole.UpdateSet`. Without this mapping, `AssembledPlan.GetClauseEntries()` silently dropped Patch sites, `carrierClauseLookup` never registered them, and `FileEmitter`'s `if (!isCarrierSite) return;` gate skipped Patch Set interceptors — no `Set_xxx(this IUpdateBuilder<User>, User.Patch patch)` body emitted. This was the latent gap beneath the Phase 3 classification fix; both are required.
+- **SqlAssembler space fix:** `RenderUpdateSql` previously emitted `UPDATE "users" {__PATCH_SET__}` (trailing space) while the runtime emitter prepended `" SET "` (leading space), producing `UPDATE "users"  SET ...`. Dropped the assembler space — runtime emitter now owns the entire SET clause spacing. Phase 5 `SqlAssemblerPatchTests` updated to assert the new form `UPDATE "users"{__PATCH_SET__} WHERE ...`.
+- **`Update_SetPatch_EmptyMask_Throws` test refactor:** moved the chain construction inside the `Assert.ThrowsAsync` lambda so we don't hoist a `Prepare()`-returned variable into a captured lambda (would trigger QRY035: PreparedQuery escaping the declaring scope). The `default(User.Patch)` variable is still declared outside the lambda — the syntax classifier walks back through the lambda to the enclosing member to find its declarator.
+- **All tests green:** 146 + 201 + 3214 = **3,561 / 0** (+9 from baseline 3,552 — 4 new pre-generator discovery tests + 5 new cross-dialect Patch tests).
+
+## Completions (Session 4)
 
 - Resumed from session-3 suspend. Verified baseline 3,552/0.
 - Phase 7 generator wiring landed (partial):
@@ -54,8 +69,8 @@ See `workflow.md ## Decisions` 2026-05-22 entry and `plan.md` Phase 3 for full i
 
 ## Progress
 
-- Phase: IMPLEMENT phase 6 complete. Ready to start phase 7.
-- Phases complete: 6 / 10.
+- Phase: IMPLEMENT phase 7 complete. Ready to start phase 8.
+- Phases complete: 7 / 10.
 
 ## Current State
 
