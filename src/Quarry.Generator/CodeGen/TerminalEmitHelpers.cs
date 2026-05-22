@@ -860,15 +860,36 @@ internal static class TerminalEmitHelpers
     /// Emits StringBuilder.Append() calls for each parsed SQL segment.
     /// Literal → verbatim append. ScalarParam → append shifted index.
     /// CollectionExpand → empty guard + join parts array + shift accumulation.
+    /// PatchSet → empty-mask guard + runtime SET assembly walking the per-chain
+    /// fragment table; downstream scalar/collection indices are shifted by
+    /// <c>__setShift</c> (count of active SET parameters).
     /// </summary>
+    /// <param name="patchFragmentsRef">C# expression referencing the per-chain
+    /// Patch fragment table (a <c>(ulong Bit, string Prefix, ...)</c> array
+    /// emitted by Phase 7). Required when any <see cref="SqlSegmentKind.PatchSet"/>
+    /// segment is present; ignored otherwise.</param>
     internal static void EmitInlineSqlBuilder(
         StringBuilder sb,
         string indent,
         List<SqlSegment> segments,
         SqlDialect dialect,
-        IReadOnlyList<(int GlobalIndex, int CollectionOrdinal)> collections)
+        IReadOnlyList<(int GlobalIndex, int CollectionOrdinal)> collections,
+        string patchFragmentsRef = "__patchFragments")
     {
         var esc = InterceptorCodeGenerator.EscapeStringLiteral;
+
+        // SET comes before WHERE in SQL, so `__setShift` (count of active Patch SET
+        // params) dominates downstream `__colShift` and the original scalar index.
+        // Declared once at the top so it is in scope for both the PatchSet case and
+        // any subsequent scalar segments referencing it.
+        var hasPatchSet = false;
+        foreach (var s in segments)
+        {
+            if (s.Kind == SqlSegmentKind.PatchSet) { hasPatchSet = true; break; }
+        }
+        if (hasPatchSet)
+            sb.AppendLine($"{indent}int __setShift = 0;");
+        var setShiftSuffix = hasPatchSet ? " + __setShift" : "";
 
         foreach (var seg in segments)
         {
@@ -882,12 +903,12 @@ internal static class TerminalEmitHelpers
                     if (dialect == SqlDialect.PostgreSQL)
                     {
                         sb.AppendLine($"{indent}__sb.Append('$');");
-                        sb.AppendLine($"{indent}__sb.Append({seg.ParamIndex} + 1 + __colShift);");
+                        sb.AppendLine($"{indent}__sb.Append({seg.ParamIndex} + 1 + __colShift{setShiftSuffix});");
                     }
                     else
                     {
                         sb.AppendLine($"{indent}__sb.Append(\"@p\");");
-                        sb.AppendLine($"{indent}__sb.Append({seg.ParamIndex} + __colShift);");
+                        sb.AppendLine($"{indent}__sb.Append({seg.ParamIndex} + __colShift{setShiftSuffix});");
                     }
                     break;
 
@@ -898,6 +919,43 @@ internal static class TerminalEmitHelpers
                     sb.AppendLine($"{indent}else");
                     sb.AppendLine($"{indent}    __sb.Append(string.Join(\", \", __col{seg.ParamIndex}Parts));");
                     sb.AppendLine($"{indent}__colShift += __col{seg.ParamIndex}Len - 1;");
+                    break;
+                }
+
+                case SqlSegmentKind.PatchSet:
+                {
+                    // Loud-fail on empty mask: a default-constructed Patch has __mask = 0,
+                    // and an empty SET clause is invalid in every dialect. Throw rather
+                    // than emit broken SQL.
+                    sb.AppendLine($"{indent}if (__c.PatchMask == 0UL)");
+                    sb.AppendLine($"{indent}    throw new System.InvalidOperationException(\"Set received a Patch with no fields assigned.\");");
+                    sb.AppendLine($"{indent}__sb.Append(\" SET \");");
+                    sb.AppendLine($"{indent}{{");
+                    sb.AppendLine($"{indent}    bool __firstSet = true;");
+                    sb.AppendLine($"{indent}    for (int __pi = 0; __pi < {patchFragmentsRef}.Length; __pi++)");
+                    sb.AppendLine($"{indent}    {{");
+                    sb.AppendLine($"{indent}        var __frag = {patchFragmentsRef}[__pi];");
+                    sb.AppendLine($"{indent}        if ((__c.PatchMask & __frag.Bit) == 0UL) continue;");
+                    sb.AppendLine($"{indent}        if (!__firstSet) __sb.Append(\", \");");
+                    sb.AppendLine($"{indent}        __firstSet = false;");
+                    sb.AppendLine($"{indent}        __sb.Append(__frag.Prefix);");
+                    if (dialect == SqlDialect.PostgreSQL)
+                    {
+                        sb.AppendLine($"{indent}        __sb.Append('$');");
+                        sb.AppendLine($"{indent}        __sb.Append(__setShift + 1 + __colShift);");
+                    }
+                    else if (dialect == SqlDialect.MySQL)
+                    {
+                        sb.AppendLine($"{indent}        __sb.Append('?');");
+                    }
+                    else
+                    {
+                        sb.AppendLine($"{indent}        __sb.Append(\"@p\");");
+                        sb.AppendLine($"{indent}        __sb.Append(__setShift + __colShift);");
+                    }
+                    sb.AppendLine($"{indent}        __setShift++;");
+                    sb.AppendLine($"{indent}    }}");
+                    sb.AppendLine($"{indent}}}");
                     break;
                 }
             }
