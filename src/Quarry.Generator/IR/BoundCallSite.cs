@@ -24,7 +24,8 @@ internal sealed class BoundCallSite : IEquatable<BoundCallSite>
         IReadOnlyList<EntityRef>? joinedEntities = null,
         InsertInfo? insertInfo = null,
         InsertInfo? updateInfo = null,
-        RawSqlTypeInfo? rawSqlTypeInfo = null)
+        RawSqlTypeInfo? rawSqlTypeInfo = null,
+        PatchInfo? patchInfo = null)
     {
         Raw = raw;
         ContextClassName = contextClassName;
@@ -39,6 +40,7 @@ internal sealed class BoundCallSite : IEquatable<BoundCallSite>
         InsertInfo = insertInfo;
         UpdateInfo = updateInfo;
         RawSqlTypeInfo = rawSqlTypeInfo;
+        PatchInfo = patchInfo;
     }
 
     /// <summary>Underlying raw discovery result (composition, not copying).</summary>
@@ -75,6 +77,9 @@ internal sealed class BoundCallSite : IEquatable<BoundCallSite>
     /// <summary>RawSql type metadata.</summary>
     public RawSqlTypeInfo? RawSqlTypeInfo { get; }
 
+    /// <summary>Patch (partial update) column metadata. Non-null only on UpdateSetPatch / UpdateSetPatchAction sites.</summary>
+    public PatchInfo? PatchInfo { get; }
+
     /// <summary>
     /// Creates a copy with a different Raw call site, preserving all binding state.
     /// Used to propagate resolved result types through the IR chain.
@@ -94,7 +99,8 @@ internal sealed class BoundCallSite : IEquatable<BoundCallSite>
             joinedEntities: JoinedEntities,
             insertInfo: InsertInfo,
             updateInfo: UpdateInfo,
-            rawSqlTypeInfo: RawSqlTypeInfo);
+            rawSqlTypeInfo: RawSqlTypeInfo,
+            patchInfo: PatchInfo);
     }
 
     /// <summary>
@@ -118,7 +124,8 @@ internal sealed class BoundCallSite : IEquatable<BoundCallSite>
             joinedEntities: joinedEntities ?? JoinedEntities,
             insertInfo: InsertInfo,
             updateInfo: UpdateInfo,
-            rawSqlTypeInfo: RawSqlTypeInfo);
+            rawSqlTypeInfo: RawSqlTypeInfo,
+            patchInfo: PatchInfo);
     }
 
     public bool Equals(BoundCallSite? other)
@@ -137,7 +144,8 @@ internal sealed class BoundCallSite : IEquatable<BoundCallSite>
             && EqualityHelpers.NullableSequenceEqual(JoinedEntities, other.JoinedEntities)
             && Equals(InsertInfo, other.InsertInfo)
             && Equals(UpdateInfo, other.UpdateInfo)
-            && Equals(RawSqlTypeInfo, other.RawSqlTypeInfo);
+            && Equals(RawSqlTypeInfo, other.RawSqlTypeInfo)
+            && Equals(PatchInfo, other.PatchInfo);
     }
 
     public override bool Equals(object? obj) => Equals(obj as BoundCallSite);

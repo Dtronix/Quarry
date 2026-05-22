@@ -22,14 +22,15 @@ None — first session.
 
 ## Progress
 
-- Phase: PLAN complete. Ready to start IMPLEMENT phase 1.
-- Phases complete: 0 / 10.
+- Phase: IMPLEMENT phase 1 complete. Ready to start phase 2.
+- Phases complete: 1 / 10.
 
 ## Current State
 
-- Working tree: clean except for `_sessions/` (will be in the suspend WIP commit).
+- Working tree: clean. Phase 1 commit folded into the prior WIP via amend (message rewritten to drop `[WIP]`).
 - Branch: `add-patch-partial-update` at base `master` (`b758e83 Fix nested int-aggregate projection type resolution (#294) (#298)`).
-- No code edits yet. No failed approaches to record.
+- Tests green: 146 + 201 + 3156 = **3,503** (baseline 3,496 + 7 new `PatchInfoTests`).
+- Phase 1 added: `Models/PatchInfo.cs` (reuses `InsertColumnInfo` for column shape, per the open-question lean), `InterceptorKind.UpdateSetPatch` + `InterceptorKind.UpdateSetPatchAction`, `BoundCallSite.PatchInfo` (threaded through `WithRaw` and `WithJoinedEntities`), `src/Quarry/PatchAction.cs` delegate, `DiagnosticDescriptors.PatchColumnLimitExceeded` (QRY045).
 
 ## Known Issues / Bugs
 

@@ -7,12 +7,12 @@ base-branch: master
 
 ## State
 phase: IMPLEMENT
-status: suspended
+status: active
 issue: discussion
 pr:
-session: 1
+session: 2
 phases-total: 10
-phases-complete: 0
+phases-complete: 1
 
 ## Problem Statement
 
@@ -72,19 +72,10 @@ Single `ulong __mask` field on Patch. Entities with >64 updatable columns raise 
 
 ## Suspend State
 
-**Current phase:** IMPLEMENT, about to start phase 1 of 10.
-
-**Status at suspend:** DESIGN and PLAN complete. plan.md written and approved (with one revision: phases 5–6 combined into a single phase, total now 10). No code changes yet. Baseline tests green (3,496/0).
-
-**Immediate next step:** Resume into IMPLEMENT phase 1 — IR foundations. Recreate IMPLEMENT phase tasks at resume.
-
-**WIP commit hash:** identifiable as the HEAD commit on `add-patch-partial-update` with `[WIP]` prefix (find via `git log -1 --format=%H` while no other commits are on top). Must be amended on the first real commit in IMPLEMENT phase 1 — that is, stage the first phase's changes and run `git commit --amend` to fold them into the WIP, then rewrite the message to drop the `[WIP]` marker.
-
-**Test status:** All passing — baseline established at INTAKE.
-
-**Unrecorded context:** None. All design decisions are in `## Decisions`. Plan is in `plan.md`. handoff.md exists with a brief orientation for the resuming session.
+(cleared on resume — session 2 active)
 
 ## Session Log
 | # | Phase Start | Phase End | Summary |
 |---|------------|-----------|---------|
 | 1 | 2026-05-22 INTAKE | 2026-05-22 PLAN (approved, suspended before IMPLEMENT) | Bootstrapped from in-session discussion. Worktree created. Baseline tests green (3,496/0). All design decisions recorded. plan.md written with 10 phases (originally 11, phases 5–6 combined per user). Approved by user; suspended for next session. |
+| 2 | 2026-05-22 IMPLEMENT (resume) | — | Resumed from suspend. Recreated 10 IMPLEMENT phase tasks. WIP commit `3432ac2` will be amended on first real commit in Phase 1 to drop the `[WIP]` marker. |

@@ -602,6 +602,29 @@ internal static class DiagnosticDescriptors
                      "Positional records lack a parameterless constructor, and init-only properties cannot be assigned from " +
                      "generated code outside an object initializer.");
 
+    // ─── Patch (partial update) diagnostics (QRY045) ──────────────────
+
+    /// <summary>
+    /// QRY045: Entity has too many updatable columns for a Patch struct.
+    /// Severity: Error
+    /// </summary>
+    /// <remarks>
+    /// The generated Patch struct tracks assignments via a single <c>ulong __mask</c> field,
+    /// giving 64 bits — one per updatable (non-Identity, non-Computed) column. Entities that
+    /// exceed this cap cannot be patched until the mask is widened. Existing
+    /// <c>Set(new T { ... })</c> POCO updates are unaffected.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor PatchColumnLimitExceeded = new(
+        id: "QRY045",
+        title: "Entity has too many updatable columns for Patch generation",
+        messageFormat: "Entity '{0}' has {1} updatable columns, exceeding the 64-column limit for Patch generation",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "The generated Patch struct uses a single ulong __mask field to track assigned columns, " +
+                     "capping updatable columns per entity at 64. Reduce the column count or use the existing " +
+                     "Set(new TEntity { ... }) form for entities that exceed the limit.");
+
     // ─── Navigation join diagnostics (QRY060–QRY065) ──────────────────
 
     /// <summary>
