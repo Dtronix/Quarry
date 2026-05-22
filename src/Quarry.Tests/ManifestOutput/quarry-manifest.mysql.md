@@ -5009,7 +5009,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 550 |
+| Total discovered | 551 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 93 |
+| Consolidated (deduped) | 94 |
 | Rendered | 457 |

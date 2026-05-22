@@ -5033,7 +5033,7 @@ WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 555 |
+| Total discovered | 556 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 96 |
+| Consolidated (deduped) | 97 |
 | Rendered | 459 |

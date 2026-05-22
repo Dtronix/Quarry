@@ -1283,4 +1283,66 @@ internal class CrossDialectUpdateTests
     }
 
     #endregion
+
+    #region UpdateSetPatchAction — lambda form
+
+    [Test]
+    public async Task Update_SetPatchAction_SingleColumn()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Update().Set((ref User.Patch p) => p.UserName = "Renamed").Where(u => u.UserId == 1).Prepare();
+        var pg = Pg.Users().Update().Set((ref Pg.User.Patch p) => p.UserName = "Renamed").Where(u => u.UserId == 1).Prepare();
+        var my = My.Users().Update().Set((ref My.User.Patch p) => p.UserName = "Renamed").Where(u => u.UserId == 1).Prepare();
+        var ss = Ss.Users().Update().Set((ref Ss.User.Patch p) => p.UserName = "Renamed").Where(u => u.UserId == 1).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0 WHERE \"UserId\" = 1",
+            pg:     "UPDATE \"users\" SET \"UserName\" = $1 WHERE \"UserId\" = 1",
+            mysql:  "UPDATE `users` SET `UserName` = ? WHERE `UserId` = 1",
+            ss:     "UPDATE [users] SET [UserName] = @p0 WHERE [UserId] = 1");
+
+        Assert.That(await lt.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await pg.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await my.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await ss.ExecuteNonQueryAsync(), Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task Update_SetPatchAction_RuntimeConditional_TogglesColumns()
+    {
+        // Lambda mutates the Patch with C# conditionals — exercises that the
+        // runtime SET assembler only writes the columns whose property setters
+        // actually fired (mask bits set in the lambda body).
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        var updateName = true;
+        var updateEmail = false;
+
+        var diag = Lite.Users().Update().Set((ref User.Patch p) =>
+        {
+            if (updateName) p.UserName = "OnlyName";
+            if (updateEmail) p.Email = "ignored@example.com";
+        }).Where(u => u.UserId == 1).Prepare().ToDiagnostics();
+
+        // Only UserName bit is set — runtime emits just that column.
+        Assert.That(diag.Sql, Is.EqualTo("UPDATE \"users\" SET \"UserName\" = @p0 WHERE \"UserId\" = 1"));
+    }
+
+    [Test]
+    public async Task Update_SetPatchAction_EmptyLambda_Throws()
+    {
+        // A lambda that flips no mask bits leaves __mask = 0 — runtime must throw.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        Assert.ThrowsAsync<System.InvalidOperationException>(
+            async () => await Lite.Users().Update().Set((ref User.Patch _) => { }).Where(u => u.UserId == 1).ExecuteNonQueryAsync());
+    }
+
+    #endregion
 }

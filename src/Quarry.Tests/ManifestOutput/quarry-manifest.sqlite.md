@@ -5540,7 +5540,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 694 |
+| Total discovered | 697 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 188 |
+| Consolidated (deduped) | 191 |
 | Rendered | 506 |
