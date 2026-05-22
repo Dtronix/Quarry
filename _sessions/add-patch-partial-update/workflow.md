@@ -7,7 +7,7 @@ base-branch: master
 
 ## State
 phase: IMPLEMENT
-status: active
+status: suspended
 issue: discussion
 pr:
 session: 2
@@ -81,10 +81,22 @@ Initially tried adding the new patch overloads as default interface methods (DIM
 
 ## Suspend State
 
-(cleared on resume — session 2 active)
+**Current phase:** IMPLEMENT — about to start phase 4 of 10. Phases 1–3 complete and committed.
+
+**Status at suspend:** Working tree clean. Branch `add-patch-partial-update` is **4 commits ahead of origin** (commits `09ad46a`, `63278f6`, `0fae28c`, `c276b0b` not yet pushed — push is a user decision and was not authorized).
+
+**Last commit (HEAD):** `c276b0b feat(generator): discover UpdateSetPatch + UpdateSetPatchAction call sites`.
+
+**Test status:** All passing — 146 + 201 + 3175 = **3,522 / 0** (3,496 baseline + 26 new across Phases 1–3).
+
+**Immediate next step:** Resume into IMPLEMENT phase 4 — **bind `PatchInfo` from `EntityInfo` in `CallSiteBinder`**. Plan/handoff describe the change: in `CallSiteBinder.cs` (~line 184), add a branch parallel to the existing `UpdateInfo` build — when `raw.Kind` is `UpdateSetPatch` or `UpdateSetPatchAction`, populate `BoundCallSite.PatchInfo` via `PatchInfo.FromEntityInfo(entry.Entity, dialect, isLambdaForm: raw.Kind == UpdateSetPatchAction)`. Add binder tests asserting `PatchInfo.Columns.Count` matches expected updatable count and that Identity / Computed columns are excluded.
+
+**No WIP commit needed** — working tree was clean at suspend.
+
+**Unrecorded context:** None. All design decisions for Phases 1–3 are recorded in `## Decisions` (incl. the mid-Phase-3 DIM-vs-extension pivot, the `WriteColumnInfo` rename, and the Phase 7 binder-shape lock-in). Plan and handoff are current. Phase-4 open question carry-over: none — the column model is settled (`WriteColumnInfo`), the lambda/value discrimination is settled (covered by `IsPatchType` / `IsPatchActionDelegateType` in Phase 3), and `PatchInfo.FromEntityInfo` already exists.
 
 ## Session Log
 | # | Phase Start | Phase End | Summary |
 |---|------------|-----------|---------|
 | 1 | 2026-05-22 INTAKE | 2026-05-22 PLAN (approved, suspended before IMPLEMENT) | Bootstrapped from in-session discussion. Worktree created. Baseline tests green (3,496/0). All design decisions recorded. plan.md written with 10 phases (originally 11, phases 5–6 combined per user). Approved by user; suspended for next session. |
-| 2 | 2026-05-22 IMPLEMENT (resume) | — | Resumed from suspend. Recreated 10 IMPLEMENT phase tasks. WIP commit `3432ac2` will be amended on first real commit in Phase 1 to drop the `[WIP]` marker. |
+| 2 | 2026-05-22 IMPLEMENT (resume) | 2026-05-22 IMPLEMENT (suspended after Phase 3) | Resumed from suspend. Completed Phases 1–3 of 10. Phase 1 (IR foundations) + a follow-on refactor renaming `InsertColumnInfo` → `WriteColumnInfo`. Phase 2 (Patch struct emission) — mid-phase fix to use `ColumnInfo.IsValueType` instead of name-heuristic for non-nullable-reference detection (custom-mapped value types like `Money` broke otherwise). Phase 3 (call-site discovery) — initial DIM attempt broke existing `Set(T entity)` interceptor binding; pivoted to extension methods (`UpdateBuilderPatchExtensions` + `IPatchFor<T>` marker), discovery classifies via `methodSymbol.Parameters[0].Type`. WIP commit `3432ac2` left as predecessor (FINALIZE squash-merge will collapse it). Tests: 3,522/0. Branch +4 unpushed commits at suspend. |
