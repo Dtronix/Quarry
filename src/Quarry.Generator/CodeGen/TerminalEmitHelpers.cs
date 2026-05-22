@@ -665,7 +665,7 @@ internal static class TerminalEmitHelpers
     /// Consolidates the GetColumnValueExpression call arguments (9 parameters) into a single source of truth.
     /// </summary>
     internal static (string ValueExpr, bool NeedsIntType) GetInsertColumnBinding(
-        InsertColumnInfo col, string entityVar, bool convertBool)
+        WriteColumnInfo col, string entityVar, bool convertBool)
     {
         var needsIntType = col.IsEnum || (col.IsBoolean && convertBool);
         var valueExpr = InterceptorCodeGenerator.GetColumnValueExpression(

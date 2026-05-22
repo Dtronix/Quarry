@@ -85,7 +85,7 @@ Reuses `Quarry.Internal.ParameterNames.AtP` / `Dollar` for runtime parameter-nam
 **Goal:** Set up the data structures and runtime delegate without any behavior change.
 
 **Changes:**
-- Add `internal sealed class PatchInfo : IEquatable<PatchInfo>` in `src/Quarry.Generator/Models/PatchInfo.cs`. Fields: `EntityTypeName`, `IsLambdaForm` (bool), `Columns` (list of `PatchColumnInfo` — same shape as `InsertColumnInfo`).
+- Add `internal sealed class PatchInfo : IEquatable<PatchInfo>` in `src/Quarry.Generator/Models/PatchInfo.cs`. Fields: `EntityTypeName`, `IsLambdaForm` (bool), `Columns` (list of `WriteColumnInfo` — the shared write-side column model, renamed from `InsertColumnInfo` once it was no longer insert-specific).
 - Add `InterceptorKind.UpdateSetPatch` and `InterceptorKind.UpdateSetPatchAction` enum values to `src/Quarry.Generator/Models/InterceptorKind.cs`.
 - Add `BoundCallSite.PatchInfo` property (nullable) alongside existing `UpdateInfo` / `InsertInfo`.
 - Add `public delegate void PatchAction<T>(ref T patch);` in `src/Quarry/PatchAction.cs` (new file in runtime).
@@ -152,7 +152,7 @@ Reuses `Quarry.Internal.ParameterNames.AtP` / `Dollar` for runtime parameter-nam
 **Changes:**
 - In `CallSiteBinder.cs` ~line 184–196 (where `UpdateInfo` is built today), add a parallel branch for the new kinds:
   - If `raw.Kind` is `UpdateSetPatch` or `UpdateSetPatchAction`, build a `PatchInfo` from `entry.Entity` listing all updatable columns. Pass `IsLambdaForm = (raw.Kind == UpdateSetPatchAction)`.
-- `PatchInfo` reuses `InsertColumnInfo` shape (or a near-clone `PatchColumnInfo`). If reusable: store `IReadOnlyList<InsertColumnInfo>` on PatchInfo; if not, create `PatchColumnInfo` mirroring the relevant subset.
+- `PatchInfo.Columns` is already `IReadOnlyList<WriteColumnInfo>` (shape decided in Phase 1). Phase 4 just populates it from `EntityInfo` via `PatchInfo.FromEntityInfo`.
 
 **Tests:**
 - New: binder tests that, given a sample schema, assert `PatchInfo.Columns.Count` matches the expected updatable count and that Identity/Computed are excluded.

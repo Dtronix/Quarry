@@ -8,7 +8,7 @@ namespace Quarry.Generators.Models;
 /// Patch (partial update) column metadata for the runtime-assembled SET clause.
 /// Attached to a <see cref="IR.BoundCallSite"/> when the call site is a
 /// <c>Set(Entity.Patch)</c> or <c>Set(PatchAction&lt;Entity.Patch&gt;)</c> overload.
-/// Mirrors the <see cref="InsertColumnInfo"/> shape for the column list — the per-column
+/// Mirrors the <see cref="WriteColumnInfo"/> shape for the column list — the per-column
 /// metadata Phase 7's runtime binder needs (FK <c>.Id</c> extraction, enum cast,
 /// custom mapper, sensitive redaction) is identical between insert and patch.
 /// </summary>
@@ -18,7 +18,7 @@ internal sealed class PatchInfo : IEquatable<PatchInfo>
     /// Updatable columns on the entity (Identity and Computed columns excluded).
     /// Bit position in the Patch struct's <c>__mask</c> matches the index here.
     /// </summary>
-    public IReadOnlyList<InsertColumnInfo> Columns { get; }
+    public IReadOnlyList<WriteColumnInfo> Columns { get; }
 
     /// <summary>
     /// True when the Patch call site uses the lambda overload
@@ -34,7 +34,7 @@ internal sealed class PatchInfo : IEquatable<PatchInfo>
     /// </summary>
     public string EntityTypeName { get; }
 
-    public PatchInfo(string entityTypeName, bool isLambdaForm, IReadOnlyList<InsertColumnInfo> columns)
+    public PatchInfo(string entityTypeName, bool isLambdaForm, IReadOnlyList<WriteColumnInfo> columns)
     {
         EntityTypeName = entityTypeName;
         IsLambdaForm = isLambdaForm;
@@ -49,14 +49,14 @@ internal sealed class PatchInfo : IEquatable<PatchInfo>
     /// </summary>
     public static PatchInfo FromEntityInfo(EntityInfo entity, SqlDialect dialect, bool isLambdaForm)
     {
-        var columns = new List<InsertColumnInfo>();
+        var columns = new List<WriteColumnInfo>();
 
         foreach (var column in entity.Columns)
         {
             if (column.Modifiers.IsComputed) continue;
             if (column.Modifiers.IsIdentity) continue;
 
-            columns.Add(new InsertColumnInfo(
+            columns.Add(new WriteColumnInfo(
                 propertyName: column.PropertyName,
                 columnName: column.ColumnName,
                 quotedColumnName: FormatColumnName(column.ColumnName, dialect),

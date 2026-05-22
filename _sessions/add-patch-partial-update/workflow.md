@@ -70,6 +70,12 @@ New `PatchInfo` model alongside `InsertInfo`. Tokenized SQL gets a new `SqlSegme
 ### 2026-05-22 — ulong mask, hard cap at 64 updatable columns
 Single `ulong __mask` field on Patch. Entities with >64 updatable columns raise **QRY045** at generation time (first open slot in the QRY030–QRY044 range; QRY045–049 are unallocated). 64 columns is well above realistic schemas; existing Where-conditional cap is 8.
 
+### 2026-05-22 — Rename `InsertColumnInfo` → `WriteColumnInfo`
+Now that the type is referenced by both `InsertInfo` and `PatchInfo` (and likely future batch-update flows), the `Insert` prefix misleads. Renamed in place and pulled into its own `Models/WriteColumnInfo.cs` for clarity. No external consumers (type is `internal`).
+
+### 2026-05-22 — Phase 7 binder shape: per-column static methods
+Generated SET binders take the form `_BindPatch_{Column}(DbCommand, in Patch, int paramIdx)` — one static method per Patch column. The per-chain fragment table holds `(Bit, Prefix, Action<...> Bind)` triples that point at those methods. Mirrors the per-column reader delegate pattern in `ReaderCodeGenerator`; keeps the runtime SET loop body tiny; debuggable into a named method. Locked now so Phase 5/6 fragment-table emission and Phase 2 mask-bit ordering align.
+
 ## Suspend State
 
 (cleared on resume — session 2 active)

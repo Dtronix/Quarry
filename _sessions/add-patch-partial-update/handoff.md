@@ -30,7 +30,8 @@ None — first session.
 - Working tree: clean. Phase 1 commit folded into the prior WIP via amend (message rewritten to drop `[WIP]`).
 - Branch: `add-patch-partial-update` at base `master` (`b758e83 Fix nested int-aggregate projection type resolution (#294) (#298)`).
 - Tests green: 146 + 201 + 3156 = **3,503** (baseline 3,496 + 7 new `PatchInfoTests`).
-- Phase 1 added: `Models/PatchInfo.cs` (reuses `InsertColumnInfo` for column shape, per the open-question lean), `InterceptorKind.UpdateSetPatch` + `InterceptorKind.UpdateSetPatchAction`, `BoundCallSite.PatchInfo` (threaded through `WithRaw` and `WithJoinedEntities`), `src/Quarry/PatchAction.cs` delegate, `DiagnosticDescriptors.PatchColumnLimitExceeded` (QRY045).
+- Phase 1 added: `Models/PatchInfo.cs` (reuses `WriteColumnInfo` for column shape, per the open-question lean), `InterceptorKind.UpdateSetPatch` + `InterceptorKind.UpdateSetPatchAction`, `BoundCallSite.PatchInfo` (threaded through `WithRaw` and `WithJoinedEntities`), `src/Quarry/PatchAction.cs` delegate, `DiagnosticDescriptors.PatchColumnLimitExceeded` (QRY045).
+- Refactor follow-up: `InsertColumnInfo` renamed to `WriteColumnInfo` and moved to its own `Models/WriteColumnInfo.cs` since it is now shared between insert and patch (and future write-side flows). Consumers updated: `InsertInfo`, `PatchInfo`, `TerminalEmitHelpers.GetInsertColumnBinding`.
 
 ## Known Issues / Bugs
 
@@ -52,8 +53,8 @@ None.
 
 ## Open Questions
 
-- Phase 4 / 5 boundary: should `PatchInfo` reuse `InsertColumnInfo` exactly, or have its own `PatchColumnInfo` clone? Lean toward reusing `InsertColumnInfo` since the shape is identical for our purposes (column metadata only). Decide during Phase 1 implementation.
-- Phase 7 fragment binder shape: emit per-column static binder methods (one delegate target per column), OR inline a `switch` on `Bit` inside the assembly loop. Lean toward static methods (matches the per-column reader delegates pattern in `ReaderCodeGenerator`). Decide during Phase 7.
+- (Resolved 2026-05-22) Phase 4/5 column model: reused the existing model and renamed it `WriteColumnInfo` so the name reflects shared use across insert + patch.
+- (Resolved 2026-05-22) Phase 7 binder shape: per-column static binder methods (matches the per-column reader delegates pattern in `ReaderCodeGenerator`).
 
 ## Next Work (Priority Order)
 
