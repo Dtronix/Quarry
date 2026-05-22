@@ -22,8 +22,8 @@ None — first session.
 
 ## Progress
 
-- Phase: IMPLEMENT phase 3 complete. Ready to start phase 4.
-- Phases complete: 3 / 10.
+- Phase: IMPLEMENT phase 4 complete. Ready to start phase 5.
+- Phases complete: 4 / 10.
 
 ## Current State
 
@@ -34,6 +34,7 @@ None — first session.
 - Phase 1 refactor: `InsertColumnInfo` renamed to `WriteColumnInfo` (`Models/WriteColumnInfo.cs`).
 - Phase 2 added: `EntityCodeGenerator.GeneratePatchStruct` + `GeneratePatchProperty` emit a nested `public struct Patch : Quarry.IPatchFor<TEntity>` on every entity with 1–64 updatable columns. Backing-field nullability resolved from `ColumnInfo.IsValueType`. QRY045 reported from `QuarryGenerator` before emission; struct emission self-suppresses for >64 updatable columns.
 - Phase 3 added: `src/Quarry/IPatchFor.cs` marker interface (constrains the Patch Set overloads to the matching entity); `src/Quarry/Query/Modification/UpdateBuilderPatchExtensions.cs` static extension class with four `Set<T, TPatch>` overloads (value form + lambda form, on both `IUpdateBuilder<T>` and `IExecutableUpdateBuilder<T>`); `UsageSiteDiscovery` classifies the four `Set` forms via `methodSymbol.Parameters[0].Type` — `PatchAction<TPatch>` delegate → `UpdateSetPatchAction`, struct implementing `IPatchFor<>` → `UpdateSetPatch`, else falls through to non-generic UpdateSetAction / UpdateSetPoco. Initial attempt put the new overloads as DIMs on the builder interfaces; that broke existing `Set(T entity)` interceptor binding (Roslyn no longer routed the call through the emitted interceptor once the overload set included generic DIMs). Extension methods avoided the issue cleanly.
+- Phase 4 added: `CallSiteBinder.Bind` populates `BoundCallSite.PatchInfo` via `PatchInfo.FromEntityInfo` for `UpdateSetPatch` / `UpdateSetPatchAction` kinds (IsLambdaForm flag tracks the overload). `CallSiteBinderPatchTests` (7 tests) covers: value-form population, lambda-form population, identity+computed exclusion, no-op for UpdateSetPoco / UpdateSetAction, no-throw on unknown entity, dialect quoting from context.
 
 ## Known Issues / Bugs
 

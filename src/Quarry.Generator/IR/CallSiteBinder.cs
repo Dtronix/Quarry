@@ -195,6 +195,20 @@ internal static class CallSiteBinder
             updateInfo = InsertInfo.FromEntityInfo(entry.Entity, dialectConfig.Dialect, propNames);
         }
 
+        // Build PatchInfo for UpdateSetPatch / UpdateSetPatchAction. Both kinds source
+        // the column list from the entity (all updatable columns); IsLambdaForm distinguishes
+        // the value overload from the lambda overload for downstream emission.
+        PatchInfo? patchInfo = null;
+        if ((raw.Kind == InterceptorKind.UpdateSetPatch
+            || raw.Kind == InterceptorKind.UpdateSetPatchAction)
+            && entry != null)
+        {
+            patchInfo = PatchInfo.FromEntityInfo(
+                entry.Entity,
+                dialectConfig.Dialect,
+                isLambdaForm: raw.Kind == InterceptorKind.UpdateSetPatchAction);
+        }
+
         // Resolve joined entity for join sites
         EntityRef? joinedEntity = null;
         IReadOnlyList<string>? joinedEntityTypeNames = null;
@@ -254,7 +268,8 @@ internal static class CallSiteBinder
             joinedEntities: joinedEntities,
             insertInfo: insertInfo,
             updateInfo: updateInfo,
-            rawSqlTypeInfo: rawSqlTypeInfo);
+            rawSqlTypeInfo: rawSqlTypeInfo,
+            patchInfo: patchInfo);
 
         return ImmutableArray.Create(bound);
     }
