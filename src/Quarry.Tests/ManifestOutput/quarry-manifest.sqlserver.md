@@ -2890,6 +2890,30 @@ SELECT [UserId], [UserName] FROM [users] WHERE [IsActive] = 1 ORDER BY (SELECT N
 ### Users().Where(...).Select(...).OrderBy(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT [UserName], (SELECT SUM((SELECT COUNT(*) FROM [order_items] AS [sq1] WHERE [sq1].[OrderId] = [sq0].[OrderId])) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) AS [ItemCount] FROM [users] WHERE [IsActive] = 1 ORDER BY [UserId] ASC
+```
+
+---
+
+### Users().Where(...).Select(...).OrderBy(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [UserName], (SELECT SUM((SELECT COUNT(*) FROM [order_items] AS [sq1] WHERE [sq1].[OrderId] = [sq0].[OrderId])) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) AS [ItemCount], (SELECT SUM([sq0].[Total]) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) AS [OrderTotal] FROM [users] WHERE [IsActive] = 1 ORDER BY [UserId] ASC
+```
+
+---
+
+### Users().Where(...).Select(...).OrderBy(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [UserName], (SELECT SUM((SELECT SUM([sq1].[Quantity]) FROM [order_items] AS [sq1] WHERE [sq1].[OrderId] = [sq0].[OrderId])) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) AS [QuantityTotal] FROM [users] WHERE [IsActive] = 1 ORDER BY [UserId] ASC
+```
+
+---
+
+### Users().Where(...).Select(...).OrderBy(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT [UserName], (SELECT SUM([sq0].[Total]) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) AS [OrderTotal], (SELECT COUNT(*) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) AS [OrderCount] FROM [users] WHERE [IsActive] = 1 ORDER BY [UserId] ASC
 ```
 
@@ -2898,7 +2922,7 @@ SELECT [UserName], (SELECT SUM([sq0].[Total]) FROM [orders] AS [sq0] WHERE [sq0]
 ### Users().Where(...).Select(...).OrderBy(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT [UserName], (SELECT SUM([sq0].[Total]) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) AS [OrderTotal], (SELECT SUM((SELECT SUM([sq1].[LineTotal]) FROM [order_items] AS [sq1] WHERE [sq1].[OrderId] = [sq0].[OrderId])) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) AS [ItemTotal] FROM [users] WHERE [IsActive] = 1 ORDER BY [UserId] ASC
+SELECT [UserName], (SELECT SUM([sq0].[Total]) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) AS [OrderTotal], (SELECT SUM((SELECT SUM((SELECT COUNT(*) FROM [tags] AS [sq2] WHERE [sq2].[OrderItemId] = [sq1].[OrderItemId] AND ([sq2].[TagName] = 'urgent'))) FROM [order_items] AS [sq1] WHERE [sq1].[OrderId] = [sq0].[OrderId])) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) AS [UrgentTagCount] FROM [users] WHERE [IsActive] = 1 ORDER BY [UserId] ASC
 ```
 
 ---
@@ -4989,7 +5013,7 @@ WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 548 |
+| Total discovered | 551 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 94 |
-| Rendered | 454 |
+| Rendered | 457 |
