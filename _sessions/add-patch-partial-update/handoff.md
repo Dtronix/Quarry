@@ -22,17 +22,18 @@ None — first session.
 
 ## Progress
 
-- Phase: IMPLEMENT phase 2 complete. Ready to start phase 3.
-- Phases complete: 2 / 10.
+- Phase: IMPLEMENT phase 3 complete. Ready to start phase 4.
+- Phases complete: 3 / 10.
 
 ## Current State
 
 - Working tree: clean.
 - Branch: `add-patch-partial-update` at base `master` (`b758e83 Fix nested int-aggregate projection type resolution (#294) (#298)`).
-- Tests green: 146 + 201 + 3169 = **3,516** (baseline 3,496 + 7 PatchInfoTests + 13 EntityCodeGeneratorPatchTests).
-- Phase 1 added: `Models/PatchInfo.cs` (reuses `WriteColumnInfo` for column shape), `InterceptorKind.UpdateSetPatch` + `InterceptorKind.UpdateSetPatchAction`, `BoundCallSite.PatchInfo`, `src/Quarry/PatchAction.cs` delegate, `DiagnosticDescriptors.PatchColumnLimitExceeded` (QRY045).
+- Tests green: 146 + 201 + 3175 = **3,522** (baseline 3,496 + 7 PatchInfoTests + 13 EntityCodeGeneratorPatchTests + 6 UsageSiteDiscoveryPatchTests).
+- Phase 1 added: `Models/PatchInfo.cs` (reuses `WriteColumnInfo`), `InterceptorKind.UpdateSetPatch` + `InterceptorKind.UpdateSetPatchAction`, `BoundCallSite.PatchInfo`, `src/Quarry/PatchAction.cs` delegate, `DiagnosticDescriptors.PatchColumnLimitExceeded` (QRY045).
 - Phase 1 refactor: `InsertColumnInfo` renamed to `WriteColumnInfo` (`Models/WriteColumnInfo.cs`).
-- Phase 2 added: `EntityCodeGenerator.GeneratePatchStruct` + `GeneratePatchProperty` emit a nested `public struct Patch` on every entity with 1–64 updatable columns. Backing-field nullability resolved from `ColumnInfo.IsValueType` (authoritative semantic-analysis value), not the `IsReferenceTypeName` name-heuristic — fixes mis-classification of user-defined value-type columns (e.g. custom-mapped `Money`). `EntityCodeGenerator.CountUpdatableColumns` + `PatchColumnLimit = 64` exposed for the caller. QRY045 reported from `QuarryGenerator.GenerateAllSources` before emission; struct emission self-suppresses for >64 updatable columns.
+- Phase 2 added: `EntityCodeGenerator.GeneratePatchStruct` + `GeneratePatchProperty` emit a nested `public struct Patch : Quarry.IPatchFor<TEntity>` on every entity with 1–64 updatable columns. Backing-field nullability resolved from `ColumnInfo.IsValueType`. QRY045 reported from `QuarryGenerator` before emission; struct emission self-suppresses for >64 updatable columns.
+- Phase 3 added: `src/Quarry/IPatchFor.cs` marker interface (constrains the Patch Set overloads to the matching entity); `src/Quarry/Query/Modification/UpdateBuilderPatchExtensions.cs` static extension class with four `Set<T, TPatch>` overloads (value form + lambda form, on both `IUpdateBuilder<T>` and `IExecutableUpdateBuilder<T>`); `UsageSiteDiscovery` classifies the four `Set` forms via `methodSymbol.Parameters[0].Type` — `PatchAction<TPatch>` delegate → `UpdateSetPatchAction`, struct implementing `IPatchFor<>` → `UpdateSetPatch`, else falls through to non-generic UpdateSetAction / UpdateSetPoco. Initial attempt put the new overloads as DIMs on the builder interfaces; that broke existing `Set(T entity)` interceptor binding (Roslyn no longer routed the call through the emitted interceptor once the overload set included generic DIMs). Extension methods avoided the issue cleanly.
 
 ## Known Issues / Bugs
 

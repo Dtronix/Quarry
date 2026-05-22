@@ -123,7 +123,10 @@ internal static class EntityCodeGenerator
         sb.AppendLine("    /// Reading a property that has not been assigned returns the field's default value");
         sb.AppendLine("    /// — Patch instances are intended for write-up assembly, not arbitrary read-back.");
         sb.AppendLine("    /// </remarks>");
-        sb.AppendLine("    public struct Patch");
+        // The IPatchFor<TEntity> marker constrains the partial-update Set
+        // overloads on IUpdateBuilder<T> / IExecutableUpdateBuilder<T> so the
+        // C# compiler rejects cross-entity patches at the call site.
+        sb.AppendLine($"    public struct Patch : Quarry.IPatchFor<{entity.EntityName}>");
         sb.AppendLine("    {");
         sb.AppendLine("        /// <summary>Bitmask of assigned columns; bit position matches the column's order in the entity schema (excluding Identity and Computed).</summary>");
         sb.AppendLine("        internal ulong __mask;");

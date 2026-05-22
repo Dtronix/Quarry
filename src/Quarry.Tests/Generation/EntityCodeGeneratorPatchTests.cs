@@ -25,7 +25,7 @@ public class EntityCodeGeneratorPatchTests
             Col("Name", "string"),
             Col("Email", "string"));
 
-        Assert.That(source, Does.Contain("public struct Patch"));
+        Assert.That(source, Does.Contain("public struct Patch : Quarry.IPatchFor<Widget>"));
         Assert.That(source, Does.Contain("internal ulong __mask;"));
         Assert.That(source, Does.Contain("_Mask_Name = 0x1UL"));
         Assert.That(source, Does.Contain("_Mask_Email = 0x2UL"));

@@ -471,19 +471,36 @@ internal static class UsageSiteDiscovery
         }
 
         if (methodName == "Set" && containingType.Name.Contains("UpdateBuilder")
-            && invocation.ArgumentList.Arguments.Count == 1
-            && !methodSymbol.IsGenericMethod)
+            && invocation.ArgumentList.Arguments.Count == 1)
         {
-            var singleArg = invocation.ArgumentList.Arguments[0].Expression;
-            if (singleArg is LambdaExpressionSyntax)
+            // Inspect the resolved overload's parameter type to discriminate among the
+            // four Set forms — Patch overloads are generic in TPatch with an
+            // IPatchFor<T> constraint, so methodSymbol.IsGenericMethod is true for
+            // them and false for the non-generic UpdateSetPoco / UpdateSetAction
+            // overloads.
+            var paramType = methodSymbol.Parameters.Length > 0 ? methodSymbol.Parameters[0].Type : null;
+            if (IsPatchActionDelegateType(paramType))
             {
-                kind = InterceptorKind.UpdateSetAction;
+                kind = InterceptorKind.UpdateSetPatchAction;
             }
-            else
+            else if (IsPatchType(paramType))
             {
-                kind = InterceptorKind.UpdateSetPoco;
-                initializedPropertyNames = ExtractInitializedPropertyNamesFromSetPoco(invocation);
+                kind = InterceptorKind.UpdateSetPatch;
             }
+            else if (!methodSymbol.IsGenericMethod)
+            {
+                var singleArg = invocation.ArgumentList.Arguments[0].Expression;
+                if (singleArg is LambdaExpressionSyntax)
+                {
+                    kind = InterceptorKind.UpdateSetAction;
+                }
+                else
+                {
+                    kind = InterceptorKind.UpdateSetPoco;
+                    initializedPropertyNames = ExtractInitializedPropertyNamesFromSetPoco(invocation);
+                }
+            }
+            // Other generic Set overloads fall through with kind unchanged.
         }
         if (methodName == "Where" && containingType.Name.Contains("UpdateBuilder"))
         {
@@ -2603,6 +2620,64 @@ internal static class UsageSiteDiscovery
         return false;
     }
 
+
+    /// <summary>
+    /// True when <paramref name="type"/> is the runtime <c>Quarry.PatchAction&lt;TPatch&gt;</c>
+    /// delegate. Used to discriminate <c>Set(PatchAction&lt;...&gt;)</c> overload resolution
+    /// from <c>Set(Action&lt;T&gt;)</c> in the Set classification block.
+    /// </summary>
+    private static bool IsPatchActionDelegateType(ITypeSymbol? type)
+    {
+        if (type is not INamedTypeSymbol named) return false;
+        if (named.Name != "PatchAction") return false;
+        if (named.TypeArguments.Length != 1) return false;
+        var ns = named.ContainingNamespace;
+        return ns != null && !ns.IsGlobalNamespace && ns.Name == "Quarry" && ns.ContainingNamespace?.IsGlobalNamespace == true;
+    }
+
+    /// <summary>
+    /// True when <paramref name="type"/> is a struct that implements
+    /// <c>Quarry.IPatchFor&lt;T&gt;</c> — i.e. a generated <c>Entity.Patch</c> nested
+    /// struct. Covers both the constructed form (e.g. <c>User.Patch</c>) and the
+    /// unconstrained type parameter form (TPatch with an <c>IPatchFor</c>
+    /// constraint) returned by Roslyn for the reduced extension-method symbol.
+    /// </summary>
+    private static bool IsPatchType(ITypeSymbol? type)
+    {
+        if (type is null) return false;
+
+        // Constructed struct case (e.g. User.Patch) — common when discovery is
+        // called on a fully-bound extension-method invocation.
+        if (type is INamedTypeSymbol named && named.IsValueType)
+        {
+            foreach (var iface in named.AllInterfaces)
+            {
+                if (IsIPatchForInterface(iface)) return true;
+            }
+        }
+
+        // Type-parameter case (e.g. TPatch in the un-substituted extension
+        // signature) — kept for robustness across Roslyn symbol projections.
+        if (type is ITypeParameterSymbol tp)
+        {
+            foreach (var constraint in tp.ConstraintTypes)
+            {
+                if (constraint is INamedTypeSymbol nt && IsIPatchForInterface(nt))
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsIPatchForInterface(INamedTypeSymbol candidate)
+    {
+        if (candidate.Name != "IPatchFor") return false;
+        if (candidate.TypeArguments.Length != 1) return false;
+        var ns = candidate.ContainingNamespace;
+        return ns != null && !ns.IsGlobalNamespace && ns.Name == "Quarry"
+            && ns.ContainingNamespace?.IsGlobalNamespace == true;
+    }
 
     /// <summary>
     /// Extracts initialized property names from a Set(entity) call's single argument.

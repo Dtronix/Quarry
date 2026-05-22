@@ -12,7 +12,7 @@ issue: discussion
 pr:
 session: 2
 phases-total: 10
-phases-complete: 2
+phases-complete: 3
 
 ## Problem Statement
 
@@ -75,6 +75,9 @@ Now that the type is referenced by both `InsertInfo` and `PatchInfo` (and likely
 
 ### 2026-05-22 — Phase 7 binder shape: per-column static methods
 Generated SET binders take the form `_BindPatch_{Column}(DbCommand, in Patch, int paramIdx)` — one static method per Patch column. The per-chain fragment table holds `(Bit, Prefix, Action<...> Bind)` triples that point at those methods. Mirrors the per-column reader delegate pattern in `ReaderCodeGenerator`; keeps the runtime SET loop body tiny; debuggable into a named method. Locked now so Phase 5/6 fragment-table emission and Phase 2 mask-bit ordering align.
+
+### 2026-05-22 — Patch Set overloads as extension methods (not DIMs)
+Initially tried adding the new patch overloads as default interface methods (DIMs) alongside the existing `Set(T)` and `Set(Action<T>)` on `IUpdateBuilder<T>` / `IExecutableUpdateBuilder<T>`. With the generic DIMs in place, the existing `Set(T entity)` interceptors stopped binding — Roslyn no longer routed the user's `.Set(new User { ... })` call through the emitted `Set_<id>(this IUpdateBuilder<User>, User entity)` interceptor, even though overload resolution clearly picked the non-generic Set(T) DIM and the interceptor signature matched. Switched to extension methods in a static helper class (`UpdateBuilderPatchExtensions`) — instance-method lookup still picks up the existing DIMs for non-Patch args (interceptor binds fine), and extension lookup finds the Patch overloads when DIMs aren't applicable (User.Patch isn't a User, lambdas with `ref TPatch` parameter aren't `Action<T>`). Same compile-time enforcement via `IPatchFor<T>` constraint; no impact on the existing UpdateSetPoco / UpdateSetAction paths.
 
 ## Suspend State
 
