@@ -22,8 +22,8 @@ None — first session.
 
 ## Progress
 
-- Phase: IMPLEMENT phase 4 complete. Ready to start phase 5.
-- Phases complete: 4 / 10.
+- Phase: IMPLEMENT phase 5 complete. Ready to start phase 6.
+- Phases complete: 5 / 10.
 
 ## Current State
 
@@ -35,6 +35,7 @@ None — first session.
 - Phase 2 added: `EntityCodeGenerator.GeneratePatchStruct` + `GeneratePatchProperty` emit a nested `public struct Patch : Quarry.IPatchFor<TEntity>` on every entity with 1–64 updatable columns. Backing-field nullability resolved from `ColumnInfo.IsValueType`. QRY045 reported from `QuarryGenerator` before emission; struct emission self-suppresses for >64 updatable columns.
 - Phase 3 added: `src/Quarry/IPatchFor.cs` marker interface (constrains the Patch Set overloads to the matching entity); `src/Quarry/Query/Modification/UpdateBuilderPatchExtensions.cs` static extension class with four `Set<T, TPatch>` overloads (value form + lambda form, on both `IUpdateBuilder<T>` and `IExecutableUpdateBuilder<T>`); `UsageSiteDiscovery` classifies the four `Set` forms via `methodSymbol.Parameters[0].Type` — `PatchAction<TPatch>` delegate → `UpdateSetPatchAction`, struct implementing `IPatchFor<>` → `UpdateSetPatch`, else falls through to non-generic UpdateSetAction / UpdateSetPoco. Initial attempt put the new overloads as DIMs on the builder interfaces; that broke existing `Set(T entity)` interceptor binding (Roslyn no longer routed the call through the emitted interceptor once the overload set included generic DIMs). Extension methods avoided the issue cleanly.
 - Phase 4 added: `CallSiteBinder.Bind` populates `BoundCallSite.PatchInfo` via `PatchInfo.FromEntityInfo` for `UpdateSetPatch` / `UpdateSetPatchAction` kinds (IsLambdaForm flag tracks the overload). `CallSiteBinderPatchTests` (7 tests) covers: value-form population, lambda-form population, identity+computed exclusion, no-op for UpdateSetPoco / UpdateSetAction, no-throw on unknown entity, dialect quoting from context.
+- Phase 5 added: new `SqlExprKind.PatchSetPlaceholder` enum value, new `PatchSetPlaceholderExpr : SqlExpr` node (renders as the literal `{__PATCH_SET__}` token in every dialect; exposes `PatchSetPlaceholderExpr.Token` const for the parser). `SqlExprRenderer.RenderExpr` switch-case renders the token verbatim. `ChainAnalyzer` adds a branch parallel to `UpdateSetPoco` for `UpdateSetPatch` / `UpdateSetPatchAction`: emits a single sentinel `SetTerm` carrying an empty `ResolvedColumnExpr` + `PatchSetPlaceholderExpr`, no per-column `QueryParameter` entries (runtime assembler handles them). `SqlAssembler.RenderUpdateSql` detects `activeSetTerms.Count == 1 && activeSetTerms[0].Value is PatchSetPlaceholderExpr` and emits ` {__PATCH_SET__}` instead of ` SET col = @pN, ...` — the runtime emitter writes ` SET ` itself. WHERE param indices remain at 0/$1/@p0 since Patch contributes zero compile-time parameters. `TerminalEmitHelpers` adds `SqlSegmentKind.PatchSet` + `SqlSegment.PatchSet()` factory; `ParseSqlSegments` recognises the `{__PATCH_SET__}` literal (ordinal compare, no regex). `EmitInlineSqlBuilder` is unchanged — Phase 6 adds the runtime SET-assembly case for the new `PatchSet` segment kind.
 
 ## Known Issues / Bugs
 

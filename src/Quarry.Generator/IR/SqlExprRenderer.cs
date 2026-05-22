@@ -169,6 +169,10 @@ internal static class SqlExprRenderer
                 RenderLiteral(literal, config, sb);
                 break;
 
+            case PatchSetPlaceholderExpr:
+                sb.Append(PatchSetPlaceholderExpr.Token);
+                break;
+
             case BinaryOpExpr bin:
                 RenderBinary(bin, config, paramBase, sb, genericParams);
                 break;

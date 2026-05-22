@@ -214,6 +214,28 @@ internal sealed class LiteralExpr : SqlExpr
 }
 
 /// <summary>
+/// Sentinel SET-clause node for <c>Update().Set(Patch)</c> / <c>Set(PatchAction)</c> chains.
+/// Renders as the literal token <c>{__PATCH_SET__}</c> in every dialect — the runtime
+/// emitter recognizes the token and assembles the actual <c>SET col = @pN, ...</c>
+/// fragment from the per-chain fragment table at execute time. Contributes zero
+/// parameters at compile time; <c>__setShift</c> is added to downstream parameter
+/// indices at runtime.
+/// </summary>
+internal sealed class PatchSetPlaceholderExpr : SqlExpr
+{
+    public override SqlExprKind Kind => SqlExprKind.PatchSetPlaceholder;
+
+    public const string Token = "{__PATCH_SET__}";
+
+    public PatchSetPlaceholderExpr()
+        : base(HashCode.Combine(SqlExprKind.PatchSetPlaceholder))
+    {
+    }
+
+    protected override bool DeepEquals(SqlExpr other) => true;
+}
+
+/// <summary>
 /// Binary operation.
 /// </summary>
 internal sealed class BinaryOpExpr : SqlExpr

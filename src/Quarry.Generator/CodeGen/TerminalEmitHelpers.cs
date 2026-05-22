@@ -738,7 +738,7 @@ internal static class TerminalEmitHelpers
 
     // ── SQL Segment Parser ─────────────────────────────────────────
 
-    internal enum SqlSegmentKind { Literal, ScalarParam, CollectionExpand }
+    internal enum SqlSegmentKind { Literal, ScalarParam, CollectionExpand, PatchSet }
 
     internal readonly struct SqlSegment
     {
@@ -756,6 +756,9 @@ internal static class TerminalEmitHelpers
         public static SqlSegment Literal(string text) => new(SqlSegmentKind.Literal, text, -1);
         public static SqlSegment Scalar(int globalIndex) => new(SqlSegmentKind.ScalarParam, null, globalIndex);
         public static SqlSegment Collection(int globalIndex) => new(SqlSegmentKind.CollectionExpand, null, globalIndex);
+        // PatchSet carries no parameter index — the runtime emitter walks the per-chain
+        // fragment table to assemble the SET clause and bind the active columns' parameters.
+        public static SqlSegment PatchSet() => new(SqlSegmentKind.PatchSet, null, -1);
     }
 
     /// <summary>
@@ -770,8 +773,21 @@ internal static class TerminalEmitHelpers
         int i = 0;
         int len = tokenizedSql.Length;
 
+        const string PatchToken = "{__PATCH_SET__}";
+
         while (i < len)
         {
+            // Try patch SET placeholder: {__PATCH_SET__}
+            if (tokenizedSql[i] == '{'
+                && i + PatchToken.Length <= len
+                && string.CompareOrdinal(tokenizedSql, i, PatchToken, 0, PatchToken.Length) == 0)
+            {
+                if (literal.Length > 0) { segments.Add(SqlSegment.Literal(literal.ToString())); literal.Clear(); }
+                segments.Add(SqlSegment.PatchSet());
+                i += PatchToken.Length;
+                continue;
+            }
+
             // Try collection token: {__COL_P(\d+)__}
             if (tokenizedSql[i] == '{' && i + 10 < len && tokenizedSql.Substring(i, 8) == "{__COL_P")
             {

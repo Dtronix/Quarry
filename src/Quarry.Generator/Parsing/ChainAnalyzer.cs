@@ -1171,6 +1171,20 @@ internal static class ChainAnalyzer
                     paramGlobalIndex++;
                 }
             }
+            else if ((kind == InterceptorKind.UpdateSetPatch || kind == InterceptorKind.UpdateSetPatchAction)
+                && site.Bound.PatchInfo != null)
+            {
+                // Patch (UpdateSetPatch / UpdateSetPatchAction): emit a single sentinel SetTerm
+                // carrying a {__PATCH_SET__} placeholder. The active column set is
+                // mask-determined at execute time, so no per-column parameters are added here —
+                // the runtime emitter (Phase 6) walks the per-chain fragment table to build the
+                // SET fragment and bind the active columns' parameters. ClauseBitIndex is passed
+                // through for parity with other SET branches but Patch sites today are always
+                // unconditional (no Set-conditional support yet).
+                var placeholder = new PatchSetPlaceholderExpr();
+                var sentinelCol = new ResolvedColumnExpr(string.Empty);
+                setTerms.Add(new SetTerm(sentinelCol, placeholder, customTypeMappingClass: null, clauseBitIndex));
+            }
             else if (kind == InterceptorKind.Limit)
             {
                 hasLimit = true;
