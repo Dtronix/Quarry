@@ -2222,6 +2222,14 @@ UPDATE [users] SET [UserName] = 'x', [IsActive] = 0 WHERE [UserId] = 1
 
 ---
 
+### Users().Update().Set(...).Where(...).ExecuteNonQueryAsync()
+
+```sql
+UPDATE [users]{__PATCH_SET__} WHERE [UserId] = 1
+```
+
+---
+
 ### Users().Update().Set(...).Where(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -5069,7 +5077,7 @@ WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 561 |
+| Total discovered | 565 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 98 |
-| Rendered | 463 |
+| Consolidated (deduped) | 101 |
+| Rendered | 464 |

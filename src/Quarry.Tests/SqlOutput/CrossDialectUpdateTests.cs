@@ -1269,17 +1269,29 @@ internal class CrossDialectUpdateTests
     public async Task Update_SetPatch_EmptyMask_Throws()
     {
         // Default-constructed Patch has __mask = 0 — generated terminal must throw
-        // because an empty SET clause is invalid SQL in every dialect.
+        // because an empty SET clause is invalid SQL in every dialect. Exercises
+        // the runtime SQL builder's throw path on all 4 dialects (the throw is
+        // emitted inside per-dialect generated code, so docker-backed verification
+        // catches dialect-specific drift).
         //
-        // The chain is built inside the Assert.ThrowsAsync lambda so we don't
-        // hoist a Prepare()-returned variable into a captured lambda, which
-        // would trigger QRY035 (PreparedQuery escaping the declaring scope).
+        // The chains are built inside the Assert.ThrowsAsync lambdas so we don't
+        // hoist Prepare()-returned variables into captured lambdas, which would
+        // trigger QRY035 (PreparedQuery escaping the declaring scope).
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, _, _, _) = t;
+        var (Lite, Pg, My, Ss) = t;
 
-        var empty = default(User.Patch);
+        var emptyLt = default(User.Patch);
+        var emptyPg = default(Pg.User.Patch);
+        var emptyMy = default(My.User.Patch);
+        var emptySs = default(Ss.User.Patch);
         Assert.ThrowsAsync<System.InvalidOperationException>(
-            async () => await Lite.Users().Update().Set(empty).Where(u => u.UserId == 1).ExecuteNonQueryAsync());
+            async () => await Lite.Users().Update().Set(emptyLt).Where(u => u.UserId == 1).ExecuteNonQueryAsync());
+        Assert.ThrowsAsync<System.InvalidOperationException>(
+            async () => await Pg.Users().Update().Set(emptyPg).Where(u => u.UserId == 1).ExecuteNonQueryAsync());
+        Assert.ThrowsAsync<System.InvalidOperationException>(
+            async () => await My.Users().Update().Set(emptyMy).Where(u => u.UserId == 1).ExecuteNonQueryAsync());
+        Assert.ThrowsAsync<System.InvalidOperationException>(
+            async () => await Ss.Users().Update().Set(emptySs).Where(u => u.UserId == 1).ExecuteNonQueryAsync());
     }
 
     [Test]
@@ -1289,14 +1301,29 @@ internal class CrossDialectUpdateTests
         // constructed Patch. The runtime SET assembler emits a "/* empty Patch — no
         // columns assigned */" comment sentinel so the diagnostic SQL is parseable
         // (and visibly empty) without the execute-path InvalidOperationException.
-        // See review.md #7 / F33.
+        // Per-dialect coverage: each docker dialect has its own quoted-identifier
+        // form for the table + columns, so the sentinel must round-trip through
+        // each dialect's diagnostic builder. See review.md #7 / F33.
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, _, _, _) = t;
+        var (Lite, Pg, My, Ss) = t;
 
-        var empty = default(User.Patch);
-        var diag = Lite.Users().Update().Set(empty).Where(u => u.UserId == 1).Prepare().ToDiagnostics();
+        var emptyLt = default(User.Patch);
+        var emptyPg = default(Pg.User.Patch);
+        var emptyMy = default(My.User.Patch);
+        var emptySs = default(Ss.User.Patch);
 
-        Assert.That(diag.Sql, Is.EqualTo("UPDATE \"users\" SET /* empty Patch — no columns assigned */ WHERE \"UserId\" = 1"));
+        var lt = Lite.Users().Update().Set(emptyLt).Where(u => u.UserId == 1).Prepare();
+        var pg = Pg.Users().Update().Set(emptyPg).Where(u => u.UserId == 1).Prepare();
+        var my = My.Users().Update().Set(emptyMy).Where(u => u.UserId == 1).Prepare();
+        var ss = Ss.Users().Update().Set(emptySs).Where(u => u.UserId == 1).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "UPDATE \"users\" SET /* empty Patch — no columns assigned */ WHERE \"UserId\" = 1",
+            pg:     "UPDATE \"users\" SET /* empty Patch — no columns assigned */ WHERE \"UserId\" = 1",
+            mysql:  "UPDATE `users` SET /* empty Patch — no columns assigned */ WHERE `UserId` = 1",
+            ss:     "UPDATE [users] SET /* empty Patch — no columns assigned */ WHERE [UserId] = 1");
     }
 
     #endregion
@@ -1524,7 +1551,12 @@ internal class CrossDialectUpdateTests
             mysql:  "UPDATE `users` SET `UserName` = ? WHERE `UserId` = 1",
             ss:     "UPDATE [users] SET [UserName] = @p0 WHERE [UserId] = 1");
 
+        // Execute across all 4 dialects to verify the IExecutableUpdateBuilder<T>
+        // extension overload's interceptor binds & runs correctly per dialect.
         Assert.That(await lt.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await pg.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await my.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await ss.ExecuteNonQueryAsync(), Is.EqualTo(1));
     }
 
     #endregion
@@ -1561,32 +1593,67 @@ internal class CrossDialectUpdateTests
     {
         // Lambda mutates the Patch with C# conditionals — exercises that the
         // runtime SET assembler only writes the columns whose property setters
-        // actually fired (mask bits set in the lambda body).
+        // actually fired (mask bits set in the lambda body). Cross-dialect
+        // execution verifies the runtime SQL builder + per-column binder
+        // produce dialect-correct placeholders on each docker DB.
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, _, _, _) = t;
+        var (Lite, Pg, My, Ss) = t;
 
         var updateName = true;
         var updateEmail = false;
 
-        var diag = Lite.Users().Update().Set((ref User.Patch p) =>
+        var lt = Lite.Users().Update().Set((ref User.Patch p) =>
         {
             if (updateName) p.UserName = "OnlyName";
             if (updateEmail) p.Email = "ignored@example.com";
-        }).Where(u => u.UserId == 1).Prepare().ToDiagnostics();
+        }).Where(u => u.UserId == 1).Prepare();
+        var pg = Pg.Users().Update().Set((ref Pg.User.Patch p) =>
+        {
+            if (updateName) p.UserName = "OnlyName";
+            if (updateEmail) p.Email = "ignored@example.com";
+        }).Where(u => u.UserId == 1).Prepare();
+        var my = My.Users().Update().Set((ref My.User.Patch p) =>
+        {
+            if (updateName) p.UserName = "OnlyName";
+            if (updateEmail) p.Email = "ignored@example.com";
+        }).Where(u => u.UserId == 1).Prepare();
+        var ss = Ss.Users().Update().Set((ref Ss.User.Patch p) =>
+        {
+            if (updateName) p.UserName = "OnlyName";
+            if (updateEmail) p.Email = "ignored@example.com";
+        }).Where(u => u.UserId == 1).Prepare();
 
-        // Only UserName bit is set — runtime emits just that column.
-        Assert.That(diag.Sql, Is.EqualTo("UPDATE \"users\" SET \"UserName\" = @p0 WHERE \"UserId\" = 1"));
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0 WHERE \"UserId\" = 1",
+            pg:     "UPDATE \"users\" SET \"UserName\" = $1 WHERE \"UserId\" = 1",
+            mysql:  "UPDATE `users` SET `UserName` = ? WHERE `UserId` = 1",
+            ss:     "UPDATE [users] SET [UserName] = @p0 WHERE [UserId] = 1");
+
+        Assert.That(await lt.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await pg.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await my.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await ss.ExecuteNonQueryAsync(), Is.EqualTo(1));
     }
 
     [Test]
     public async Task Update_SetPatchAction_EmptyLambda_Throws()
     {
-        // A lambda that flips no mask bits leaves __mask = 0 — runtime must throw.
+        // A lambda that flips no mask bits leaves __mask = 0 — runtime must
+        // throw on each dialect. Same loud-fail guarantee as the value-form
+        // empty-mask test, but exercised through the action() invocation path.
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, _, _, _) = t;
+        var (Lite, Pg, My, Ss) = t;
 
         Assert.ThrowsAsync<System.InvalidOperationException>(
             async () => await Lite.Users().Update().Set((ref User.Patch _) => { }).Where(u => u.UserId == 1).ExecuteNonQueryAsync());
+        Assert.ThrowsAsync<System.InvalidOperationException>(
+            async () => await Pg.Users().Update().Set((ref Pg.User.Patch _) => { }).Where(u => u.UserId == 1).ExecuteNonQueryAsync());
+        Assert.ThrowsAsync<System.InvalidOperationException>(
+            async () => await My.Users().Update().Set((ref My.User.Patch _) => { }).Where(u => u.UserId == 1).ExecuteNonQueryAsync());
+        Assert.ThrowsAsync<System.InvalidOperationException>(
+            async () => await Ss.Users().Update().Set((ref Ss.User.Patch _) => { }).Where(u => u.UserId == 1).ExecuteNonQueryAsync());
     }
 
     #endregion

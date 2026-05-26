@@ -227,14 +227,20 @@ internal static class CarrierAnalyzer
             fields.Add(new Models.CarrierField("Entity", entityType + "?", Models.FieldRole.Entity, isReferenceType: true));
         }
 
-        // Patch + PatchMask fields for chains with Set(Patch) or Set(PatchAction) sites
-        var hasSetPatch = assembled.ClauseSites.Any(cs =>
-            cs.Bound.Raw.Kind == InterceptorKind.UpdateSetPatch
-            || cs.Bound.Raw.Kind == InterceptorKind.UpdateSetPatchAction);
-        if (hasSetPatch)
+        // Patch + PatchMask fields for chains with Set(Patch) or Set(PatchAction) sites.
+        // PatchInfo.StructName is the resolved nested-struct name — "Patch" by default,
+        // "_Patch" / "__Patch" / ... when QRY047 has flipped the rename to avoid a
+        // column-name collision. All Patch sites in one chain target the same entity,
+        // so any non-null PatchInfo carries the right name.
+        var patchSite = assembled.ClauseSites.FirstOrDefault(cs =>
+            (cs.Bound.Raw.Kind == InterceptorKind.UpdateSetPatch
+             || cs.Bound.Raw.Kind == InterceptorKind.UpdateSetPatchAction)
+            && cs.Bound.PatchInfo != null);
+        if (patchSite != null)
         {
             var entityType = InterceptorCodeGenerator.GetShortTypeName(assembled.EntityTypeName);
-            fields.Add(new Models.CarrierField("Patch", entityType + ".Patch", Models.FieldRole.Patch, isReferenceType: false));
+            var structName = patchSite.Bound.PatchInfo!.StructName;
+            fields.Add(new Models.CarrierField("Patch", $"{entityType}.{structName}", Models.FieldRole.Patch, isReferenceType: false));
             fields.Add(new Models.CarrierField("PatchMask", "ulong", Models.FieldRole.PatchMask, isReferenceType: false));
         }
 

@@ -2162,6 +2162,14 @@ UPDATE `users` SET `UserName` = 'x', `IsActive` = 0 WHERE `UserId` = 1
 
 ---
 
+### Users().Update().Set(...).Where(...).ExecuteNonQueryAsync()
+
+```sql
+UPDATE `users`{__PATCH_SET__} WHERE `UserId` = 1
+```
+
+---
+
 ### Users().Update().Set(...).Where(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -5045,7 +5053,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 556 |
+| Total discovered | 560 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 95 |
-| Rendered | 461 |
+| Consolidated (deduped) | 98 |
+| Rendered | 462 |

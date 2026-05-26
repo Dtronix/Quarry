@@ -97,6 +97,54 @@ internal static class EntityCodeGenerator
     /// <summary>The hard cap on updatable columns per entity for Patch generation; see QRY045.</summary>
     public const int PatchColumnLimit = 64;
 
+    /// <summary>
+    /// True when the entity has a column named "Patch" — its property would
+    /// collide with the nested struct's default name (CS0102).
+    /// <see cref="ResolvePatchStructName(EntityInfo)"/> auto-renames the struct
+    /// with leading underscores to avoid the collision; this helper drives the
+    /// QRY047 reporting at the generator entry point.
+    /// </summary>
+    public static bool HasPatchNameCollision(EntityInfo entity)
+    {
+        foreach (var c in entity.Columns)
+        {
+            if (c.PropertyName == "Patch") return true;
+        }
+        return false;
+    }
+
+    /// <summary>Hard limit on leading underscores when resolving the nested
+    /// Patch struct name. If the entity has columns named <c>Patch</c>,
+    /// <c>_Patch</c>, <c>__Patch</c>, ... up to this depth, the generator gives
+    /// up and suppresses Patch struct emission entirely.</summary>
+    private const int MaxPatchRenamePrefixUnderscores = 4;
+
+    /// <summary>
+    /// Picks the name for the nested Patch struct on this entity. Default is
+    /// <c>"Patch"</c>; if a column property of that name exists, prepends a
+    /// leading underscore (<c>"_Patch"</c>) and repeats until no collision —
+    /// up to <see cref="MaxPatchRenamePrefixUnderscores"/> underscores. Returns
+    /// null when even the maximally-prefixed name collides; in that case
+    /// callers suppress Patch struct emission and the diagnostic surface
+    /// (QRY047) flags the entity as ineligible.
+    /// </summary>
+    public static string? ResolvePatchStructName(EntityInfo entity)
+    {
+        var columnNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var c in entity.Columns)
+            columnNames.Add(c.PropertyName);
+
+        var name = "Patch";
+        int underscores = 0;
+        while (columnNames.Contains(name))
+        {
+            if (underscores >= MaxPatchRenamePrefixUnderscores) return null;
+            name = "_" + name;
+            underscores++;
+        }
+        return name;
+    }
+
     private static void GeneratePatchStruct(StringBuilder sb, EntityInfo entity)
     {
         var updatable = new List<ColumnInfo>();
@@ -113,6 +161,13 @@ internal static class EntityCodeGenerator
         // Over the ulong mask cap → no Patch struct (QRY045 reported separately).
         if (updatable.Count > PatchColumnLimit) return;
 
+        // Column-name collision check: if the entity has a column named "Patch",
+        // the resolver picks "_Patch" (or more underscores until unique). If even
+        // the maximum-prefixed name collides, the resolver returns null and we
+        // suppress emission entirely. QRY047 surfaces the rename / suppression.
+        var structName = ResolvePatchStructName(entity);
+        if (structName is null) return;
+
         sb.AppendLine();
         sb.AppendLine("    /// <summary>");
         sb.AppendLine($"    /// Mutable partial-update payload for {entity.EntityName}. Property setters track which");
@@ -122,11 +177,13 @@ internal static class EntityCodeGenerator
         sb.AppendLine("    /// <remarks>");
         sb.AppendLine("    /// Reading a property that has not been assigned returns the field's default value");
         sb.AppendLine("    /// — Patch instances are intended for write-up assembly, not arbitrary read-back.");
+        if (structName != "Patch")
+            sb.AppendLine($"    /// <para>This struct is named <c>{structName}</c> instead of <c>Patch</c> because the entity has a column named <c>Patch</c> that would otherwise collide. Reference it as <c>{entity.EntityName}.{structName}</c>; see QRY047.</para>");
         sb.AppendLine("    /// </remarks>");
         // The IPatchFor<TEntity> marker constrains the partial-update Set
         // overloads on IUpdateBuilder<T> / IExecutableUpdateBuilder<T> so the
         // C# compiler rejects cross-entity patches at the call site.
-        sb.AppendLine($"    public struct Patch : Quarry.IPatchFor<{entity.EntityName}>");
+        sb.AppendLine($"    public struct {structName} : Quarry.IPatchFor<{entity.EntityName}>");
         sb.AppendLine("    {");
         sb.AppendLine("        /// <summary>Bitmask of assigned columns; bit position matches the column's order in the entity schema (excluding Identity and Computed).</summary>");
         sb.AppendLine("        internal ulong __mask;");

@@ -214,6 +214,118 @@ public class EntityCodeGeneratorPatchTests
     private static string Render(params ColumnInfo[] columns)
         => EntityCodeGenerator.GenerateEntityClass(MakeEntity(columns), "TestApp");
 
+    [Test]
+    public void Patch_ColumnNamedPatch_RenamesStructTo_Patch()
+    {
+        // An entity with a column literally named "Patch" would otherwise emit
+        // both `public T Patch { get; set; }` and `public struct Patch` at the
+        // same nesting level → CS0102 (duplicate member name). The generator
+        // auto-renames the nested struct to `_Patch` so user code can still
+        // use `new Entity._Patch { ... }`. QRY047 surfaces the rename.
+        var source = Render(
+            Col("Id", "int", identity: true, isValueType: true),
+            Col("Patch", "string"),
+            Col("Email", "string"));
+
+        // Column property is still emitted.
+        Assert.That(source, Does.Contain("public string Patch"));
+        // Default-name struct must NOT be emitted (would collide).
+        Assert.That(source, Does.Not.Contain("public struct Patch"));
+        // Renamed struct IS emitted.
+        Assert.That(source, Does.Contain("public struct _Patch"));
+        Assert.That(source, Does.Contain("_Mask_Patch ="),
+            "Mask constant for the 'Patch' column is still inside the renamed struct");
+        Assert.That(source, Does.Contain("_Mask_Email ="));
+    }
+
+    [Test]
+    public void Patch_ColumnNamedPatchAnd_Patch_RenamesStructTo__Patch()
+    {
+        // Two collisions: a column "Patch" AND a column "_Patch". Resolver
+        // increments underscores until the name is unique.
+        var source = Render(
+            Col("Id", "int", identity: true, isValueType: true),
+            Col("Patch", "string"),
+            Col("_Patch", "string"),
+            Col("Email", "string"));
+
+        Assert.That(source, Does.Not.Contain("public struct Patch"));
+        Assert.That(source, Does.Not.Contain("public struct _Patch"));
+        Assert.That(source, Does.Contain("public struct __Patch"));
+    }
+
+    [Test]
+    public void Patch_RenamedStruct_FlowsThroughGeneratorPipelineWithoutCs9144()
+    {
+        // End-to-end: a schema with a "Patch" column AND user code that uses the
+        // renamed `_Patch` form. The generator must emit an interceptor whose
+        // parameter type uses the resolved struct name so the user's call site
+        // type-checks. Any miswiring (discovery doesn't recognize `_Patch`,
+        // emitter still hardcodes `.Patch`, carrier field type drifts) would
+        // surface as CS9144 in the post-generator compilation diagnostics.
+        var source = @"
+using Quarry;
+using System.Threading.Tasks;
+
+namespace TestApp;
+
+public class CollideSchema : Schema
+{
+    public static string Table => ""collides"";
+    public Key<int> Id => Identity();
+    public Col<string> Patch => Length(100);
+    public Col<string> Email => Length(200);
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class CollideDb : QuarryContext
+{
+    public partial IEntityAccessor<Collide> Collides();
+}
+
+public class Svc
+{
+    private readonly CollideDb _db;
+    public Svc(CollideDb db) { _db = db; }
+    public async Task Run()
+    {
+        var p = new Collide._Patch { Email = ""x@example.com"" };
+        await _db.Collides().Update().Set(p).Where(c => c.Id == 1).ExecuteNonQueryAsync();
+    }
+}";
+        var (diagnostics, _) = RunGenerator(source);
+        var cs9144 = diagnostics.Where(d => d.Id == "CS9144").ToList();
+        Assert.That(cs9144, Is.Empty,
+            "Renamed _Patch must round-trip through discovery and emission without CS9144. Got: " +
+            string.Join("; ", cs9144.Select(d => d.GetMessage())));
+        // QRY047 should fire as a Warning (the rename happened).
+        Assert.That(diagnostics.Any(d => d.Id == "QRY047"), Is.True);
+    }
+
+    [Test]
+    public void Patch_ColumnNamedPatch_RaisesQRY047()
+    {
+        var schema = @"
+using Quarry;
+namespace TestApp;
+
+public class CollideSchema : Schema
+{
+    public static string Table => ""collides"";
+    public Key<int> Id => Identity();
+    public Col<string> Patch => Length(100);
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class CollideDb : QuarryContext
+{
+    public partial IEntityAccessor<Collide> Collides();
+}";
+        var (diagnostics, _) = RunGenerator(schema);
+        Assert.That(diagnostics.Any(d => d.Id == "QRY047"), Is.True,
+            "Expected QRY047 diagnostic for column named 'Patch'. Got: " + string.Join(", ", diagnostics.Select(d => d.Id)));
+    }
+
     private static EntityInfo MakeWideEntity(int updatableCount)
     {
         var cols = new List<ColumnInfo>

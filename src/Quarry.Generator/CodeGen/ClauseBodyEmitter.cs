@@ -583,9 +583,12 @@ internal static class ClauseBodyEmitter
         CarrierPlan? carrier,
         CarrierAssignmentRecorder? recorder = null)
     {
+        // PatchInfo.StructName is "Patch" by default, or "_Patch" / "__Patch" etc.
+        // when a column named "Patch" forces a rename (see QRY047).
+        var structName = site.PatchInfo?.StructName ?? "Patch";
         EmitPatchInterceptor(sb, site, methodName, clauseBit, prebuiltChain, carrier,
             parameterDecl: "patch",
-            parameterType: entityType => $"{entityType}.Patch",
+            parameterType: entityType => $"{entityType}.{structName}",
             bodyAssign: (carrierClass, _) => new[]
             {
                 "__c.Patch = patch;",
@@ -609,9 +612,10 @@ internal static class ClauseBodyEmitter
         CarrierPlan? carrier,
         CarrierAssignmentRecorder? recorder = null)
     {
+        var structName = site.PatchInfo?.StructName ?? "Patch";
         EmitPatchInterceptor(sb, site, methodName, clauseBit, prebuiltChain, carrier,
             parameterDecl: "action",
-            parameterType: entityType => $"Quarry.PatchAction<{entityType}.Patch>",
+            parameterType: entityType => $"Quarry.PatchAction<{entityType}.{structName}>",
             bodyAssign: (carrierClass, _) => new[]
             {
                 "action(ref __c.Patch);",

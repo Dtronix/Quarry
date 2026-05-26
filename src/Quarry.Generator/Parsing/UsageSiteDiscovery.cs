@@ -2683,10 +2683,25 @@ internal static class UsageSiteDiscovery
     {
         return type switch
         {
-            QualifiedNameSyntax q => q.Right.Identifier.Text == "Patch",
-            AliasQualifiedNameSyntax a => a.Name.Identifier.Text == "Patch",
+            QualifiedNameSyntax q => IsPatchOrUnderscoredPatch(q.Right.Identifier.Text),
+            AliasQualifiedNameSyntax a => IsPatchOrUnderscoredPatch(a.Name.Identifier.Text),
             _ => false,
         };
+    }
+
+    /// <summary>
+    /// True when the identifier text is "Patch" or any leading-underscore variant
+    /// ("_Patch", "__Patch", …). Quarry's nested Patch struct auto-renames with
+    /// leading underscores when a column literally named "Patch" would otherwise
+    /// collide (see QRY047); the classifier must accept the renamed forms so
+    /// user code referencing them still routes to UpdateSetPatch.
+    /// </summary>
+    private static bool IsPatchOrUnderscoredPatch(string text)
+    {
+        int i = 0;
+        while (i < text.Length && text[i] == '_') i++;
+        return i < text.Length && string.CompareOrdinal(text, i, "Patch", 0, text.Length - i) == 0
+            && text.Length - i == "Patch".Length;
     }
 
     /// <summary>
@@ -2736,11 +2751,11 @@ internal static class UsageSiteDiscovery
         {
             switch (node)
             {
-                case IdentifierNameSyntax id when id.Identifier.Text == "Patch":
+                case IdentifierNameSyntax id when IsPatchOrUnderscoredPatch(id.Identifier.Text):
                     return true;
-                case MemberAccessExpressionSyntax ma when ma.Name.Identifier.Text == "Patch":
+                case MemberAccessExpressionSyntax ma when IsPatchOrUnderscoredPatch(ma.Name.Identifier.Text):
                     return true;
-                case QualifiedNameSyntax q when q.Right.Identifier.Text == "Patch":
+                case QualifiedNameSyntax q when IsPatchOrUnderscoredPatch(q.Right.Identifier.Text):
                     return true;
             }
         }

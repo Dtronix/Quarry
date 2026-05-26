@@ -1447,13 +1447,20 @@ internal static class CarrierEmitter
         // _BindPatchParams: unrolled per-column if-blocks. Each block creates and
         // configures a DbParameter for the column when its mask bit is set.
         // Mirrors the shape of EmitCarrierInsertTerminal's per-column binding.
+        // The `in {entity}.{structName} __patch` parameter uses the resolved nested-
+        // struct name from PatchInfo (default "Patch"; auto-renamed to "_Patch"+ on
+        // QRY047 collisions). PatchInfo is guaranteed non-null here because the
+        // caller (EmitCarrierClass at line ~369) gates EmitPatchSupport on chains
+        // with FieldRole.Patch carrier fields, which only get populated when a
+        // Patch site with PatchInfo participates in the chain.
         var entityType = InterceptorCodeGenerator.GetShortTypeName(chain.EntityTypeName);
+        var structName = patchInfo.StructName;
         var convertBool = InterceptorCodeGenerator.RequiresBoolToIntConversion(chain.Dialect);
         var dialectLiteral = GetDialectLiteral(chain.Dialect);
 
         sb.AppendLine($"    internal static void _BindPatchParams(");
         sb.AppendLine($"        System.Data.Common.DbCommand __cmd,");
-        sb.AppendLine($"        in {entityType}.Patch __patch,");
+        sb.AppendLine($"        in {entityType}.{structName} __patch,");
         sb.AppendLine($"        ulong __mask,");
         sb.AppendLine($"        int __startIdx,");
         sb.AppendLine($"        long __opId)");

@@ -351,6 +351,22 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                         updatableCount));
                 }
 
+                // Report QRY047 when a column is literally named "Patch" — the
+                // generator's default struct name collides, so the resolver picks
+                // a leading-underscore variant. If all candidates collide the
+                // resolver returns null and Patch struct emission is suppressed
+                // entirely. Keep the diagnostic shape in sync with
+                // EntityCodeGenerator.ResolvePatchStructName.
+                if (EntityCodeGenerator.HasPatchNameCollision(entity))
+                {
+                    var resolvedName = EntityCodeGenerator.ResolvePatchStructName(entity) ?? "";
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        DiagnosticDescriptors.PatchColumnNameCollision,
+                        entity.Location,
+                        entity.EntityName,
+                        resolvedName));
+                }
+
                 var entitySource = EntityCodeGenerator.GenerateEntityClass(entity, contextInfo.Namespace);
                 var entityFileName = $"{contextInfo.Namespace}.{entity.EntityName}.g.cs";
                 context.AddSource(entityFileName, entitySource);

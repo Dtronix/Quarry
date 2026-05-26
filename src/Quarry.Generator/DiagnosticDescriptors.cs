@@ -626,6 +626,33 @@ internal static class DiagnosticDescriptors
                      "Set(new TEntity { ... }) form for entities that exceed the limit.");
 
     /// <summary>
+    /// QRY047: Entity has a column literally named "Patch" — the nested Patch
+    /// struct was renamed to <c>_Patch</c> (or more underscores) to avoid the
+    /// CS0102 collision.
+    /// Severity: Warning
+    /// </summary>
+    /// <remarks>
+    /// The generator's default is <c>public struct Patch</c> nested inside every
+    /// entity. If the entity has a column named <c>Patch</c>, the resolver picks
+    /// <c>_Patch</c> (or more underscores until the name is unique among column
+    /// properties). User code must reference the resolved name —
+    /// <c>new Entity._Patch { ... }</c> for the renamed cases. When even the
+    /// maximum-prefixed name collides, the generator falls back to suppression
+    /// and the diagnostic flags the entity as ineligible for Patch.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor PatchColumnNameCollision = new(
+        id: "QRY047",
+        title: "Entity has a column named 'Patch' — nested struct renamed to avoid collision",
+        messageFormat: "Entity '{0}' has a column named 'Patch' (and possibly underscore variants); the nested struct is renamed to '{1}' to avoid CS0102 collision. Reference partial updates as '{0}.{1}' on this entity. If '{1}' is empty, all candidate names collided and Patch is unavailable for this entity — rename the column to enable it.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "The generated Patch struct is nested inside the entity class. Default name is 'Patch'; " +
+                     "if a column has that name, the generator prepends underscores ('_Patch', '__Patch', ...) " +
+                     "until the name is unique among the entity's column properties. If all prefixed candidates " +
+                     "collide, Patch struct emission is suppressed for the entity.");
+
+    /// <summary>
     /// QRY046: Set(...) argument has an unsupported Patch syntactic shape.
     /// Severity: Warning
     /// </summary>

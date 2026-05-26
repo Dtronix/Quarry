@@ -34,11 +34,20 @@ internal sealed class PatchInfo : IEquatable<PatchInfo>
     /// </summary>
     public string EntityTypeName { get; }
 
-    public PatchInfo(string entityTypeName, bool isLambdaForm, IReadOnlyList<WriteColumnInfo> columns)
+    /// <summary>
+    /// The resolved name of the nested Patch struct on this entity — usually
+    /// <c>"Patch"</c>, but auto-renamed to <c>"_Patch"</c> (or more underscores)
+    /// when the entity has a column literally named "Patch". See
+    /// <c>EntityCodeGenerator.ResolvePatchStructName</c> and QRY047.
+    /// </summary>
+    public string StructName { get; }
+
+    public PatchInfo(string entityTypeName, bool isLambdaForm, IReadOnlyList<WriteColumnInfo> columns, string structName = "Patch")
     {
         EntityTypeName = entityTypeName;
         IsLambdaForm = isLambdaForm;
         Columns = columns;
+        StructName = structName;
     }
 
     /// <summary>
@@ -73,7 +82,15 @@ internal sealed class PatchInfo : IEquatable<PatchInfo>
                 enumUnderlyingType: column.IsEnum ? (column.DbClrType ?? "int") : null));
         }
 
-        return new PatchInfo(entity.EntityName, isLambdaForm, columns);
+        // Resolve the nested Patch struct name. Default "Patch"; auto-renames to
+        // "_Patch" / "__Patch" / ... when a column collides. Null means even the
+        // maximally-prefixed name collides — in that case the Patch struct isn't
+        // emitted at all; falling back to "Patch" here keeps PatchInfo construction
+        // total (downstream consumers never see this codepath because Phase 2's
+        // self-suppression already short-circuited entity-level emission).
+        var structName = Generation.EntityCodeGenerator.ResolvePatchStructName(entity) ?? "Patch";
+
+        return new PatchInfo(entity.EntityName, isLambdaForm, columns, structName);
     }
 
     private static string FormatColumnName(string columnName, SqlDialect dialect)
@@ -92,10 +109,11 @@ internal sealed class PatchInfo : IEquatable<PatchInfo>
         if (ReferenceEquals(this, other)) return true;
         return EntityTypeName == other.EntityTypeName
             && IsLambdaForm == other.IsLambdaForm
+            && StructName == other.StructName
             && EqualityHelpers.SequenceEqual(Columns, other.Columns);
     }
 
     public override bool Equals(object? obj) => Equals(obj as PatchInfo);
 
-    public override int GetHashCode() => HashCode.Combine(EntityTypeName, IsLambdaForm, Columns.Count);
+    public override int GetHashCode() => HashCode.Combine(EntityTypeName, IsLambdaForm, StructName, Columns.Count);
 }
