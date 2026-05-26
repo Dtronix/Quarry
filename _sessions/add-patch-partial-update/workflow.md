@@ -7,7 +7,7 @@ base-branch: master
 
 ## State
 phase: REMEDIATE
-status: active
+status: suspended
 issue: discussion
 pr:
 session: 5
@@ -149,7 +149,34 @@ Initially tried adding the new patch overloads as default interface methods (DIM
 
 ## Suspend State
 
-_No active suspend — session 5 completed Phase 7. Resume at Phase 8._
+**Current phase:** REMEDIATE — mid-batch. All 10 IMPLEMENT phases are complete; REVIEW analysis is done; user decided **C → A, implement all A/B/C now** (final: 18A / 3B / 0C / 44D out of 65 findings). The classification table is at the top of `review.md`. So far this session has addressed 9 of the 21 actionable findings; **12 remain**.
+
+**Last commit:** `af6e118 remediate: REVIEW quick wins + F21/F32 (partial REMEDIATE batch)`. Working tree clean. Tests green: 146 + 201 + 3221 = **3,568 / 0**.
+
+**Findings addressed in this session (REMEDIATE batch 1):**
+- F12 invariant comment, F21/F46 PatchMask gets its own `FieldRole.PatchMask`, F32 FK/enum/mapper tests now `.ExecuteNonQueryAsync()`, F53 `__pi` → `__bp` in binder, F56 doc note on CS0102 collision, F62 IUpdateBuilder DIM-regression comment, F63 sensitive XML doc on generated Patch property.
+
+**Remaining REMEDIATE findings (priority order):**
+
+1. **F7 / F33 / F58 / F60** (Medium · Co/TQ/IB) — Empty-mask `InvalidOperationException` fires in `.ToDiagnostics()`. Real behavior bug — diagnostic-only inspection shouldn't throw. The throw is emitted in `TerminalEmitHelpers.cs:931` (`EmitInlineSqlBuilder` PatchSet case). The inline SQL builder runs from BOTH execute terminals AND `ToDiagnostics`, so a flag is needed. Approach: thread a `bool __throwOnEmpty` local through the chain — execute terminals declare `true`, diagnostic terminals declare `false`. Empty-mask branch with `__throwOnEmpty == false` emits a `__sb.Append(" /* empty Patch — no columns set */");` sentinel. Add tests pinning both behaviors (F33). Note that `Update_SetPatchAction_RuntimeConditional_TogglesColumns` expects expanded SQL from `ToDiagnostics`, so this change must preserve the populated-mask path.
+
+2. **F18 / F26** (Medium · Co/Se) — `_BindPatchParams` skips `ParameterLog` trace logging entirely (and therefore doesn't respect the `IsSensitive` flag plumbed into `PatchInfo.Columns`). Insert binder's pattern is at `CarrierEmitter.cs:990-1005`. Approach: thread `__logger` (currently a local `var __logger = LogsmithOutput.Logger;` at the terminal call site) and `__opId` into `_BindPatchParams` as parameters; inside each active-bit block, emit `if (__logger?.IsEnabled(LogLevel.Trace, ParameterLog.CategoryName) == true) { ... }` with `BoundSensitive` vs `Bound` branch keyed on `col.Modifiers.IsSensitive`. Update the `EmitCarrierCommandBinding` call site at `CarrierEmitter.cs:669` to pass both.
+
+3. **F35** (Medium · TQ) — Add cross-dialect `Update_SetPatch_CollectionExpansionWhere` test exercising `__setShift + __colShift` interaction (e.g., `Lite.Users().Update().Set(patch).Where(u => ids.Contains(u.UserId))` with `ids = new[]{1,2,3}`). Asserts dialect-correct placeholder numbering past the SET params.
+
+4. **F5 / F6** (Low · Co) — Add `UsageSiteDiscoveryPatchTests` for the two fail-soft paths in `IsPatchVariableReference`: (a) `Set(somePatchParameter)` where `somePatchParameter` is a method parameter typed `User.Patch` — should fall through to UpdateSetPoco; (b) sibling-block shadowing where two `var patch = ...` declarators exist in different blocks — should fall through.
+
+5. **F14 / F36** (Low · Co/TQ) — Two `CrossDialectUpdateTests`: (a) conditional Patch site (`if (cond) builder = builder.Set(patch);` — checks the ClauseRole/ClauseBit path for Patch sites with `NestingContext`); (b) multi-mask conditional WHERE + Patch SET (e.g., Patch + `if (filter1) Where(...)` + `if (filter2) Where(...)` exercising the variant-mask × Patch interaction).
+
+6. **F55** (Low · CC) — `ClauseBodyEmitter.EmitUpdateSetPatch` and `EmitUpdateSetPatchAction` (`ClauseBodyEmitter.cs:576-652`) share 90% of their structure. Extract `EmitUpdateSetPatchCore` taking a body-emit delegate or string parameter. Stylistic — pure dedup.
+
+7. **F61** (Low · IB) — Replace CS9144 fallback for out-of-scope Patch syntactic patterns (factory return, ternary over patches, captured PatchAction variable) with a dedicated **QRY046** diagnostic at discovery time. Add the descriptor to `DiagnosticDescriptors.cs`, report it from `UsageSiteDiscovery` when a `Set` site has a single argument whose syntax isn't one of the recognized Patch forms BUT whose argument type semantically resembles a Patch. Substantial — design the trigger condition carefully to avoid false positives.
+
+**Immediate next step on resume:** Start with **F7 / F33 / F58 / F60** (the diagnostic empty-mask bug) — it's the highest-severity remaining item and the rest of the IB findings (F58, F60) collapse into it. Then F18 / F26 (ParameterLog hook). Then the test additions (F35, F5, F6, F14, F36). F55 and F61 last.
+
+**Test baseline at suspend:** 146 + 201 + 3221 = **3,568 / 0**. No new pre-existing failures.
+
+**No WIP commit.** Working tree is clean at the last named commit.
 
 <!-- Historical session-4 suspend state preserved below for traceability. -->
 
