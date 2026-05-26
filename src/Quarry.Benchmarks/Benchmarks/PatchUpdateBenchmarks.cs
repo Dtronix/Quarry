@@ -1,5 +1,6 @@
 using System.Text;
 using BenchmarkDotNet.Attributes;
+using BenchmarkDotNet.Configs;
 using Dapper;
 using Microsoft.EntityFrameworkCore;
 using Quarry.Benchmarks.Context;
@@ -14,8 +15,20 @@ namespace Quarry.Benchmarks.Benchmarks;
 /// <c>Set</c> overload that can express it. Every other library has to build
 /// SQL or expression trees dynamically.
 /// </summary>
+/// <remarks>
+/// Two benchmark categories — <c>OneColumn</c> and <c>AllColumns</c> — each with
+/// their own <c>Raw_*</c> baseline. Comparing <c>Quarry_AllColumns</c> against the
+/// <c>OneColumn</c> baseline would be meaningless (different SQL shapes); the
+/// category split gives one ratio column per scenario.
+/// </remarks>
+[GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByCategory)]
+[CategoriesColumn]
 public class PatchUpdateBenchmarks : BenchmarkBase
 {
+    private const string OneColumnCategory = "OneColumn";
+    private const string AllColumnsCategory = "AllColumns";
+
+
     private EfBenchContext _iterationEfContext = null!;
 
     // Static to work around source generator bug: UnsafeAccessor emits StaticField
@@ -60,7 +73,7 @@ public class PatchUpdateBenchmarks : BenchmarkBase
 
     // --- One column potentially set (only _setName checked) ---
 
-    [Benchmark(Baseline = true)]
+    [Benchmark(Baseline = true), BenchmarkCategory(OneColumnCategory)]
     public async Task<int> Raw_OneColumn()
     {
         if (!_setName) return 0;
@@ -71,7 +84,7 @@ public class PatchUpdateBenchmarks : BenchmarkBase
         return await cmd.ExecuteNonQueryAsync();
     }
 
-    [Benchmark]
+    [Benchmark, BenchmarkCategory(OneColumnCategory)]
     public async Task<int> Dapper_OneColumn()
     {
         if (!_setName) return 0;
@@ -80,7 +93,7 @@ public class PatchUpdateBenchmarks : BenchmarkBase
             new { UserName = NewName, UserId = _targetId });
     }
 
-    [Benchmark]
+    [Benchmark, BenchmarkCategory(OneColumnCategory)]
     public async Task<int> EfCore_OneColumn()
     {
         // EF has no clean runtime-variable SetProperty story without hand-building
@@ -92,7 +105,7 @@ public class PatchUpdateBenchmarks : BenchmarkBase
         return await _iterationEfContext.SaveChangesAsync();
     }
 
-    [Benchmark]
+    [Benchmark, BenchmarkCategory(OneColumnCategory)]
     public async Task<int> Quarry_OneColumn()
     {
         return await QuarryDb.Users()
@@ -105,7 +118,7 @@ public class PatchUpdateBenchmarks : BenchmarkBase
             .ExecuteNonQueryAsync();
     }
 
-    [Benchmark]
+    [Benchmark, BenchmarkCategory(OneColumnCategory)]
     public async Task<int> SqlKata_OneColumn()
     {
         if (!_setName) return 0;
@@ -122,7 +135,7 @@ public class PatchUpdateBenchmarks : BenchmarkBase
 
     // --- All four columns potentially set ---
 
-    [Benchmark]
+    [Benchmark(Baseline = true), BenchmarkCategory(AllColumnsCategory)]
     public async Task<int> Raw_AllColumns()
     {
         var sb = new StringBuilder("UPDATE users SET ");
@@ -160,7 +173,7 @@ public class PatchUpdateBenchmarks : BenchmarkBase
         return await cmd.ExecuteNonQueryAsync();
     }
 
-    [Benchmark]
+    [Benchmark, BenchmarkCategory(AllColumnsCategory)]
     public async Task<int> Dapper_AllColumns()
     {
         var sb = new StringBuilder("UPDATE users SET ");
@@ -197,7 +210,7 @@ public class PatchUpdateBenchmarks : BenchmarkBase
         return await Connection.ExecuteAsync(sb.ToString(), p);
     }
 
-    [Benchmark]
+    [Benchmark, BenchmarkCategory(AllColumnsCategory)]
     public async Task<int> EfCore_AllColumns()
     {
         // Same idiom as EfCore_OneColumn — load-mutate-save, 2 round-trips.
@@ -209,7 +222,7 @@ public class PatchUpdateBenchmarks : BenchmarkBase
         return await _iterationEfContext.SaveChangesAsync();
     }
 
-    [Benchmark]
+    [Benchmark, BenchmarkCategory(AllColumnsCategory)]
     public async Task<int> Quarry_AllColumns()
     {
         return await QuarryDb.Users()
@@ -225,7 +238,7 @@ public class PatchUpdateBenchmarks : BenchmarkBase
             .ExecuteNonQueryAsync();
     }
 
-    [Benchmark]
+    [Benchmark, BenchmarkCategory(AllColumnsCategory)]
     public async Task<int> SqlKata_AllColumns()
     {
         var values = new Dictionary<string, object>();
