@@ -4,7 +4,7 @@ platform: github
 remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 ## State
-phase: REVIEW
+phase: REMEDIATE
 status: active
 issue: discussion
 pr:
@@ -36,3 +36,4 @@ Baseline tests: 53 Patch-relevant tests pass (CrossDialectUpdateTests, PatchInfo
 | 2 | 2026-05-26 DESIGN | 2026-05-26 IMPLEMENT | Verified User.Patch struct emits 5 mask bits, schema matches, EF context shape OK. plan.md written (single phase). User approved plan. |
 | 3 | 2026-05-26 IMPLEMENT | 2026-05-26 IMPLEMENT-done | Wrote PatchUpdateBenchmarks.cs (10 benchmarks). Build clean (0/0). Interceptor file emitted for both Quarry chains. Dry-run smoke test: all 10 ran successfully — Quarry_AllColumns 1.33× baseline vs Dapper 1.76×, SqlKata 2.85×, EF ~25× (load-mutate-save 2-trip cost). 53 Patch tests still pass after new call sites added. |
 | 4 | 2026-05-26 REVIEW | 2026-05-26 REVIEW-fix | User flagged that comparing AllColumns against the OneColumn baseline is meaningless (different scenarios). Added BenchmarkCategory + GroupBenchmarksBy + CategoriesColumn; Raw_OneColumn and Raw_AllColumns each now own their group baseline. Verified by `--job short` run: per-group ratios render. Also confirmed CI auto-capture: workflow filter='*' picks up new file, Quarry_* prefix matches trend-graph filter. |
+| 5 | 2026-05-26 REVIEW-classify | 2026-05-26 REMEDIATE | Classifications applied: 0A/1B/0C/20D. Only B-class item (per-category baselines) already fixed in 46ae9db; all other findings are positive verifications or unreachable edge cases. REMEDIATE is a no-op for code changes; proceeding to rebase and PR. |

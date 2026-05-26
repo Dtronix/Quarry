@@ -4,25 +4,27 @@
 
 | # | Class | Rec | Sev | Section | Finding | Action Taken |
 |---|---|---|---|---|---|---|
-| 1 |   | D | Low | Plan Compliance | All recorded decisions implemented faithfully | — |
-| 2 |   | D | Low | Plan Compliance | Algorithm sketches transcribed without scope creep | — |
-| 3 |   | D | Low | Correctness | IterationCleanup reset matches seed exactly | — |
-| 4 |   | D | Low | Correctness | Quarry mask=0 throws if all flags toggled false (unreachable under GlobalSetup) | — |
-| 5 |   | D | Low | Correctness | Raw/Dapper AllColumns malformed SQL if all flags false (unreachable) | — |
-| 6 |   | D | Low | Correctness | EF FirstAsync + SaveChangesAsync return shapes match peer libraries | — |
-| 7 |   | D | Low | Correctness | Comma-separator dance correct in Raw_AllColumns/Dapper_AllColumns | — |
-| 8 |   | D | Low | Correctness | Parameter naming consistent within each library | — |
-| 9 |   | D | Low | Correctness | IsActive int vs bool binding matches per-library idiom in InsertSingleBenchmarks | — |
-| 10 |   | D | Low | Correctness | Sync IterationCleanup matches UpdateBenchmarks style | — |
-| 11 |   | D | Low | Test Quality | Plan's "no benchmark unit tests" claim verified | — |
-| 12 |   | D | Low | Test Quality | Build + dry-run + existing-Patch-tests verification path adequate | — |
-| 13 |   | D | Low | Codebase Consistency | `Library_Cardinality` naming vs `Library_Scenario` — cosmetic; class name carries scenario | — |
-| 14 |   | D | Low | Codebase Consistency | Using directives trimmed appropriately (no SqliteConnection/Compiler refs) | — |
-| 15 |   | D | Low | Codebase Consistency | Static-field workaround applied uniformly with cross-ref to UpdateBenchmarks | — |
-| 16 |   | D | Low | Codebase Consistency | IterationSetup/Cleanup shape matches UpdateBenchmarks exactly | — |
-| 17 |   | D | Low | Codebase Consistency | Baseline placement on Raw_OneColumn matches repo convention | — |
-| 18 |   | D | Low | Codebase Consistency | Comment density and tone match UpdateBenchmarks | — |
-| 19 |   | D | Low | Integration | Diff purely additive — single source file + two session docs | — |
+| 1 | D | D | Low | Plan Compliance | All recorded decisions implemented faithfully | — |
+| 2 | D | D | Low | Plan Compliance | Algorithm sketches transcribed without scope creep | — |
+| 3 | D | D | Low | Correctness | IterationCleanup reset matches seed exactly | — |
+| 4 | D | D | Low | Correctness | Quarry mask=0 throws if all flags toggled false (unreachable under GlobalSetup) | — |
+| 5 | D | D | Low | Correctness | Raw/Dapper AllColumns malformed SQL if all flags false (unreachable) | — |
+| 6 | D | D | Low | Correctness | EF FirstAsync + SaveChangesAsync return shapes match peer libraries | — |
+| 7 | D | D | Low | Correctness | Comma-separator dance correct in Raw_AllColumns/Dapper_AllColumns | — |
+| 8 | D | D | Low | Correctness | Parameter naming consistent within each library | — |
+| 9 | D | D | Low | Correctness | IsActive int vs bool binding matches per-library idiom in InsertSingleBenchmarks | — |
+| 10 | D | D | Low | Correctness | Sync IterationCleanup matches UpdateBenchmarks style | — |
+| 11 | D | D | Low | Test Quality | Plan's "no benchmark unit tests" claim verified | — |
+| 12 | D | D | Low | Test Quality | Build + dry-run + existing-Patch-tests verification path adequate | — |
+| 13 | D | D | Low | Codebase Consistency | `Library_Cardinality` naming vs `Library_Scenario` — cosmetic; class name carries scenario | — |
+| 14 | D | D | Low | Codebase Consistency | Using directives trimmed appropriately (no SqliteConnection/Compiler refs) | — |
+| 15 | D | D | Low | Codebase Consistency | Static-field workaround applied uniformly with cross-ref to UpdateBenchmarks | — |
+| 16 | D | D | Low | Codebase Consistency | IterationSetup/Cleanup shape matches UpdateBenchmarks exactly | — |
+| 17 | D | D | Low | Codebase Consistency | Baseline placement on Raw_OneColumn matches repo convention | — |
+| 18 | D | D | Low | Codebase Consistency | Comment density and tone match UpdateBenchmarks | — |
+| 19 | D | D | Low | Integration | Diff purely additive — single source file + two session docs | — |
+| 20 | B | B | Medium | Plan Compliance | Plan specified single `[Benchmark(Baseline=true)]` on `Raw_OneColumn`. With two scenarios in one class, `Quarry_AllColumns` got ratio'd against `Raw_OneColumn` — meaningless (different SQL shapes). Plan itself had the gap; agent reviewed code-against-plan faithfully but didn't flag the plan defect. | Fixed in 46ae9db: added `[GroupBenchmarksBy(ByCategory)]` + `[CategoriesColumn]` + `[BenchmarkCategory]` on every method + second `[Benchmark(Baseline=true)]` on `Raw_AllColumns`. Verified per-group ratios via `--job short`. Decision updated in workflow.md. |
+| 21 | D | D | Low | Plan Compliance | Auto-capture verified: `.github/workflows/benchmark.yml` filter='*' picks up new file; trend graph filters to `Quarry_*` prefix which matches both new methods. No additional wiring needed. | Recorded in workflow.md Decisions. |
 
 Single-file additive change (`src/Quarry.Benchmarks/Benchmarks/PatchUpdateBenchmarks.cs`, 244 lines, 10 benchmarks). Reviewed against `plan.md`, the Decisions section of `workflow.md`, sibling benchmarks (`UpdateBenchmarks.cs`, `ConditionalBranchBenchmarks.cs`, `InsertSingleBenchmarks.cs`), supporting infrastructure (`DatabaseSetup.cs`, `EfBenchContext.cs`, `Entities.cs`, `BenchmarkBase.cs`), and the Patch API surface (`UpdateBuilderPatchExtensions.cs`, `docs/articles/modifications.md`).
 
@@ -30,8 +32,10 @@ Single-file additive change (`src/Quarry.Benchmarks/Benchmarks/PatchUpdateBenchm
 
 | Finding | Severity | Why It Matters |
 |---|---|---|
-| Implementation hews to every recorded decision: lambda-only Patch form, two named methods per library (`_OneColumn`/`_AllColumns`), `Raw_OneColumn` as the lone `[Benchmark(Baseline = true)]`, columns restricted to `UserName/Email/IsActive/LastLogin` (no `CreatedAt`), four flags as `private static bool` initialized in `GlobalSetup`, EF idiom as load-mutate-`SaveChangesAsync`, single new file at the planned path. | Low | Verifies no drift between approved design and code that was written. |
+| Implementation hews to every recorded decision: lambda-only Patch form, two named methods per library (`_OneColumn`/`_AllColumns`), columns restricted to `UserName/Email/IsActive/LastLogin` (no `CreatedAt`), four flags as `private static bool` initialized in `GlobalSetup`, EF idiom as load-mutate-`SaveChangesAsync`, single new file at the planned path. | Low | Verifies no drift between approved design and code that was written. |
 | Plan algorithm sketches transcribed faithfully — Raw/Dapper StringBuilder + `first` flag, SqlKata `Dictionary<string, object>`, Quarry `Set((ref User.Patch p) => …)`. No scope creep (no extra benchmarks, no extra cardinalities, no `[Params]` introduction). | Low | Confirms execution stayed inside the scoped phase boundary. |
+| **Plan-level gap (user-caught, fixed):** Original plan specified a single `[Benchmark(Baseline=true)]` on `Raw_OneColumn` as "repo convention." That convention fits single-scenario benchmark classes (every existing file follows it). This file has *two* scenarios in one class, so the single baseline produced meaningless ratios — `Quarry_AllColumns` was being compared against `Raw_OneColumn`, fundamentally different SQL shapes. Fixed in commit 46ae9db with `[GroupBenchmarksBy(ByCategory)]` + `[CategoriesColumn]` + per-method `[BenchmarkCategory]` + a second `Baseline=true` on `Raw_AllColumns`. Verified by `--job short` run: AllColumns group ratios are now interpretable (Quarry_AllColumns at 1.11× time / 0.95× alloc vs Raw_AllColumns). | Medium | Without per-category baselines, the most important number in the file (Patch's allocation efficiency vs hand-rolled raw at AllColumns) was hidden behind a misleading cross-scenario ratio. |
+| **Auto-capture verified (user-asked):** `.github/workflows/benchmark.yml` runs on master after CI, filter `'*'` includes the new file, and the trend-graph publishing step filters to methods matching `Quarry_*` (workflow line 179) — `Quarry_OneColumn` and `Quarry_AllColumns` will both appear in `Dtronix/Quarry-benchmarks` gh-pages trend data after merge. No additional wiring required. | Low | Confirms the new benchmarks feed the historical trend system that tracks Quarry-vs-baseline drift over time. |
 
 ## Correctness
 
