@@ -2459,6 +2459,18 @@ UPDATE "users"{__PATCH_SET__} WHERE "UserId" = 1
 
 ---
 
+### Users().Update().Set(...).Where(...).Prepare().ToDiagnostics()
+
+```sql
+UPDATE "users"{__PATCH_SET__} WHERE "UserId" IN ({__COL_P0__})
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int[]` |
+
+---
+
 ### Users().Update().Set(...).Where(...).Set(...).Prepare().ToDiagnostics() — 2 variants
 
 ```sql
@@ -5245,7 +5257,7 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 595 |
+| Total discovered | 596 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 114 |
-| Rendered | 481 |
+| Rendered | 482 |

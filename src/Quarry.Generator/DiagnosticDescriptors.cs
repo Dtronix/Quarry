@@ -625,6 +625,32 @@ internal static class DiagnosticDescriptors
                      "capping updatable columns per entity at 64. Reduce the column count or use the existing " +
                      "Set(new TEntity { ... }) form for entities that exceed the limit.");
 
+    /// <summary>
+    /// QRY046: Set(...) argument has an unsupported Patch syntactic shape.
+    /// Severity: Warning
+    /// </summary>
+    /// <remarks>
+    /// Patch classification is syntax-driven and supports three forms:
+    /// <c>new X.Patch { ... }</c>, <c>default(X.Patch)</c>, and <c>Set(var)</c>
+    /// where <c>var</c>'s declarator initializer matches one of those shapes.
+    /// Patterns outside that list — factory-method returns, ternary expressions,
+    /// captured PatchAction variables — fall through to the SetPoco interceptor
+    /// and produce CS9144 at the user's call site. QRY046 surfaces the same
+    /// detection earlier in the pipeline with an actionable message.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor PatchUnrecognizedShape = new(
+        id: "QRY046",
+        title: "Set(...) argument is not a recognized Patch construction shape",
+        messageFormat: "Set argument expression is not a recognized Patch construction. Supported shapes: 'new {0}.Patch {{ ... }}', 'default({0}.Patch)', or a local variable initialized to one of these. Refactor the argument to a local variable form.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "The Patch overloads of Set are matched syntactically rather than semantically — the source generator " +
+                     "doesn't see the generated Entity.Patch struct when discovery runs, so out-of-scope syntactic shapes " +
+                     "(factory returns, ternaries over patches, captured PatchAction variables) silently fall through to " +
+                     "SetPoco and produce a CS9144 interceptor-signature error. Refactoring the argument to a local variable " +
+                     "initialized via 'new X.Patch { ... }' or 'default(X.Patch)' lets the classifier route to the correct overload.");
+
     // ─── Navigation join diagnostics (QRY060–QRY065) ──────────────────
 
     /// <summary>

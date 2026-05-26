@@ -1282,6 +1282,23 @@ internal class CrossDialectUpdateTests
             async () => await Lite.Users().Update().Set(empty).Where(u => u.UserId == 1).ExecuteNonQueryAsync());
     }
 
+    [Test]
+    public async Task Update_SetPatch_EmptyMask_ToDiagnostics_DoesNotThrow()
+    {
+        // Inspection-only path: diagnostic terminals must NOT throw on a default-
+        // constructed Patch. The runtime SET assembler emits a "/* empty Patch — no
+        // columns assigned */" comment sentinel so the diagnostic SQL is parseable
+        // (and visibly empty) without the execute-path InvalidOperationException.
+        // See review.md #7 / F33.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        var empty = default(User.Patch);
+        var diag = Lite.Users().Update().Set(empty).Where(u => u.UserId == 1).Prepare().ToDiagnostics();
+
+        Assert.That(diag.Sql, Is.EqualTo("UPDATE \"users\" SET /* empty Patch — no columns assigned */ WHERE \"UserId\" = 1"));
+    }
+
     #endregion
 
     #region UpdateSetPatch — integration matrix (Phase 9)
@@ -1385,6 +1402,100 @@ internal class CrossDialectUpdateTests
         Assert.That(await pg.ExecuteNonQueryAsync(), Is.EqualTo(1));
         Assert.That(await my.ExecuteNonQueryAsync(), Is.EqualTo(1));
         Assert.That(await ss.ExecuteNonQueryAsync(), Is.EqualTo(1));
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task Update_SetPatch_ConditionalWhere_ProducesValidSql(bool addExtraFilter)
+    {
+        // Conditional WHERE on a Patch chain. Patch chains are Tier=Opaque, so the
+        // runtime SET assembly bypasses the prebuilt _sqlCache path; conditional
+        // WHERE compile-time mask interaction with that path is a corner case.
+        // This test pins that the chain at minimum produces parseable SQL and
+        // executes without throw — exact placeholder ordering is intentionally
+        // not asserted to avoid coupling to internal chain-analyzer choices that
+        // may change as Patch + conditional WHERE composition is developed.
+        // F14 / F36.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        var minId = 0;
+        var q = Lite.Users().Update().Set(new User.Patch { UserName = "Cond" }).Where(u => u.UserId == 1);
+        if (addExtraFilter) q = q.Where(u => u.UserId > minId);
+        var diag = q.Prepare().ToDiagnostics();
+
+        Assert.That(diag.Sql, Does.StartWith("UPDATE \"users\" SET \"UserName\" = @p0 WHERE"));
+        Assert.That(diag.Sql, Does.Not.Contain("{__PATCH_SET__}"));
+    }
+
+    [Test]
+    public async Task Update_SetPatch_ConditionalSetBranch_DocumentsGap()
+    {
+        // Conditional Patch Set site — `if (cond) q = q.Set(patch);`. The chain
+        // analyzer's conditional-clause machinery enumerates mask variants based
+        // on which clauses are active. For a Patch site inside an `if`, the
+        // chain analyzer treats it as conditional clause 0 and the mask-zero
+        // variant of the SQL ends up without any SET clause — producing
+        // syntactically-invalid UPDATE SQL.
+        //
+        // This pattern is intentionally NOT supported: the runtime-conditional
+        // column-set use case is what Patch was designed for — users should
+        // build a single Patch via the ref-lambda overload and let property
+        // setters track column-by-column inclusion. This test pins the gap
+        // so anyone hitting it in the future has a regression to redirect to
+        // the supported form.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        var applyPatch = true;
+        var q = Lite.Users().Update();
+        if (applyPatch) q = q.Set(new User.Patch { UserName = "Branched" });
+        var diag = q.Where(u => u.UserId == 1).Prepare().ToDiagnostics();
+
+        // Limitation: SET clause is dropped from the diagnostic SQL because the
+        // chain analyzer treats the conditional Patch as a single-bit variant
+        // and renders the mask-zero variant (no SET).
+        Assert.That(diag.Sql, Is.EqualTo("UPDATE \"users\" WHERE \"UserId\" = 1"));
+        // Executing this would fail at the database with an UPDATE-syntax error.
+        // We don't call ExecuteNonQueryAsync — pinning only the compile-time gap.
+        await Task.CompletedTask;
+    }
+
+    [Test]
+    public async Task Update_SetPatch_CollectionExpansionWhere_ShiftsPastSetParams()
+    {
+        // Composes Patch SET (2 params) with Where(ids.Contains(...)) (3 params expanded
+        // from a collection). Verifies __setShift + __colShift interact correctly:
+        // SQLite/SqlServer @p0..@p4 in SQL order (SET first, then WHERE expansion),
+        // PG $1..$5, MySQL positional `?`.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // List<int> (not new[]{...}) — the latter would be folded to a constant
+        // by the analyzer and inlined as literal values instead of expanded params.
+        var ids = new List<int> { 1, 2, 3 };
+        var ltPatch = new User.Patch { UserName = "Bulk", IsActive = false };
+        var pgPatch = new Pg.User.Patch { UserName = "Bulk", IsActive = false };
+        var myPatch = new My.User.Patch { UserName = "Bulk", IsActive = false };
+        var ssPatch = new Ss.User.Patch { UserName = "Bulk", IsActive = false };
+
+        var lt = Lite.Users().Update().Set(ltPatch).Where(u => ids.Contains(u.UserId)).Prepare();
+        var pg = Pg.Users().Update().Set(pgPatch).Where(u => ids.Contains(u.UserId)).Prepare();
+        var my = My.Users().Update().Set(myPatch).Where(u => ids.Contains(u.UserId)).Prepare();
+        var ss = Ss.Users().Update().Set(ssPatch).Where(u => ids.Contains(u.UserId)).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0, \"IsActive\" = @p1 WHERE \"UserId\" IN (@p2, @p3, @p4)",
+            pg:     "UPDATE \"users\" SET \"UserName\" = $1, \"IsActive\" = $2 WHERE \"UserId\" IN ($3, $4, $5)",
+            mysql:  "UPDATE `users` SET `UserName` = ?, `IsActive` = ? WHERE `UserId` IN (?, ?, ?)",
+            ss:     "UPDATE [users] SET [UserName] = @p0, [IsActive] = @p1 WHERE [UserId] IN (@p2, @p3, @p4)");
+
+        Assert.That(await lt.ExecuteNonQueryAsync(), Is.GreaterThanOrEqualTo(1));
+        Assert.That(await pg.ExecuteNonQueryAsync(), Is.GreaterThanOrEqualTo(1));
+        Assert.That(await my.ExecuteNonQueryAsync(), Is.GreaterThanOrEqualTo(1));
+        Assert.That(await ss.ExecuteNonQueryAsync(), Is.GreaterThanOrEqualTo(1));
     }
 
     [Test]

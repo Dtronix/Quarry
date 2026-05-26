@@ -470,6 +470,7 @@ internal static class UsageSiteDiscovery
             kind = InterceptorKind.DeleteWhere;
         }
 
+        bool patchUnrecognizedShape = false;
         if (methodName == "Set" && containingType.Name.Contains("UpdateBuilder")
             && invocation.ArgumentList.Arguments.Count == 1)
         {
@@ -523,6 +524,22 @@ internal static class UsageSiteDiscovery
                 initializedPropertyNames = ExtractInitializedPropertyNamesFromSetPoco(invocation);
             }
             // Other generic Set overloads on UpdateBuilder fall through with kind unchanged.
+
+            // QRY046 detection: when classification has routed to UpdateSetPoco (or
+            // left the kind as the generic Set fallback) but the argument syntax
+            // contains a `.Patch` member reference, the user likely intended a
+            // Patch overload but used an out-of-scope shape (factory return,
+            // ternary, captured PatchAction variable). Flag the site so the file
+            // emitter can surface QRY046 — more actionable than the eventual
+            // CS9144 the user would otherwise see.
+            //
+            // Heuristic only — no semantic-model dependency, matching the rest of
+            // the Patch classifier's design. False positives are bounded by the
+            // narrow trigger (kind set to UpdateSetPoco/Set AND syntactic ".Patch"
+            // reference in the arg subtree).
+            patchUnrecognizedShape =
+                (kind == InterceptorKind.UpdateSetPoco || kind == InterceptorKind.Set)
+                && ArgumentReferencesPatch(singleArg);
         }
         if (methodName == "Where" && containingType.Name.Contains("UpdateBuilder"))
         {
@@ -903,6 +920,8 @@ internal static class UsageSiteDiscovery
             lambdaInnerSpanStart: setOpLambdaInnerSpanStart);
         if (setOpEnrichmentLambda != null)
             rawSite.EnrichmentLambda = setOpEnrichmentLambda;
+        if (patchUnrecognizedShape)
+            rawSite.PatchUnrecognizedShape = true;
 
         // Set EnrichmentLambda for Select sites with projection parameters (captured variables)
         // so DisplayClassEnricher can resolve the display class for runtime extraction.
@@ -2698,6 +2717,34 @@ internal static class UsageSiteDiscovery
         if (matchingDeclarator is null) return false;
         var init = matchingDeclarator.Initializer?.Value;
         return init is not null && IsPatchConstructionExpression(init);
+    }
+
+    /// <summary>
+    /// QRY046 heuristic: returns true when <paramref name="expr"/>'s syntax tree
+    /// contains a member-access or qualified-name node whose right-hand identifier
+    /// is <c>Patch</c>. Used to flag <c>Set(...)</c> sites whose argument hints at
+    /// Patch usage but doesn't match a supported construction shape. Catches:
+    /// factory returns (<c>SomeStaticClass.Patch.From(...)</c>), ternaries / casts
+    /// over Patch values, and any other expression that touches a <c>.Patch</c>
+    /// member. Does not fire for the supported shapes (<c>new X.Patch{}</c>,
+    /// <c>default(X.Patch)</c>) — those are handled earlier in the classifier and
+    /// never reach this check.
+    /// </summary>
+    private static bool ArgumentReferencesPatch(ExpressionSyntax expr)
+    {
+        foreach (var node in expr.DescendantNodesAndSelf())
+        {
+            switch (node)
+            {
+                case IdentifierNameSyntax id when id.Identifier.Text == "Patch":
+                    return true;
+                case MemberAccessExpressionSyntax ma when ma.Name.Identifier.Text == "Patch":
+                    return true;
+                case QualifiedNameSyntax q when q.Right.Identifier.Text == "Patch":
+                    return true;
+            }
+        }
+        return false;
     }
 
     /// <summary>

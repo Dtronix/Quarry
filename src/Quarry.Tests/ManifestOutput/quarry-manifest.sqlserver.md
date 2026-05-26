@@ -2323,6 +2323,18 @@ UPDATE [users]{__PATCH_SET__} WHERE [UserId] = @p0
 
 ---
 
+### Users().Update().Set(...).Where(...).Prepare().ToDiagnostics()
+
+```sql
+UPDATE [users]{__PATCH_SET__} WHERE [UserId] IN ({__COL_P0__})
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int[]` |
+
+---
+
 ### Users().Update().Set(...).Where(...).Set(...).Prepare().ToDiagnostics() — 2 variants
 
 ```sql
@@ -5057,7 +5069,7 @@ WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 560 |
+| Total discovered | 561 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 98 |
-| Rendered | 462 |
+| Rendered | 463 |

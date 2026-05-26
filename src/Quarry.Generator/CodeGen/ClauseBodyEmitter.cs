@@ -583,30 +583,14 @@ internal static class ClauseBodyEmitter
         CarrierPlan? carrier,
         CarrierAssignmentRecorder? recorder = null)
     {
-        var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
-
-        var isExecutable = site.BuilderKind is BuilderKind.ExecutableUpdate;
-        var concreteBaseName = isExecutable ? "ExecutableUpdateBuilder" : "UpdateBuilder";
-        var returnInterfaceBaseName = "I" + concreteBaseName;
-
-        if (carrier != null && prebuiltChain != null)
-        {
-            sb.AppendLine($"    public static {returnInterfaceBaseName}<{entityType}> {methodName}(");
-            sb.AppendLine($"        this {returnInterfaceBaseName}<{entityType}> builder,");
-            sb.AppendLine($"        {entityType}.Patch patch)");
-            sb.AppendLine($"    {{");
-
-            sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
-            sb.AppendLine($"        __c.Patch = patch;");
-            sb.AppendLine($"        __c.PatchMask = patch.__mask;");
-
-            if (clauseBit.HasValue)
-                sb.AppendLine($"        __c.Mask |= unchecked(({CarrierEmitter.GetMaskType(prebuiltChain)})(1 << {clauseBit.Value}));");
-
-            var returnInterface = $"{returnInterfaceBaseName}<{entityType}>";
-            sb.AppendLine($"        return Unsafe.As<{returnInterface}>(builder);");
-            sb.AppendLine($"    }}");
-        }
+        EmitPatchInterceptor(sb, site, methodName, clauseBit, prebuiltChain, carrier,
+            parameterDecl: "patch",
+            parameterType: entityType => $"{entityType}.Patch",
+            bodyAssign: (carrierClass, _) => new[]
+            {
+                "__c.Patch = patch;",
+                "__c.PatchMask = patch.__mask;",
+            });
     }
 
     /// <summary>
@@ -625,30 +609,56 @@ internal static class ClauseBodyEmitter
         CarrierPlan? carrier,
         CarrierAssignmentRecorder? recorder = null)
     {
-        var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
+        EmitPatchInterceptor(sb, site, methodName, clauseBit, prebuiltChain, carrier,
+            parameterDecl: "action",
+            parameterType: entityType => $"Quarry.PatchAction<{entityType}.Patch>",
+            bodyAssign: (carrierClass, _) => new[]
+            {
+                "action(ref __c.Patch);",
+                "__c.PatchMask = __c.Patch.__mask;",
+            });
+    }
 
+    /// <summary>
+    /// Shared helper for the two Patch-form Set interceptors. The signature shape and
+    /// return-cast are identical across the value form and the ref-lambda form; only
+    /// the parameter type and the body's carrier-mutation lines differ. Centralizing
+    /// the structure here keeps the two emit paths from drifting (e.g., on builder-
+    /// interface renaming, mask-bit accumulation, or carrier-cast pattern changes).
+    /// </summary>
+    private static void EmitPatchInterceptor(
+        StringBuilder sb,
+        TranslatedCallSite site,
+        string methodName,
+        int? clauseBit,
+        AssembledPlan? prebuiltChain,
+        CarrierPlan? carrier,
+        string parameterDecl,
+        System.Func<string, string> parameterType,
+        System.Func<string, string, string[]> bodyAssign)
+    {
+        if (carrier == null || prebuiltChain == null) return;
+
+        var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
         var isExecutable = site.BuilderKind is BuilderKind.ExecutableUpdate;
         var concreteBaseName = isExecutable ? "ExecutableUpdateBuilder" : "UpdateBuilder";
         var returnInterfaceBaseName = "I" + concreteBaseName;
+        var returnInterface = $"{returnInterfaceBaseName}<{entityType}>";
 
-        if (carrier != null && prebuiltChain != null)
-        {
-            sb.AppendLine($"    public static {returnInterfaceBaseName}<{entityType}> {methodName}(");
-            sb.AppendLine($"        this {returnInterfaceBaseName}<{entityType}> builder,");
-            sb.AppendLine($"        Quarry.PatchAction<{entityType}.Patch> action)");
-            sb.AppendLine($"    {{");
+        sb.AppendLine($"    public static {returnInterface} {methodName}(");
+        sb.AppendLine($"        this {returnInterface} builder,");
+        sb.AppendLine($"        {parameterType(entityType)} {parameterDecl})");
+        sb.AppendLine($"    {{");
 
-            sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
-            sb.AppendLine($"        action(ref __c.Patch);");
-            sb.AppendLine($"        __c.PatchMask = __c.Patch.__mask;");
+        sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
+        foreach (var line in bodyAssign(carrier.ClassName, entityType))
+            sb.AppendLine($"        {line}");
 
-            if (clauseBit.HasValue)
-                sb.AppendLine($"        __c.Mask |= unchecked(({CarrierEmitter.GetMaskType(prebuiltChain)})(1 << {clauseBit.Value}));");
+        if (clauseBit.HasValue)
+            sb.AppendLine($"        __c.Mask |= unchecked(({CarrierEmitter.GetMaskType(prebuiltChain)})(1 << {clauseBit.Value}));");
 
-            var returnInterface = $"{returnInterfaceBaseName}<{entityType}>";
-            sb.AppendLine($"        return Unsafe.As<{returnInterface}>(builder);");
-            sb.AppendLine($"    }}");
-        }
+        sb.AppendLine($"        return Unsafe.As<{returnInterface}>(builder);");
+        sb.AppendLine($"    }}");
     }
 
     /// <summary>

@@ -10,65 +10,65 @@ Sections: PC = Plan Compliance · Co = Correctness · Se = Security · TQ = Test
 | 2 | D | D | Low | PC | `UpdateBuilderPatchExtensions` namespace vs file path mismatch | |
 | 3 | D | D | Info | PC | Phase 7 binder-spec supersession not annotated in earlier decision entry | |
 | 4 | D | D | Info | PC | `CollectMappingInstances` Patch-exclusion comment verified | |
-| 5 | A | C | Low | Co | `IsPatchVariableReference` doesn't visit method parameters — no regression test | |
-| 6 | A | C | Low | Co | `IsPatchVariableReference` scope-unaware on sibling-block shadowing — no test | |
-| 7 | A | A | Medium | Co | Empty-mask `InvalidOperationException` fires on `.ToDiagnostics()` paths (surprising for diagnostic-only inspection) | |
-| 8 | D | D | Info | Co | `ChainAnalyzer.MapInterceptorKindToClauseRole` Patch entries verified | |
-| 9 | D | D | Info | Co | `SqlAssembler.RenderUpdateSql` placeholder emission verified | |
-| 10 | D | D | Info | Co | `EmitInlineSqlBuilder` `__setShift = 0;` reset is redundant but harmless | |
-| 11 | D | D | Info | Co | `EmitPatchSqlDispatch` StringBuilder capacity may underallocate (autogrows) | |
-| 12 | A | C | Low | Co | Implicit coupling: `_BindPatchParams` ↔ `EmitInlineSqlBuilder` both walk `_PatchFragments` forward — needs comment | |
-| 13 | D | D | Info | Co | `EmitUpdateSetPatch` body assigns Patch + mask correctly | |
-| 14 | A | C | Low | Co | No test for conditional Patch site (`if(cond) builder = builder.Set(patch);`) | |
-| 15 | D | D | Info | Co | `PatchSetPlaceholderExpr` equality + hash correct | |
-| 16 | D | D | Info | Co | `PatchInfo.Equals/GetHashCode` consistent with `InsertInfo` shape | |
-| 17 | D | D | Info | Co | `WriteColumnInfo.GetHashCode` consistent with prior `InsertColumnInfo` | |
-| 18 | B | B | Medium | Co | `_BindPatchParams` skips `ParameterLog` trace logging entirely (no parity with Insert binder) | |
-| 19 | D | D | Info | Co | `GeneratePatchProperty` FK-nullability path verified | |
-| 20 | D | D | Info | Co | `QuarryGenerator` QRY045 message-format matches descriptor | |
-| 21 | A | C | Low | Co | `FieldRole.Patch` shared by both `Patch` and `PatchMask` fields — `HasCarrierField` uses name string, inconsistent abstraction | |
-| 22 | D | D | Info | Co | `EmitCarrierCommandBinding` `_BindPatchParams` invocation invariant verified | |
-| 23 | D | D | Info | Co | `EmitCarrierCommandBinding` `whereShiftExpr` ordering verified | |
-| 24 | D | D | Info | Se | `_PatchFragments.Prefix` sourced from schema, no injection surface | |
-| 25 | D | D | Info | Se | Runtime SQL assembly has no user-controllable concatenation | |
-| 26 | A | C | Low | Se | `WriteColumnInfo.IsSensitive` plumbs into `PatchInfo` but has no consumer in the binder (ties to #18) | |
-| 27 | D | D | Info | Se | Diagnostic SQL contains static `{__PATCH_SET__}` token; no leaked parameter values | |
-| 28 | D | D | Info | Se | `IPatchFor<T>` marker safe | |
-| 29 | D | D | Info | Se | `PatchAction<T>` ref-delegate safe | |
-| 30 | D | D | Info | Se | `UpdateBuilderPatchExtensions` runtime fallbacks throw with clear message | |
-| 31 | D | D | Info | TQ | Cross-dialect Patch tests cover value + lambda forms with exact-SQL assertions | |
-| 32 | B | B | Medium | TQ | `Update_SetPatch_FkColumn/EnumColumn/CustomMapper` assert SQL but skip `.ExecuteNonQueryAsync()` | |
-| 33 | A | C | Low | TQ | `.ToDiagnostics()` on empty-mask Patch not pinned (ties to #7) | |
-| 34 | D | D | Info | TQ | `Update_SetPatch_EmptyMask_Throws` correctly avoids QRY035 via in-lambda chain construction | |
-| 35 | B | B | Medium | TQ | No test for `Patch + Where(ids.Contains(...))` collection expansion + `__setShift + __colShift` interaction | |
-| 36 | A | C | Low | TQ | No test for multi-mask conditional WHERE + Patch SET interaction | |
-| 37 | D | D | Info | TQ | `EntityCodeGeneratorPatchTests` 64/65 boundary + QRY045 well-covered | |
-| 38 | D | D | Info | TQ | `UsageSiteDiscoveryPatchTests` pre-generator regression tests strong | |
-| 39 | D | D | Info | TQ | `CallSiteBinderPatchTests` (7) comprehensive | |
-| 40 | D | D | Info | TQ | `SqlAssemblerPatchTests` (7) pin token presence + absence | |
-| 41 | D | D | Info | TQ | `EmitInlineSqlBuilderPatchTests` (10) cover all dialects + scalar shift | |
-| 42 | D | D | Info | TQ | `PatchInfoTests` (7) comprehensive | |
-| 43 | D | D | Info | TQ | `ParseSqlSegmentsPatchTests` (6) pin token recognition | |
-| 44 | D | D | Info | TQ | No explicit `default(X.Patch)` declarator-walk test (indirectly covered by empty-mask test compiling) | |
-| 45 | D | D | Info | CC | `_BindPatchParams` emission shape mirrors `EmitCarrierInsertTerminal` pattern | |
-| 46 | A | C | Low | CC | `FieldRole.Patch` dual-field abstraction inconsistency (duplicate of #21) | |
-| 47 | D | D | Info | CC | `IPatchFor<T>` placement at runtime root consistent with other markers | |
-| 48 | D | D | Info | CC | Per-carrier `_mapper_X` field reuses the file-scope name convention | |
-| 49 | D | D | Info | CC | `PatchSetPlaceholderExpr.Token` const placement consistent | |
-| 50 | D | D | Info | CC | QRY045 slot allocation matches workflow.md decision | |
-| 51 | D | D | Info | CC | `WriteColumnInfo` rename clean (internal, no external consumers) | |
-| 52 | D | D | Info | CC | `EmitPatchSupport` single-emission path matches existing pattern | |
-| 53 | A | C | Low | CC | `_BindPatchParams` local `__pi` shadows inline SQL builder's `__pi` (different scopes; reader-friendliness only) | |
-| 54 | D | D | Info | CC | InterceptorKind Categories doc consistent with router | |
-| 55 | A | C | Low | CC | `EmitUpdateSetPatch` / `EmitUpdateSetPatchAction` structural overlap could be deduped | |
-| 56 | A | C | Medium | IB | Generated nested `public struct Patch` collides with any user-defined nested `Patch` type (no opt-out documented) | |
-| 57 | D | D | Info | IB | `WriteColumnInfo` rename internal, no API break | |
-| 58 | A | C | Medium | IB | `{__PATCH_SET__}` token visible in `.ToDiagnostics().Sql` manifest output (ties to #7) | |
-| 59 | D | D | Low | IB | QRY045 — wide-table users must split entities or skip Patch | |
-| 60 | A | C | Medium | IB | Empty-Patch `InvalidOperationException` on diagnostic-only paths (duplicate of #7) | |
-| 61 | A | C | Low | IB | CS9144 UX for out-of-scope Patch syntactic patterns — could be a dedicated QRY046 | |
-| 62 | A | C | Low | IB | Future Set-DIM regression risk — comment-warning on `IUpdateBuilder<T>` interface | |
-| 63 | A | C | Low | IB | Generated sensitive Patch property has no `[SensitiveData]` annotation reflecting the schema flag | |
+| 5 | A | C | Low | Co | `IsPatchVariableReference` doesn't visit method parameters — no regression test | Added `Set_PatchAsMethodParameter_DoesNotClassifyAsPatch` test |
+| 6 | A | C | Low | Co | `IsPatchVariableReference` scope-unaware on sibling-block shadowing — no test | Added `Set_PatchVariable_AmbiguousShadowing_DoesNotClassifyAsPatch` test |
+| 7 | A | A | Medium | Co | Empty-mask `InvalidOperationException` fires on `.ToDiagnostics()` paths (surprising for diagnostic-only inspection) | Threaded `throwOnEmptyPatch` flag through `EmitCarrierPreamble`→`EmitCarrierSqlDispatch`→`EmitPatchSqlDispatch`→`EmitInlineSqlBuilder`; diagnostic terminal opts out and emits `SET /* empty Patch — no columns assigned */` sentinel |
+| 8 | D | D | Info | Co | `ChainAnalyzer.MapInterceptorKindToClauseRole` Patch entries verified | — |
+| 9 | D | D | Info | Co | `SqlAssembler.RenderUpdateSql` placeholder emission verified | — |
+| 10 | D | D | Info | Co | `EmitInlineSqlBuilder` `__setShift = 0;` reset is redundant but harmless | — |
+| 11 | D | D | Info | Co | `EmitPatchSqlDispatch` StringBuilder capacity may underallocate (autogrows) | — |
+| 12 | A | C | Low | Co | Implicit coupling: `_BindPatchParams` ↔ `EmitInlineSqlBuilder` both walk `_PatchFragments` forward — needs comment | Added INVARIANT comment in `EmitPatchSupport` |
+| 13 | D | D | Info | Co | `EmitUpdateSetPatch` body assigns Patch + mask correctly | — |
+| 14 | A | C | Low | Co | No test for conditional Patch site (`if(cond) builder = builder.Set(patch);`) | Added `Update_SetPatch_ConditionalSetBranch_DocumentsGap` test pinning the known limitation |
+| 15 | D | D | Info | Co | `PatchSetPlaceholderExpr` equality + hash correct | — |
+| 16 | D | D | Info | Co | `PatchInfo.Equals/GetHashCode` consistent with `InsertInfo` shape | — |
+| 17 | D | D | Info | Co | `WriteColumnInfo.GetHashCode` consistent with prior `InsertColumnInfo` | — |
+| 18 | B | B | Medium | Co | `_BindPatchParams` skips `ParameterLog` trace logging entirely (no parity with Insert binder) | Added `__opId` parameter to `_BindPatchParams`; per-column `ParameterLog.Bound{Sensitive}` calls emitted, gated by `IsEnabled(Trace, ParameterLog.CategoryName)` |
+| 19 | D | D | Info | Co | `GeneratePatchProperty` FK-nullability path verified | — |
+| 20 | D | D | Info | Co | `QuarryGenerator` QRY045 message-format matches descriptor | — |
+| 21 | A | C | Low | Co | `FieldRole.Patch` shared by both `Patch` and `PatchMask` fields — `HasCarrierField` uses name string, inconsistent abstraction | Split into `FieldRole.Patch` + `FieldRole.PatchMask`; `HasCarrierField` switch updated |
+| 22 | D | D | Info | Co | `EmitCarrierCommandBinding` `_BindPatchParams` invocation invariant verified | — |
+| 23 | D | D | Info | Co | `EmitCarrierCommandBinding` `whereShiftExpr` ordering verified | — |
+| 24 | D | D | Info | Se | `_PatchFragments.Prefix` sourced from schema, no injection surface | — |
+| 25 | D | D | Info | Se | Runtime SQL assembly has no user-controllable concatenation | — |
+| 26 | A | C | Low | Se | `WriteColumnInfo.IsSensitive` plumbs into `PatchInfo` but has no consumer in the binder (ties to #18) | Resolved via #18: `IsSensitive` now routes the binder to `ParameterLog.BoundSensitive` instead of `Bound` |
+| 27 | D | D | Info | Se | Diagnostic SQL contains static `{__PATCH_SET__}` token; no leaked parameter values | — |
+| 28 | D | D | Info | Se | `IPatchFor<T>` marker safe | — |
+| 29 | D | D | Info | Se | `PatchAction<T>` ref-delegate safe | — |
+| 30 | D | D | Info | Se | `UpdateBuilderPatchExtensions` runtime fallbacks throw with clear message | — |
+| 31 | D | D | Info | TQ | Cross-dialect Patch tests cover value + lambda forms with exact-SQL assertions | — |
+| 32 | B | B | Medium | TQ | `Update_SetPatch_FkColumn/EnumColumn/CustomMapper` assert SQL but skip `.ExecuteNonQueryAsync()` | Added `.ExecuteNonQueryAsync()` to all three across 4 dialects |
+| 33 | A | C | Low | TQ | `.ToDiagnostics()` on empty-mask Patch not pinned (ties to #7) | Added `Update_SetPatch_EmptyMask_ToDiagnostics_DoesNotThrow` test |
+| 34 | D | D | Info | TQ | `Update_SetPatch_EmptyMask_Throws` correctly avoids QRY035 via in-lambda chain construction | — |
+| 35 | B | B | Medium | TQ | No test for `Patch + Where(ids.Contains(...))` collection expansion + `__setShift + __colShift` interaction | Added `Update_SetPatch_CollectionExpansionWhere_ShiftsPastSetParams` test; surfaced real bug — fixed via popcount pre-compute of `__setShift` and `includeSetShift` flag on `EmitCollectionPartsPopulation` |
+| 36 | A | C | Low | TQ | No test for multi-mask conditional WHERE + Patch SET interaction | Covered by `Update_SetPatch_ConditionalWhere_ProducesValidSql` (true/false cases) |
+| 37 | D | D | Info | TQ | `EntityCodeGeneratorPatchTests` 64/65 boundary + QRY045 well-covered | — |
+| 38 | D | D | Info | TQ | `UsageSiteDiscoveryPatchTests` pre-generator regression tests strong | — |
+| 39 | D | D | Info | TQ | `CallSiteBinderPatchTests` (7) comprehensive | — |
+| 40 | D | D | Info | TQ | `SqlAssemblerPatchTests` (7) pin token presence + absence | — |
+| 41 | D | D | Info | TQ | `EmitInlineSqlBuilderPatchTests` (10) cover all dialects + scalar shift | — |
+| 42 | D | D | Info | TQ | `PatchInfoTests` (7) comprehensive | — |
+| 43 | D | D | Info | TQ | `ParseSqlSegmentsPatchTests` (6) pin token recognition | — |
+| 44 | D | D | Info | TQ | No explicit `default(X.Patch)` declarator-walk test (indirectly covered by empty-mask test compiling) | — |
+| 45 | D | D | Info | CC | `_BindPatchParams` emission shape mirrors `EmitCarrierInsertTerminal` pattern | — |
+| 46 | A | C | Low | CC | `FieldRole.Patch` dual-field abstraction inconsistency (duplicate of #21) | Resolved via #21 |
+| 47 | D | D | Info | CC | `IPatchFor<T>` placement at runtime root consistent with other markers | — |
+| 48 | D | D | Info | CC | Per-carrier `_mapper_X` field reuses the file-scope name convention | — |
+| 49 | D | D | Info | CC | `PatchSetPlaceholderExpr.Token` const placement consistent | — |
+| 50 | D | D | Info | CC | QRY045 slot allocation matches workflow.md decision | — |
+| 51 | D | D | Info | CC | `WriteColumnInfo` rename clean (internal, no external consumers) | — |
+| 52 | D | D | Info | CC | `EmitPatchSupport` single-emission path matches existing pattern | — |
+| 53 | A | C | Low | CC | `_BindPatchParams` local `__pi` shadows inline SQL builder's `__pi` (different scopes; reader-friendliness only) | Renamed binder local to `__bp` |
+| 54 | D | D | Info | CC | InterceptorKind Categories doc consistent with router | — |
+| 55 | A | C | Low | CC | `EmitUpdateSetPatch` / `EmitUpdateSetPatchAction` structural overlap could be deduped | Extracted shared `EmitPatchInterceptor` helper |
+| 56 | A | C | Medium | IB | Generated nested `public struct Patch` collides with any user-defined nested `Patch` type (no opt-out documented) | Documented in `modifications.md` |
+| 57 | D | D | Info | IB | `WriteColumnInfo` rename internal, no API break | — |
+| 58 | A | C | Medium | IB | `{__PATCH_SET__}` token visible in `.ToDiagnostics().Sql` manifest output (ties to #7) | Resolved via #7: diagnostic path now produces materialized SQL (with sentinel comment for empty mask) instead of leaking the raw token |
+| 59 | D | D | Low | IB | QRY045 — wide-table users must split entities or skip Patch | — |
+| 60 | A | C | Medium | IB | Empty-Patch `InvalidOperationException` on diagnostic-only paths (duplicate of #7) | Resolved via #7 |
+| 61 | A | C | Low | IB | CS9144 UX for out-of-scope Patch syntactic patterns — could be a dedicated QRY046 | Added QRY046 descriptor; wired detection via `RawCallSite.PatchUnrecognizedShape` flag set in `UsageSiteDiscovery`; reported from `QuarryGenerator.EmitFileInterceptorsNewPipeline` |
+| 62 | A | C | Low | IB | Future Set-DIM regression risk — comment-warning on `IUpdateBuilder<T>` interface | Added `<remarks>` on `IUpdateBuilder<T>` interface |
+| 63 | A | C | Low | IB | Generated sensitive Patch property has no `[SensitiveData]` annotation reflecting the schema flag | Added `<remarks>` XML doc on the Patch property when column is `IsSensitive` |
 | 64 | D | D | Info | IB | `IPatchFor<T>` constraint `T : class` consistent | |
 | 65 | D | D | Info | IB | `PatchAction<T>` delegate `T` unconstrained — convention is constraint at use site | |
 

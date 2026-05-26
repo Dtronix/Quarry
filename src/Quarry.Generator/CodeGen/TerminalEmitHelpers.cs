@@ -874,7 +874,8 @@ internal static class TerminalEmitHelpers
         List<SqlSegment> segments,
         SqlDialect dialect,
         IReadOnlyList<(int GlobalIndex, int CollectionOrdinal)> collections,
-        string patchFragmentsRef = "__patchFragments")
+        string patchFragmentsRef = "__patchFragments",
+        bool throwOnEmptyPatch = true)
     {
         var esc = InterceptorCodeGenerator.EscapeStringLiteral;
 
@@ -925,13 +926,31 @@ internal static class TerminalEmitHelpers
 
                 case SqlSegmentKind.PatchSet:
                 {
-                    // Loud-fail on empty mask: a default-constructed Patch has __mask = 0,
-                    // and an empty SET clause is invalid in every dialect. Throw rather
-                    // than emit broken SQL.
-                    sb.AppendLine($"{indent}if (__c.PatchMask == 0UL)");
-                    sb.AppendLine($"{indent}    throw new System.InvalidOperationException(\"Set received a Patch with no fields assigned.\");");
-                    sb.AppendLine($"{indent}__sb.Append(\" SET \");");
+                    // Empty-mask handling:
+                    //   Execute terminals pass throwOnEmptyPatch=true (the default): a
+                    //   default-constructed Patch has __mask = 0, an empty SET clause is
+                    //   invalid in every dialect, and we'd rather fail loud than execute
+                    //   broken SQL — the throw fires before any SQL is appended.
+                    //   Diagnostic terminals (ToDiagnostics) pass throwOnEmptyPatch=false:
+                    //   inspection of the chain shouldn't throw. The builder emits a
+                    //   commented-out SET sentinel so the diagnostic SQL is parseable but
+                    //   visibly empty, and __setShift stays at 0 so WHERE-side placeholders
+                    //   start at the normal compile-time index.
+                    if (throwOnEmptyPatch)
+                    {
+                        sb.AppendLine($"{indent}if (__c.PatchMask == 0UL)");
+                        sb.AppendLine($"{indent}    throw new System.InvalidOperationException(\"Set received a Patch with no fields assigned.\");");
+                    }
+                    else
+                    {
+                        sb.AppendLine($"{indent}if (__c.PatchMask == 0UL)");
+                        sb.AppendLine($"{indent}{{");
+                        sb.AppendLine($"{indent}    __sb.Append(\" SET /* empty Patch — no columns assigned */\");");
+                        sb.AppendLine($"{indent}}}");
+                        sb.AppendLine($"{indent}else");
+                    }
                     sb.AppendLine($"{indent}{{");
+                    sb.AppendLine($"{indent}    __sb.Append(\" SET \");");
                     sb.AppendLine($"{indent}    bool __firstSet = true;");
                     sb.AppendLine($"{indent}    for (int __pi = 0; __pi < {patchFragmentsRef}.Length; __pi++)");
                     sb.AppendLine($"{indent}    {{");
@@ -970,8 +989,15 @@ internal static class TerminalEmitHelpers
         StringBuilder sb,
         string indent,
         int globalIndex,
-        SqlDialect dialect)
+        SqlDialect dialect,
+        bool includeSetShift = false)
     {
+        // When the chain has a Patch SET, the runtime SET parameters land at
+        // @p0..@p(__setShift-1) BEFORE WHERE-side params. Collection parts must
+        // reflect that shift so their generated placeholder names line up with
+        // the actual bind positions. The plus-zero default keeps the
+        // non-Patch path's code shape unchanged.
+        var setShiftSuffix = includeSetShift ? " + __setShift" : "";
         if (dialect == SqlDialect.MySQL)
         {
             sb.AppendLine($"{indent}__col{globalIndex}Parts = new string[__col{globalIndex}Len];");
@@ -982,13 +1008,13 @@ internal static class TerminalEmitHelpers
         {
             sb.AppendLine($"{indent}__col{globalIndex}Parts = new string[__col{globalIndex}Len];");
             sb.AppendLine($"{indent}for (int __i = 0; __i < __col{globalIndex}Len; __i++)");
-            sb.AppendLine($"{indent}    __col{globalIndex}Parts[__i] = Quarry.Internal.ParameterNames.Dollar({globalIndex} + __colShift + __i);");
+            sb.AppendLine($"{indent}    __col{globalIndex}Parts[__i] = Quarry.Internal.ParameterNames.Dollar({globalIndex} + __colShift + __i{setShiftSuffix});");
         }
         else
         {
             sb.AppendLine($"{indent}__col{globalIndex}Parts = new string[__col{globalIndex}Len];");
             sb.AppendLine($"{indent}for (int __i = 0; __i < __col{globalIndex}Len; __i++)");
-            sb.AppendLine($"{indent}    __col{globalIndex}Parts[__i] = Quarry.Internal.ParameterNames.AtP({globalIndex} + __colShift + __i);");
+            sb.AppendLine($"{indent}    __col{globalIndex}Parts[__i] = Quarry.Internal.ParameterNames.AtP({globalIndex} + __colShift + __i{setShiftSuffix});");
         }
     }
 

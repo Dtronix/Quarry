@@ -7,7 +7,7 @@ base-branch: master
 
 ## State
 phase: REMEDIATE
-status: suspended
+status: active
 issue: discussion
 pr:
 session: 5
@@ -148,6 +148,10 @@ Two `IIncrementalGenerator` instances don't help — they each receive the same 
 Initially tried adding the new patch overloads as default interface methods (DIMs) alongside the existing `Set(T)` and `Set(Action<T>)` on `IUpdateBuilder<T>` / `IExecutableUpdateBuilder<T>`. With the generic DIMs in place, the existing `Set(T entity)` interceptors stopped binding — Roslyn no longer routed the user's `.Set(new User { ... })` call through the emitted `Set_<id>(this IUpdateBuilder<User>, User entity)` interceptor, even though overload resolution clearly picked the non-generic Set(T) DIM and the interceptor signature matched. Switched to extension methods in a static helper class (`UpdateBuilderPatchExtensions`) — instance-method lookup still picks up the existing DIMs for non-Patch args (interceptor binds fine), and extension lookup finds the Patch overloads when DIMs aren't applicable (User.Patch isn't a User, lambdas with `ref TPatch` parameter aren't `Action<T>`). Same compile-time enforcement via `IPatchFor<T>` constraint; no impact on the existing UpdateSetPoco / UpdateSetAction paths.
 
 ## Suspend State
+
+_No active suspend — REMEDIATE complete (21/21 findings actioned). Ready for PR creation._
+
+<!-- Historical mid-REMEDIATE suspend state preserved for traceability. -->
 
 **Current phase:** REMEDIATE — mid-batch. All 10 IMPLEMENT phases are complete; REVIEW analysis is done; user decided **C → A, implement all A/B/C now** (final: 18A / 3B / 0C / 44D out of 65 findings). The classification table is at the top of `review.md`. So far this session has addressed 9 of the 21 actionable findings; **12 remain**.
 

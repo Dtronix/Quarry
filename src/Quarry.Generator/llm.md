@@ -446,6 +446,7 @@ All pipeline models implement `IEquatable<T>` for incremental caching.
 | QRY043 | Error | Row entity type not materializable (no parameterless ctor, init-only property, abstract class, or interface) |
 | QRY044 | Warning | `[QuarryContext]` namespace missing from `<InterceptorsNamespaces>` |
 | QRY045 | Error | Entity has more than 64 updatable columns; cannot generate `Patch` struct (single-`ulong` mask cap) |
+| QRY046 | Warning | `Set(...)` argument is not a recognized Patch construction shape (descriptor reserved; detection wiring is a future enhancement — see workflow.md) |
 | QRY050-055 | Mixed | Migration diagnostics |
 | QRY060 | Error | No FK column for `One<T>` navigation |
 | QRY061 | Error | Ambiguous FK for `One<T>` navigation |

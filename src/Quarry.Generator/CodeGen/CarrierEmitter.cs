@@ -602,7 +602,7 @@ internal static class CarrierEmitter
     /// </summary>
     private static void EmitCarrierPreamble(
         StringBuilder sb, CarrierPlan carrier, AssembledPlan chain,
-        bool emitOpId = true, bool emitCtxLocal = true)
+        bool emitOpId = true, bool emitCtxLocal = true, bool throwOnEmptyPatch = true)
     {
         sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
         if (emitCtxLocal)
@@ -612,7 +612,7 @@ internal static class CarrierEmitter
             sb.AppendLine("        var __logger = LogsmithOutput.Logger;");
             sb.AppendLine("        var __opId = __logger != null ? OpId.Next() : 0;");
         }
-        EmitCarrierSqlDispatch(sb, carrier, chain);
+        EmitCarrierSqlDispatch(sb, carrier, chain, throwOnEmptyPatch);
     }
 
     /// <summary>
@@ -665,8 +665,11 @@ internal static class CarrierEmitter
         // positional dialects — PostgreSQL with Npgsql, MySQL — require bind order to
         // match SQL order). _BindPatchParams advances __pi by one per active bit; after
         // this returns, __setShift (set during inline SQL build) holds the same count.
+        // Logger + opId threaded in so per-column ParameterLog.{Bound,BoundSensitive}
+        // calls fire from inside the binder. Matches the Insert binder's pattern; see
+        // review.md #18 / F18 + F26.
         if (hasPatch)
-            sb.AppendLine($"        {carrier.ClassName}._BindPatchParams(__cmd, in __c.Patch, __c.PatchMask, 0);");
+            sb.AppendLine($"        {carrier.ClassName}._BindPatchParams(__cmd, in __c.Patch, __c.PatchMask, 0, __opId);");
 
         // Compose the shift expression for downstream WHERE-side parameter names. SET
         // shift always leads (SET in SQL precedes WHERE); collection shift is
@@ -1049,7 +1052,11 @@ internal static class CarrierEmitter
         StringBuilder sb, CarrierPlan carrier, AssembledPlan chain,
         string diagnosticKind)
     {
-        EmitCarrierPreamble(sb, carrier, chain, emitOpId: false, emitCtxLocal: false);
+        // throwOnEmptyPatch: false — diagnostic terminals shouldn't throw on a
+        // default-constructed Patch (mask == 0). The runtime SET assembler emits
+        // a "/* empty Patch — no columns assigned */" sentinel comment instead.
+        // See review.md #7.
+        EmitCarrierPreamble(sb, carrier, chain, emitOpId: false, emitCtxLocal: false, throwOnEmptyPatch: false);
         TerminalEmitHelpers.EmitParameterLocals(sb, chain, carrier);
         TerminalEmitHelpers.EmitDiagnosticClauseArray(sb, chain, carrier);
         TerminalEmitHelpers.EmitDiagnosticParameterArray(sb, chain, carrier);
@@ -1126,7 +1133,8 @@ internal static class CarrierEmitter
     /// Emits SQL read from the carrier's static _sql field.
     /// When no collections: direct read. When collections exist: cache check + inline StringBuilder builder.
     /// </summary>
-    private static void EmitCarrierSqlDispatch(StringBuilder sb, CarrierPlan carrier, AssembledPlan chain)
+    private static void EmitCarrierSqlDispatch(StringBuilder sb, CarrierPlan carrier, AssembledPlan chain,
+        bool throwOnEmptyPatch = true)
     {
         var hasCollections = chain.ChainParameters.Any(p => p.IsCollection);
         var hasPatch = carrier.Fields.Any(f => f.Role == FieldRole.Patch);
@@ -1135,10 +1143,11 @@ internal static class CarrierEmitter
         // _sql / _sqlCache fast paths are bypassed. The SQL is always assembled by the
         // inline builder, and `__setShift` (count of active SET params) must remain in
         // scope for the post-build parameter-binding code to shift downstream WHERE
-        // parameter names by it.
+        // parameter names by it. `throwOnEmptyPatch` is forwarded so diagnostic-path
+        // callers can opt out of the empty-mask throw (see #7 in review.md).
         if (hasPatch)
         {
-            EmitPatchSqlDispatch(sb, carrier, chain, hasCollections);
+            EmitPatchSqlDispatch(sb, carrier, chain, hasCollections, throwOnEmptyPatch);
             return;
         }
 
@@ -1283,11 +1292,18 @@ internal static class CarrierEmitter
     /// parameter-binding code that runs after this dispatch.
     /// </summary>
     private static void EmitPatchSqlDispatch(
-        StringBuilder sb, CarrierPlan carrier, AssembledPlan chain, bool hasCollections)
+        StringBuilder sb, CarrierPlan carrier, AssembledPlan chain, bool hasCollections,
+        bool throwOnEmptyPatch = true)
     {
-        // Outer-scope shift variables — accumulated inside the inline builder and
-        // consumed by EmitCarrierCommandBinding to shift WHERE-side parameter names.
-        sb.AppendLine("        int __setShift = 0;");
+        // Outer-scope shift variables — consumed by EmitCarrierCommandBinding to
+        // shift WHERE-side parameter names. __setShift is pre-computed here as the
+        // popcount of the runtime mask so collection-parts population (which runs
+        // BEFORE the inline SQL builder) can offset its placeholder names past the
+        // SET binds. The inline SQL builder resets __setShift to 0 internally and
+        // re-accumulates it via its per-fragment loop; final value is identical
+        // (number of set bits in __c.PatchMask), preserving the downstream-scalar
+        // shift semantics.
+        sb.AppendLine("        int __setShift = System.Numerics.BitOperations.PopCount(__c.PatchMask);");
         sb.AppendLine("        int __colShift = 0;");
 
         // Build ordered list of collection parameters with their ordinals (mirrors the
@@ -1328,7 +1344,10 @@ internal static class CarrierEmitter
                     sb.AppendLine($"        var __col{p.GlobalIndex}Len = __col{p.GlobalIndex}.Count;");
                 }
                 sb.AppendLine($"        string[] __col{p.GlobalIndex}Parts;");
-                TerminalEmitHelpers.EmitCollectionPartsPopulation(sb, "        ", p.GlobalIndex, chain.Dialect);
+                // includeSetShift=true: this call site is inside EmitPatchSqlDispatch,
+                // so the runtime SET binds will occupy @p0..@p(__setShift-1) BEFORE the
+                // collection's WHERE-side params. Part placeholders shift past them.
+                TerminalEmitHelpers.EmitCollectionPartsPopulation(sb, "        ", p.GlobalIndex, chain.Dialect, includeSetShift: true);
                 sb.AppendLine($"        __colShift += __col{p.GlobalIndex}Len - 1;");
             }
             // Reset __colShift to 0 before the inline builder consumes it during SQL
@@ -1346,7 +1365,8 @@ internal static class CarrierEmitter
         var variant = chain.SqlVariants.Values.First();
         var segments = TerminalEmitHelpers.ParseSqlSegments(variant.Sql, chain.Dialect);
         TerminalEmitHelpers.EmitInlineSqlBuilder(sb, "        ", segments, chain.Dialect, collections,
-            patchFragmentsRef: $"{carrier.ClassName}._PatchFragments");
+            patchFragmentsRef: $"{carrier.ClassName}._PatchFragments",
+            throwOnEmptyPatch: throwOnEmptyPatch);
 
         sb.AppendLine("        var sql = __sb.ToString();");
     }
@@ -1435,12 +1455,21 @@ internal static class CarrierEmitter
         sb.AppendLine($"        System.Data.Common.DbCommand __cmd,");
         sb.AppendLine($"        in {entityType}.Patch __patch,");
         sb.AppendLine($"        ulong __mask,");
-        sb.AppendLine($"        int __startIdx)");
+        sb.AppendLine($"        int __startIdx,");
+        sb.AppendLine($"        long __opId)");
         sb.AppendLine($"    {{");
         // __bp = "binder parameter index". Named distinctly from the inline SQL
         // builder's __pi loop counter so a reader scanning generated code sees
         // two different identifiers across the two iterations of _PatchFragments.
         sb.AppendLine($"        int __bp = __startIdx;");
+        // Trace logging is gated once per binder invocation; the captured bool
+        // avoids re-checking IsEnabled on every active column. The logger is
+        // re-read locally rather than threaded through as a parameter to avoid
+        // referencing the Logsmith ILogger type in the static method signature
+        // (which would require a using or fully-qualified name in the carrier's
+        // namespace context).
+        sb.AppendLine($"        var __logger = LogsmithOutput.Logger;");
+        sb.AppendLine($"        bool __traceParams = __logger?.IsEnabled(LogLevel.Trace, ParameterLog.CategoryName) == true;");
 
         for (int i = 0; i < patchInfo.Columns.Count; i++)
         {
@@ -1464,6 +1493,17 @@ internal static class CarrierEmitter
                 sb.AppendLine($"            ({mappingField} as Quarry.IDialectAwareTypeMapping)?.ConfigureParameter({dialectLiteral}, __pP);");
             }
             sb.AppendLine($"            __cmd.Parameters.Add(__pP);");
+            // ParameterLog parity with the Insert binder. Sensitive columns route to
+            // BoundSensitive (which only records that a binding occurred, no value);
+            // non-sensitive columns log the value's ToString(). The check on
+            // __traceParams keeps the binder allocation-free when tracing is off.
+            sb.AppendLine($"            if (__traceParams)");
+            sb.AppendLine($"            {{");
+            if (col.IsSensitive)
+                sb.AppendLine($"                ParameterLog.BoundSensitive(__opId, __bp);");
+            else
+                sb.AppendLine($"                ParameterLog.Bound(__opId, __bp, __pP.Value?.ToString() ?? \"null\");");
+            sb.AppendLine($"            }}");
             sb.AppendLine($"            __bp++;");
             sb.AppendLine($"        }}");
         }

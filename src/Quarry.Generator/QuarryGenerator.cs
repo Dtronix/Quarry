@@ -730,6 +730,26 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             }
         }
 
+        // Report QRY046 warning for Set sites flagged with PatchUnrecognizedShape
+        // — the user's argument syntactically referenced a `.Patch` member but
+        // didn't match a recognized Patch construction shape, so it fell through
+        // to UpdateSetPoco classification. Surface this at compile time with an
+        // actionable message before the user hits CS9144.
+        foreach (var site in group.Sites)
+        {
+            if (!site.Bound.Raw.PatchUnrecognizedShape) continue;
+            var entityType = site.Bound.Raw.EntityTypeName ?? "T";
+            // Strip namespace from "Namespace.Entity" → just "Entity" for the message.
+            var lastDot = entityType.LastIndexOf('.');
+            if (lastDot >= 0) entityType = entityType.Substring(lastDot + 1);
+            spc.ReportDiagnostic(Diagnostic.Create(
+                DiagnosticDescriptors.PatchUnrecognizedShape,
+                Location.Create(site.FilePath, site.Bound.Raw.Location.Span, new Microsoft.CodeAnalysis.Text.LinePositionSpan(
+                    new Microsoft.CodeAnalysis.Text.LinePosition(site.Line - 1, site.Column - 1),
+                    new Microsoft.CodeAnalysis.Text.LinePosition(site.Line - 1, site.Column - 1))),
+                entityType));
+        }
+
         try
         {
             var emitter = new CodeGen.FileEmitter(

@@ -161,7 +161,10 @@ public class EmitInlineSqlBuilderPatchTests
         var collections = System.Array.Empty<(int, int)>();
 
         var sb = new StringBuilder();
-        method.Invoke(null, new object[] { sb, "        ", segList, dialect, collections, patchFragmentsRef });
+        // Pass throwOnEmptyPatch=true explicitly — matches the default for execute
+        // terminals. Diagnostic-path coverage is exercised end-to-end in
+        // CrossDialectUpdateTests; per-segment unit tests stay on the throw path.
+        method.Invoke(null, new object[] { sb, "        ", segList, dialect, collections, patchFragmentsRef, true });
         return sb.ToString();
     }
 
