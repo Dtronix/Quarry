@@ -602,6 +602,82 @@ internal static class DiagnosticDescriptors
                      "Positional records lack a parameterless constructor, and init-only properties cannot be assigned from " +
                      "generated code outside an object initializer.");
 
+    // ─── Patch (partial update) diagnostics (QRY045) ──────────────────
+
+    /// <summary>
+    /// QRY045: Entity has too many updatable columns for a Patch struct.
+    /// Severity: Error
+    /// </summary>
+    /// <remarks>
+    /// The generated Patch struct tracks assignments via a single <c>ulong __mask</c> field,
+    /// giving 64 bits — one per updatable (non-Identity, non-Computed) column. Entities that
+    /// exceed this cap cannot be patched until the mask is widened. Existing
+    /// <c>Set(new T { ... })</c> POCO updates are unaffected.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor PatchColumnLimitExceeded = new(
+        id: "QRY045",
+        title: "Entity has too many updatable columns for Patch generation",
+        messageFormat: "Entity '{0}' has {1} updatable columns, exceeding the 64-column limit for Patch generation",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "The generated Patch struct uses a single ulong __mask field to track assigned columns, " +
+                     "capping updatable columns per entity at 64. Reduce the column count or use the existing " +
+                     "Set(new TEntity { ... }) form for entities that exceed the limit.");
+
+    /// <summary>
+    /// QRY047: Entity has a column literally named "Patch" — the nested Patch
+    /// struct was renamed to <c>_Patch</c> (or more underscores) to avoid the
+    /// CS0102 collision.
+    /// Severity: Warning
+    /// </summary>
+    /// <remarks>
+    /// The generator's default is <c>public struct Patch</c> nested inside every
+    /// entity. If the entity has a column named <c>Patch</c>, the resolver picks
+    /// <c>_Patch</c> (or more underscores until the name is unique among column
+    /// properties). User code must reference the resolved name —
+    /// <c>new Entity._Patch { ... }</c> for the renamed cases. When even the
+    /// maximum-prefixed name collides, the generator falls back to suppression
+    /// and the diagnostic flags the entity as ineligible for Patch.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor PatchColumnNameCollision = new(
+        id: "QRY047",
+        title: "Entity has a column named 'Patch' — nested struct renamed to avoid collision",
+        messageFormat: "Entity '{0}' has a column named 'Patch' (and possibly underscore variants); the nested struct is renamed to '{1}' to avoid CS0102 collision. Reference partial updates as '{0}.{1}' on this entity. If '{1}' is empty, all candidate names collided and Patch is unavailable for this entity — rename the column to enable it.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "The generated Patch struct is nested inside the entity class. Default name is 'Patch'; " +
+                     "if a column has that name, the generator prepends underscores ('_Patch', '__Patch', ...) " +
+                     "until the name is unique among the entity's column properties. If all prefixed candidates " +
+                     "collide, Patch struct emission is suppressed for the entity.");
+
+    /// <summary>
+    /// QRY046: Set(...) argument has an unsupported Patch syntactic shape.
+    /// Severity: Warning
+    /// </summary>
+    /// <remarks>
+    /// Patch classification is syntax-driven and supports three forms:
+    /// <c>new X.Patch { ... }</c>, <c>default(X.Patch)</c>, and <c>Set(var)</c>
+    /// where <c>var</c>'s declarator initializer matches one of those shapes.
+    /// Patterns outside that list — factory-method returns, ternary expressions,
+    /// captured PatchAction variables — fall through to the SetPoco interceptor
+    /// and produce CS9144 at the user's call site. QRY046 surfaces the same
+    /// detection earlier in the pipeline with an actionable message.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor PatchUnrecognizedShape = new(
+        id: "QRY046",
+        title: "Set(...) argument is not a recognized Patch construction shape",
+        messageFormat: "Set argument expression is not a recognized Patch construction. Supported shapes: 'new {0}.Patch {{ ... }}', 'default({0}.Patch)', or a local variable initialized to one of these. Refactor the argument to a local variable form.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "The Patch overloads of Set are matched syntactically rather than semantically — the source generator " +
+                     "doesn't see the generated Entity.Patch struct when discovery runs, so out-of-scope syntactic shapes " +
+                     "(factory returns, ternaries over patches, captured PatchAction variables) silently fall through to " +
+                     "SetPoco and produce a CS9144 interceptor-signature error. Refactoring the argument to a local variable " +
+                     "initialized via 'new X.Patch { ... }' or 'default(X.Patch)' lets the classifier route to the correct overload.");
+
     // ─── Navigation join diagnostics (QRY060–QRY065) ──────────────────
 
     /// <summary>

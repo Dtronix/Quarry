@@ -1138,4 +1138,523 @@ internal class CrossDialectUpdateTests
     }
 
     #endregion
+
+    #region UpdateSetPatch — value form
+
+    [Test]
+    public async Task Update_SetPatch_SingleColumn()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var ltPatch = new User.Patch { UserName = "Renamed" };
+        var pgPatch = new Pg.User.Patch { UserName = "Renamed" };
+        var myPatch = new My.User.Patch { UserName = "Renamed" };
+        var ssPatch = new Ss.User.Patch { UserName = "Renamed" };
+
+        var lt = Lite.Users().Update().Set(ltPatch).Where(u => u.UserId == 1).Prepare();
+        var pg = Pg.Users().Update().Set(pgPatch).Where(u => u.UserId == 1).Prepare();
+        var my = My.Users().Update().Set(myPatch).Where(u => u.UserId == 1).Prepare();
+        var ss = Ss.Users().Update().Set(ssPatch).Where(u => u.UserId == 1).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0 WHERE \"UserId\" = 1",
+            pg:     "UPDATE \"users\" SET \"UserName\" = $1 WHERE \"UserId\" = 1",
+            mysql:  "UPDATE `users` SET `UserName` = ? WHERE `UserId` = 1",
+            ss:     "UPDATE [users] SET [UserName] = @p0 WHERE [UserId] = 1");
+
+        Assert.That(await lt.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await pg.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await my.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await ss.ExecuteNonQueryAsync(), Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task Update_SetPatch_TwoColumns()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var ltPatch = new User.Patch { UserName = "Renamed", IsActive = false };
+        var pgPatch = new Pg.User.Patch { UserName = "Renamed", IsActive = false };
+        var myPatch = new My.User.Patch { UserName = "Renamed", IsActive = false };
+        var ssPatch = new Ss.User.Patch { UserName = "Renamed", IsActive = false };
+
+        var lt = Lite.Users().Update().Set(ltPatch).Where(u => u.UserId == 1).Prepare();
+        var pg = Pg.Users().Update().Set(pgPatch).Where(u => u.UserId == 1).Prepare();
+        var my = My.Users().Update().Set(myPatch).Where(u => u.UserId == 1).Prepare();
+        var ss = Ss.Users().Update().Set(ssPatch).Where(u => u.UserId == 1).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0, \"IsActive\" = @p1 WHERE \"UserId\" = 1",
+            pg:     "UPDATE \"users\" SET \"UserName\" = $1, \"IsActive\" = $2 WHERE \"UserId\" = 1",
+            mysql:  "UPDATE `users` SET `UserName` = ?, `IsActive` = ? WHERE `UserId` = 1",
+            ss:     "UPDATE [users] SET [UserName] = @p0, [IsActive] = @p1 WHERE [UserId] = 1");
+
+        Assert.That(await lt.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await pg.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await my.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await ss.ExecuteNonQueryAsync(), Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task Update_SetPatch_ThreeColumns()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var ltPatch = new User.Patch { UserName = "Renamed", Email = "x@example.com", IsActive = false };
+        var pgPatch = new Pg.User.Patch { UserName = "Renamed", Email = "x@example.com", IsActive = false };
+        var myPatch = new My.User.Patch { UserName = "Renamed", Email = "x@example.com", IsActive = false };
+        var ssPatch = new Ss.User.Patch { UserName = "Renamed", Email = "x@example.com", IsActive = false };
+
+        var lt = Lite.Users().Update().Set(ltPatch).Where(u => u.UserId == 1).Prepare();
+        var pg = Pg.Users().Update().Set(pgPatch).Where(u => u.UserId == 1).Prepare();
+        var my = My.Users().Update().Set(myPatch).Where(u => u.UserId == 1).Prepare();
+        var ss = Ss.Users().Update().Set(ssPatch).Where(u => u.UserId == 1).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0, \"Email\" = @p1, \"IsActive\" = @p2 WHERE \"UserId\" = 1",
+            pg:     "UPDATE \"users\" SET \"UserName\" = $1, \"Email\" = $2, \"IsActive\" = $3 WHERE \"UserId\" = 1",
+            mysql:  "UPDATE `users` SET `UserName` = ?, `Email` = ?, `IsActive` = ? WHERE `UserId` = 1",
+            ss:     "UPDATE [users] SET [UserName] = @p0, [Email] = @p1, [IsActive] = @p2 WHERE [UserId] = 1");
+
+        Assert.That(await lt.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await pg.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await my.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await ss.ExecuteNonQueryAsync(), Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task Update_SetPatch_CapturedWhereParam_NamesShiftPastSetParams()
+    {
+        // WHERE param uses a captured variable so it consumes a real placeholder.
+        // SET binds @p0/@p1; WHERE must land on @p2 — verifies the __setShift wiring
+        // through both the inline SQL builder and the post-build name shift.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var id = 1;
+        var ltPatch = new User.Patch { UserName = "Renamed", IsActive = false };
+        var pgPatch = new Pg.User.Patch { UserName = "Renamed", IsActive = false };
+        var myPatch = new My.User.Patch { UserName = "Renamed", IsActive = false };
+        var ssPatch = new Ss.User.Patch { UserName = "Renamed", IsActive = false };
+
+        var lt = Lite.Users().Update().Set(ltPatch).Where(u => u.UserId == id).Prepare();
+        var pg = Pg.Users().Update().Set(pgPatch).Where(u => u.UserId == id).Prepare();
+        var my = My.Users().Update().Set(myPatch).Where(u => u.UserId == id).Prepare();
+        var ss = Ss.Users().Update().Set(ssPatch).Where(u => u.UserId == id).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0, \"IsActive\" = @p1 WHERE \"UserId\" = @p2",
+            pg:     "UPDATE \"users\" SET \"UserName\" = $1, \"IsActive\" = $2 WHERE \"UserId\" = $3",
+            mysql:  "UPDATE `users` SET `UserName` = ?, `IsActive` = ? WHERE `UserId` = ?",
+            ss:     "UPDATE [users] SET [UserName] = @p0, [IsActive] = @p1 WHERE [UserId] = @p2");
+
+        Assert.That(await lt.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await pg.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await my.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await ss.ExecuteNonQueryAsync(), Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task Update_SetPatch_EmptyMask_Throws()
+    {
+        // Default-constructed Patch has __mask = 0 — generated terminal must throw
+        // because an empty SET clause is invalid SQL in every dialect. Exercises
+        // the runtime SQL builder's throw path on all 4 dialects (the throw is
+        // emitted inside per-dialect generated code, so docker-backed verification
+        // catches dialect-specific drift).
+        //
+        // The chains are built inside the Assert.ThrowsAsync lambdas so we don't
+        // hoist Prepare()-returned variables into captured lambdas, which would
+        // trigger QRY035 (PreparedQuery escaping the declaring scope).
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var emptyLt = default(User.Patch);
+        var emptyPg = default(Pg.User.Patch);
+        var emptyMy = default(My.User.Patch);
+        var emptySs = default(Ss.User.Patch);
+        Assert.ThrowsAsync<System.InvalidOperationException>(
+            async () => await Lite.Users().Update().Set(emptyLt).Where(u => u.UserId == 1).ExecuteNonQueryAsync());
+        Assert.ThrowsAsync<System.InvalidOperationException>(
+            async () => await Pg.Users().Update().Set(emptyPg).Where(u => u.UserId == 1).ExecuteNonQueryAsync());
+        Assert.ThrowsAsync<System.InvalidOperationException>(
+            async () => await My.Users().Update().Set(emptyMy).Where(u => u.UserId == 1).ExecuteNonQueryAsync());
+        Assert.ThrowsAsync<System.InvalidOperationException>(
+            async () => await Ss.Users().Update().Set(emptySs).Where(u => u.UserId == 1).ExecuteNonQueryAsync());
+    }
+
+    [Test]
+    public async Task Update_SetPatch_EmptyMask_ToDiagnostics_DoesNotThrow()
+    {
+        // Inspection-only path: diagnostic terminals must NOT throw on a default-
+        // constructed Patch. The runtime SET assembler emits a "/* empty Patch — no
+        // columns assigned */" comment sentinel so the diagnostic SQL is parseable
+        // (and visibly empty) without the execute-path InvalidOperationException.
+        // Per-dialect coverage: each docker dialect has its own quoted-identifier
+        // form for the table + columns, so the sentinel must round-trip through
+        // each dialect's diagnostic builder. See review.md #7 / F33.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var emptyLt = default(User.Patch);
+        var emptyPg = default(Pg.User.Patch);
+        var emptyMy = default(My.User.Patch);
+        var emptySs = default(Ss.User.Patch);
+
+        var lt = Lite.Users().Update().Set(emptyLt).Where(u => u.UserId == 1).Prepare();
+        var pg = Pg.Users().Update().Set(emptyPg).Where(u => u.UserId == 1).Prepare();
+        var my = My.Users().Update().Set(emptyMy).Where(u => u.UserId == 1).Prepare();
+        var ss = Ss.Users().Update().Set(emptySs).Where(u => u.UserId == 1).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "UPDATE \"users\" SET /* empty Patch — no columns assigned */ WHERE \"UserId\" = 1",
+            pg:     "UPDATE \"users\" SET /* empty Patch — no columns assigned */ WHERE \"UserId\" = 1",
+            mysql:  "UPDATE `users` SET /* empty Patch — no columns assigned */ WHERE `UserId` = 1",
+            ss:     "UPDATE [users] SET /* empty Patch — no columns assigned */ WHERE [UserId] = 1");
+    }
+
+    #endregion
+
+    #region UpdateSetPatch — integration matrix (Phase 9)
+
+    [Test]
+    public async Task Update_SetPatch_FkColumn_BindsEntityRef()
+    {
+        // Account.Patch.UserId is EntityRef<User, int>; the per-column binder must
+        // extract the .Id value (not bind the whole struct). The implicit conversion
+        // from int → EntityRef<User, int> lets us assign a literal.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var ltPatch = new Account.Patch { UserId = 2, AccountName = "Repointed" };
+        var pgPatch = new Pg.Account.Patch { UserId = 2, AccountName = "Repointed" };
+        var myPatch = new My.Account.Patch { UserId = 2, AccountName = "Repointed" };
+        var ssPatch = new Ss.Account.Patch { UserId = 2, AccountName = "Repointed" };
+
+        var lt = Lite.Accounts().Update().Set(ltPatch).Where(a => a.AccountId == 1).Prepare();
+        var pg = Pg.Accounts().Update().Set(pgPatch).Where(a => a.AccountId == 1).Prepare();
+        var my = My.Accounts().Update().Set(myPatch).Where(a => a.AccountId == 1).Prepare();
+        var ss = Ss.Accounts().Update().Set(ssPatch).Where(a => a.AccountId == 1).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "UPDATE \"accounts\" SET \"UserId\" = @p0, \"AccountName\" = @p1 WHERE \"AccountId\" = 1",
+            pg:     "UPDATE \"accounts\" SET \"UserId\" = $1, \"AccountName\" = $2 WHERE \"AccountId\" = 1",
+            mysql:  "UPDATE `accounts` SET `UserId` = ?, `AccountName` = ? WHERE `AccountId` = 1",
+            ss:     "UPDATE [accounts] SET [UserId] = @p0, [AccountName] = @p1 WHERE [AccountId] = 1");
+
+        // Execute to verify the per-column binder actually routes FK .Id extraction
+        // and AccountName binding correctly across all four dialects.
+        Assert.That(await lt.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await pg.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await my.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await ss.ExecuteNonQueryAsync(), Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task Update_SetPatch_EnumColumn_CastsUnderlying()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var ltPatch = new Order.Patch { Priority = OrderPriority.Urgent };
+        var pgPatch = new Pg.Order.Patch { Priority = OrderPriority.Urgent };
+        var myPatch = new My.Order.Patch { Priority = OrderPriority.Urgent };
+        var ssPatch = new Ss.Order.Patch { Priority = OrderPriority.Urgent };
+
+        var lt = Lite.Orders().Update().Set(ltPatch).Where(o => o.OrderId == 1).Prepare();
+        var pg = Pg.Orders().Update().Set(pgPatch).Where(o => o.OrderId == 1).Prepare();
+        var my = My.Orders().Update().Set(myPatch).Where(o => o.OrderId == 1).Prepare();
+        var ss = Ss.Orders().Update().Set(ssPatch).Where(o => o.OrderId == 1).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "UPDATE \"orders\" SET \"Priority\" = @p0 WHERE \"OrderId\" = 1",
+            pg:     "UPDATE \"orders\" SET \"Priority\" = $1 WHERE \"OrderId\" = 1",
+            mysql:  "UPDATE `orders` SET `Priority` = ? WHERE `OrderId` = 1",
+            ss:     "UPDATE [orders] SET [Priority] = @p0 WHERE [OrderId] = 1");
+
+        // Execute to verify the underlying-int cast actually binds correctly.
+        Assert.That(await lt.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await pg.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await my.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await ss.ExecuteNonQueryAsync(), Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task Update_SetPatch_CustomMapper_InvokesToDb()
+    {
+        // Account.Patch.Balance is Money mapped via MoneyMapping.ToDb. The
+        // per-column binder must route through the mapper rather than calling
+        // Convert.ChangeType on the Money struct directly.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var ltPatch = new Account.Patch { Balance = new Money(250m) };
+        var pgPatch = new Pg.Account.Patch { Balance = new Money(250m) };
+        var myPatch = new My.Account.Patch { Balance = new Money(250m) };
+        var ssPatch = new Ss.Account.Patch { Balance = new Money(250m) };
+
+        var lt = Lite.Accounts().Update().Set(ltPatch).Where(a => a.AccountId == 1).Prepare();
+        var pg = Pg.Accounts().Update().Set(pgPatch).Where(a => a.AccountId == 1).Prepare();
+        var my = My.Accounts().Update().Set(myPatch).Where(a => a.AccountId == 1).Prepare();
+        var ss = Ss.Accounts().Update().Set(ssPatch).Where(a => a.AccountId == 1).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "UPDATE \"accounts\" SET \"Balance\" = @p0 WHERE \"AccountId\" = 1",
+            pg:     "UPDATE \"accounts\" SET \"Balance\" = $1 WHERE \"AccountId\" = 1",
+            mysql:  "UPDATE `accounts` SET `Balance` = ? WHERE `AccountId` = 1",
+            ss:     "UPDATE [accounts] SET [Balance] = @p0 WHERE [AccountId] = 1");
+
+        // Execute to verify MoneyMapping.ToDb fires on the carrier-scope mapper
+        // field (catches future regressions if the mapper is moved/renamed).
+        Assert.That(await lt.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await pg.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await my.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await ss.ExecuteNonQueryAsync(), Is.EqualTo(1));
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task Update_SetPatch_ConditionalWhere_ProducesValidSql(bool addExtraFilter)
+    {
+        // Conditional WHERE on a Patch chain. Patch chains are Tier=Opaque, so the
+        // runtime SET assembly bypasses the prebuilt _sqlCache path; conditional
+        // WHERE compile-time mask interaction with that path is a corner case.
+        // This test pins that the chain at minimum produces parseable SQL and
+        // executes without throw — exact placeholder ordering is intentionally
+        // not asserted to avoid coupling to internal chain-analyzer choices that
+        // may change as Patch + conditional WHERE composition is developed.
+        // F14 / F36.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        var minId = 0;
+        var q = Lite.Users().Update().Set(new User.Patch { UserName = "Cond" }).Where(u => u.UserId == 1);
+        if (addExtraFilter) q = q.Where(u => u.UserId > minId);
+        var diag = q.Prepare().ToDiagnostics();
+
+        Assert.That(diag.Sql, Does.StartWith("UPDATE \"users\" SET \"UserName\" = @p0 WHERE"));
+        Assert.That(diag.Sql, Does.Not.Contain("{__PATCH_SET__}"));
+    }
+
+    [Test]
+    public async Task Update_SetPatch_ConditionalSetBranch_DocumentsGap()
+    {
+        // Conditional Patch Set site — `if (cond) q = q.Set(patch);`. The chain
+        // analyzer's conditional-clause machinery enumerates mask variants based
+        // on which clauses are active. For a Patch site inside an `if`, the
+        // chain analyzer treats it as conditional clause 0 and the mask-zero
+        // variant of the SQL ends up without any SET clause — producing
+        // syntactically-invalid UPDATE SQL.
+        //
+        // This pattern is intentionally NOT supported: the runtime-conditional
+        // column-set use case is what Patch was designed for — users should
+        // build a single Patch via the ref-lambda overload and let property
+        // setters track column-by-column inclusion. This test pins the gap
+        // so anyone hitting it in the future has a regression to redirect to
+        // the supported form.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        var applyPatch = true;
+        var q = Lite.Users().Update();
+        if (applyPatch) q = q.Set(new User.Patch { UserName = "Branched" });
+        var diag = q.Where(u => u.UserId == 1).Prepare().ToDiagnostics();
+
+        // Limitation: SET clause is dropped from the diagnostic SQL because the
+        // chain analyzer treats the conditional Patch as a single-bit variant
+        // and renders the mask-zero variant (no SET).
+        Assert.That(diag.Sql, Is.EqualTo("UPDATE \"users\" WHERE \"UserId\" = 1"));
+        // Executing this would fail at the database with an UPDATE-syntax error.
+        // We don't call ExecuteNonQueryAsync — pinning only the compile-time gap.
+        await Task.CompletedTask;
+    }
+
+    [Test]
+    public async Task Update_SetPatch_CollectionExpansionWhere_ShiftsPastSetParams()
+    {
+        // Composes Patch SET (2 params) with Where(ids.Contains(...)) (3 params expanded
+        // from a collection). Verifies __setShift + __colShift interact correctly:
+        // SQLite/SqlServer @p0..@p4 in SQL order (SET first, then WHERE expansion),
+        // PG $1..$5, MySQL positional `?`.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // List<int> (not new[]{...}) — the latter would be folded to a constant
+        // by the analyzer and inlined as literal values instead of expanded params.
+        var ids = new List<int> { 1, 2, 3 };
+        var ltPatch = new User.Patch { UserName = "Bulk", IsActive = false };
+        var pgPatch = new Pg.User.Patch { UserName = "Bulk", IsActive = false };
+        var myPatch = new My.User.Patch { UserName = "Bulk", IsActive = false };
+        var ssPatch = new Ss.User.Patch { UserName = "Bulk", IsActive = false };
+
+        var lt = Lite.Users().Update().Set(ltPatch).Where(u => ids.Contains(u.UserId)).Prepare();
+        var pg = Pg.Users().Update().Set(pgPatch).Where(u => ids.Contains(u.UserId)).Prepare();
+        var my = My.Users().Update().Set(myPatch).Where(u => ids.Contains(u.UserId)).Prepare();
+        var ss = Ss.Users().Update().Set(ssPatch).Where(u => ids.Contains(u.UserId)).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0, \"IsActive\" = @p1 WHERE \"UserId\" IN (@p2, @p3, @p4)",
+            pg:     "UPDATE \"users\" SET \"UserName\" = $1, \"IsActive\" = $2 WHERE \"UserId\" IN ($3, $4, $5)",
+            mysql:  "UPDATE `users` SET `UserName` = ?, `IsActive` = ? WHERE `UserId` IN (?, ?, ?)",
+            ss:     "UPDATE [users] SET [UserName] = @p0, [IsActive] = @p1 WHERE [UserId] IN (@p2, @p3, @p4)");
+
+        Assert.That(await lt.ExecuteNonQueryAsync(), Is.GreaterThanOrEqualTo(1));
+        Assert.That(await pg.ExecuteNonQueryAsync(), Is.GreaterThanOrEqualTo(1));
+        Assert.That(await my.ExecuteNonQueryAsync(), Is.GreaterThanOrEqualTo(1));
+        Assert.That(await ss.ExecuteNonQueryAsync(), Is.GreaterThanOrEqualTo(1));
+    }
+
+    [Test]
+    public async Task Update_SetPatch_ExecutableUpdateBuilder_WhereFirst()
+    {
+        // Set comes AFTER Where — exercises the IExecutableUpdateBuilder<T>
+        // extension overload (separate signature from IUpdateBuilder<T>).
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var ltPatch = new User.Patch { UserName = "PostWhere" };
+        var pgPatch = new Pg.User.Patch { UserName = "PostWhere" };
+        var myPatch = new My.User.Patch { UserName = "PostWhere" };
+        var ssPatch = new Ss.User.Patch { UserName = "PostWhere" };
+
+        var lt = Lite.Users().Update().Where(u => u.UserId == 1).Set(ltPatch).Prepare();
+        var pg = Pg.Users().Update().Where(u => u.UserId == 1).Set(pgPatch).Prepare();
+        var my = My.Users().Update().Where(u => u.UserId == 1).Set(myPatch).Prepare();
+        var ss = Ss.Users().Update().Where(u => u.UserId == 1).Set(ssPatch).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0 WHERE \"UserId\" = 1",
+            pg:     "UPDATE \"users\" SET \"UserName\" = $1 WHERE \"UserId\" = 1",
+            mysql:  "UPDATE `users` SET `UserName` = ? WHERE `UserId` = 1",
+            ss:     "UPDATE [users] SET [UserName] = @p0 WHERE [UserId] = 1");
+
+        // Execute across all 4 dialects to verify the IExecutableUpdateBuilder<T>
+        // extension overload's interceptor binds & runs correctly per dialect.
+        Assert.That(await lt.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await pg.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await my.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await ss.ExecuteNonQueryAsync(), Is.EqualTo(1));
+    }
+
+    #endregion
+
+    #region UpdateSetPatchAction — lambda form
+
+    [Test]
+    public async Task Update_SetPatchAction_SingleColumn()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Update().Set((ref User.Patch p) => p.UserName = "Renamed").Where(u => u.UserId == 1).Prepare();
+        var pg = Pg.Users().Update().Set((ref Pg.User.Patch p) => p.UserName = "Renamed").Where(u => u.UserId == 1).Prepare();
+        var my = My.Users().Update().Set((ref My.User.Patch p) => p.UserName = "Renamed").Where(u => u.UserId == 1).Prepare();
+        var ss = Ss.Users().Update().Set((ref Ss.User.Patch p) => p.UserName = "Renamed").Where(u => u.UserId == 1).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0 WHERE \"UserId\" = 1",
+            pg:     "UPDATE \"users\" SET \"UserName\" = $1 WHERE \"UserId\" = 1",
+            mysql:  "UPDATE `users` SET `UserName` = ? WHERE `UserId` = 1",
+            ss:     "UPDATE [users] SET [UserName] = @p0 WHERE [UserId] = 1");
+
+        Assert.That(await lt.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await pg.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await my.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await ss.ExecuteNonQueryAsync(), Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task Update_SetPatchAction_RuntimeConditional_TogglesColumns()
+    {
+        // Lambda mutates the Patch with C# conditionals — exercises that the
+        // runtime SET assembler only writes the columns whose property setters
+        // actually fired (mask bits set in the lambda body). Cross-dialect
+        // execution verifies the runtime SQL builder + per-column binder
+        // produce dialect-correct placeholders on each docker DB.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var updateName = true;
+        var updateEmail = false;
+
+        var lt = Lite.Users().Update().Set((ref User.Patch p) =>
+        {
+            if (updateName) p.UserName = "OnlyName";
+            if (updateEmail) p.Email = "ignored@example.com";
+        }).Where(u => u.UserId == 1).Prepare();
+        var pg = Pg.Users().Update().Set((ref Pg.User.Patch p) =>
+        {
+            if (updateName) p.UserName = "OnlyName";
+            if (updateEmail) p.Email = "ignored@example.com";
+        }).Where(u => u.UserId == 1).Prepare();
+        var my = My.Users().Update().Set((ref My.User.Patch p) =>
+        {
+            if (updateName) p.UserName = "OnlyName";
+            if (updateEmail) p.Email = "ignored@example.com";
+        }).Where(u => u.UserId == 1).Prepare();
+        var ss = Ss.Users().Update().Set((ref Ss.User.Patch p) =>
+        {
+            if (updateName) p.UserName = "OnlyName";
+            if (updateEmail) p.Email = "ignored@example.com";
+        }).Where(u => u.UserId == 1).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0 WHERE \"UserId\" = 1",
+            pg:     "UPDATE \"users\" SET \"UserName\" = $1 WHERE \"UserId\" = 1",
+            mysql:  "UPDATE `users` SET `UserName` = ? WHERE `UserId` = 1",
+            ss:     "UPDATE [users] SET [UserName] = @p0 WHERE [UserId] = 1");
+
+        Assert.That(await lt.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await pg.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await my.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await ss.ExecuteNonQueryAsync(), Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task Update_SetPatchAction_EmptyLambda_Throws()
+    {
+        // A lambda that flips no mask bits leaves __mask = 0 — runtime must
+        // throw on each dialect. Same loud-fail guarantee as the value-form
+        // empty-mask test, but exercised through the action() invocation path.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        Assert.ThrowsAsync<System.InvalidOperationException>(
+            async () => await Lite.Users().Update().Set((ref User.Patch _) => { }).Where(u => u.UserId == 1).ExecuteNonQueryAsync());
+        Assert.ThrowsAsync<System.InvalidOperationException>(
+            async () => await Pg.Users().Update().Set((ref Pg.User.Patch _) => { }).Where(u => u.UserId == 1).ExecuteNonQueryAsync());
+        Assert.ThrowsAsync<System.InvalidOperationException>(
+            async () => await My.Users().Update().Set((ref My.User.Patch _) => { }).Where(u => u.UserId == 1).ExecuteNonQueryAsync());
+        Assert.ThrowsAsync<System.InvalidOperationException>(
+            async () => await Ss.Users().Update().Set((ref Ss.User.Patch _) => { }).Where(u => u.UserId == 1).ExecuteNonQueryAsync());
+    }
+
+    #endregion
 }

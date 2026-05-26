@@ -147,6 +147,20 @@ internal enum InterceptorKind
     UpdateSetAction,
 
     /// <summary>
+    /// Set(Entity.Patch) on UpdateBuilder or ExecutableUpdateBuilder — value form of
+    /// partial update. Column set is determined at runtime from the Patch struct's
+    /// write-tracking mask; SET clause is assembled at execute time.
+    /// </summary>
+    UpdateSetPatch,
+
+    /// <summary>
+    /// Set(PatchAction&lt;Entity.Patch&gt;) on UpdateBuilder or ExecutableUpdateBuilder —
+    /// lambda form of partial update. The lambda runs verbatim against a by-ref Patch;
+    /// the runtime mask is read after the lambda executes.
+    /// </summary>
+    UpdateSetPatchAction,
+
+    /// <summary>
     /// RawSqlAsync&lt;T&gt;() - generates a typed reader to replace reflection-based entity materialization.
     /// </summary>
     RawSqlAsync,

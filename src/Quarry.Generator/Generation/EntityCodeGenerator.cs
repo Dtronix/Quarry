@@ -64,9 +64,194 @@ internal static class EntityCodeGenerator
             GenerateSingleNavigationProperty(sb, singleNav);
         }
 
+        // Generate the nested Patch struct used by Update().Set(Entity.Patch)
+        // and Update().Set(PatchAction<Entity.Patch>) partial-update overloads.
+        // Returns silently if there are zero updatable columns or if the count
+        // exceeds the 64-bit __mask cap — QRY045 reporting happens at the
+        // generator entry point (QuarryGenerator) where SourceProductionContext
+        // is available.
+        GeneratePatchStruct(sb, entity);
+
         sb.AppendLine("}");
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Returns the count of columns that participate in a Patch struct — i.e. columns
+    /// that are neither Identity nor Computed. Mirrors the filter used by
+    /// <c>InsertInfo.FromEntityInfo</c> / <c>PatchInfo.FromEntityInfo</c>.
+    /// </summary>
+    public static int CountUpdatableColumns(EntityInfo entity)
+    {
+        int count = 0;
+        foreach (var c in entity.Columns)
+        {
+            if (c.Modifiers.IsIdentity) continue;
+            if (c.Modifiers.IsComputed) continue;
+            count++;
+        }
+        return count;
+    }
+
+    /// <summary>The hard cap on updatable columns per entity for Patch generation; see QRY045.</summary>
+    public const int PatchColumnLimit = 64;
+
+    /// <summary>
+    /// True when the entity has a column named "Patch" — its property would
+    /// collide with the nested struct's default name (CS0102).
+    /// <see cref="ResolvePatchStructName(EntityInfo)"/> auto-renames the struct
+    /// with leading underscores to avoid the collision; this helper drives the
+    /// QRY047 reporting at the generator entry point.
+    /// </summary>
+    public static bool HasPatchNameCollision(EntityInfo entity)
+    {
+        foreach (var c in entity.Columns)
+        {
+            if (c.PropertyName == "Patch") return true;
+        }
+        return false;
+    }
+
+    /// <summary>Hard limit on leading underscores when resolving the nested
+    /// Patch struct name. If the entity has columns named <c>Patch</c>,
+    /// <c>_Patch</c>, <c>__Patch</c>, ... up to this depth, the generator gives
+    /// up and suppresses Patch struct emission entirely.</summary>
+    private const int MaxPatchRenamePrefixUnderscores = 4;
+
+    /// <summary>
+    /// Picks the name for the nested Patch struct on this entity. Default is
+    /// <c>"Patch"</c>; if a column property of that name exists, prepends a
+    /// leading underscore (<c>"_Patch"</c>) and repeats until no collision —
+    /// up to <see cref="MaxPatchRenamePrefixUnderscores"/> underscores. Returns
+    /// null when even the maximally-prefixed name collides; in that case
+    /// callers suppress Patch struct emission and the diagnostic surface
+    /// (QRY047) flags the entity as ineligible.
+    /// </summary>
+    public static string? ResolvePatchStructName(EntityInfo entity)
+    {
+        var columnNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var c in entity.Columns)
+            columnNames.Add(c.PropertyName);
+
+        var name = "Patch";
+        int underscores = 0;
+        while (columnNames.Contains(name))
+        {
+            if (underscores >= MaxPatchRenamePrefixUnderscores) return null;
+            name = "_" + name;
+            underscores++;
+        }
+        return name;
+    }
+
+    private static void GeneratePatchStruct(StringBuilder sb, EntityInfo entity)
+    {
+        var updatable = new List<ColumnInfo>();
+        foreach (var c in entity.Columns)
+        {
+            if (c.Modifiers.IsIdentity) continue;
+            if (c.Modifiers.IsComputed) continue;
+            updatable.Add(c);
+        }
+
+        // No updatable columns → no Patch struct.
+        if (updatable.Count == 0) return;
+
+        // Over the ulong mask cap → no Patch struct (QRY045 reported separately).
+        if (updatable.Count > PatchColumnLimit) return;
+
+        // Column-name collision check: if the entity has a column named "Patch",
+        // the resolver picks "_Patch" (or more underscores until unique). If even
+        // the maximum-prefixed name collides, the resolver returns null and we
+        // suppress emission entirely. QRY047 surfaces the rename / suppression.
+        var structName = ResolvePatchStructName(entity);
+        if (structName is null) return;
+
+        sb.AppendLine();
+        sb.AppendLine("    /// <summary>");
+        sb.AppendLine($"    /// Mutable partial-update payload for {entity.EntityName}. Property setters track which");
+        sb.AppendLine("    /// fields were assigned via the <c>__mask</c> bitmask; the chain runtime reads the mask");
+        sb.AppendLine("    /// at execute time to emit a SET clause covering only the touched columns.");
+        sb.AppendLine("    /// </summary>");
+        sb.AppendLine("    /// <remarks>");
+        sb.AppendLine("    /// Reading a property that has not been assigned returns the field's default value");
+        sb.AppendLine("    /// — Patch instances are intended for write-up assembly, not arbitrary read-back.");
+        if (structName != "Patch")
+            sb.AppendLine($"    /// <para>This struct is named <c>{structName}</c> instead of <c>Patch</c> because the entity has a column named <c>Patch</c> that would otherwise collide. Reference it as <c>{entity.EntityName}.{structName}</c>; see QRY047.</para>");
+        sb.AppendLine("    /// </remarks>");
+        // The IPatchFor<TEntity> marker constrains the partial-update Set
+        // overloads on IUpdateBuilder<T> / IExecutableUpdateBuilder<T> so the
+        // C# compiler rejects cross-entity patches at the call site.
+        sb.AppendLine($"    public struct {structName} : Quarry.IPatchFor<{entity.EntityName}>");
+        sb.AppendLine("    {");
+        sb.AppendLine("        /// <summary>Bitmask of assigned columns; bit position matches the column's order in the entity schema (excluding Identity and Computed).</summary>");
+        sb.AppendLine("        internal ulong __mask;");
+
+        // Mask bit constants — grouped together for readability and to keep
+        // bit-position assignment obviously tied to declaration order.
+        sb.AppendLine();
+        for (int i = 0; i < updatable.Count; i++)
+        {
+            var col = updatable[i];
+            var hex = $"0x{(1UL << i):X}UL";
+            sb.AppendLine($"        internal const ulong _Mask_{col.PropertyName} = {hex};");
+        }
+
+        // Tracked properties.
+        foreach (var col in updatable)
+        {
+            GeneratePatchProperty(sb, col);
+        }
+
+        sb.AppendLine("    }");
+    }
+
+    private static void GeneratePatchProperty(StringBuilder sb, ColumnInfo column)
+    {
+        // Compute the public property type using the same rules as the entity
+        // property (FK → EntityRef<T,K>, otherwise the column's CLR type with
+        // nullable annotation if appropriate).
+        string propertyType;
+        switch (column.Kind)
+        {
+            case ColumnKind.ForeignKey:
+                propertyType = $"EntityRef<{column.ReferencedEntityName}, {GetNullableType(column.FullClrType, column.IsNullable)}>";
+                break;
+            case ColumnKind.PrimaryKey:
+            case ColumnKind.Standard:
+            default:
+                propertyType = GetNullableType(column.FullClrType, column.IsNullable);
+                break;
+        }
+
+        // Backing field: for non-nullable reference types, declare as nullable
+        // (T?) to satisfy CS8618 without an initializer (struct instance fields
+        // can't have initializers prior to C# 11+). The property getter then
+        // suppresses the nullability with `!` — reading an unset reference-
+        // typed property returns null (default(T)), matching struct semantics.
+        // Use the column's authoritative IsValueType from semantic analysis
+        // rather than the IsReferenceTypeName name-heuristic, which mis-
+        // classifies user-defined structs (e.g. custom-mapped value types) as
+        // reference types.
+        bool isNonNullableReference =
+            column.Kind != ColumnKind.ForeignKey                // EntityRef<,> is itself a struct
+            && !column.IsNullable
+            && !column.IsValueType;
+
+        string fieldType = isNonNullableReference ? propertyType + "?" : propertyType;
+        string getterExpr = isNonNullableReference ? $"__{column.PropertyName}!" : $"__{column.PropertyName}";
+
+        sb.AppendLine();
+        sb.AppendLine($"        private {fieldType} __{column.PropertyName};");
+        sb.AppendLine($"        /// <summary>Gets or sets the {column.PropertyName} value. Setting flips <c>_Mask_{column.PropertyName}</c> in <c>__mask</c>.</summary>");
+        if (column.Modifiers.IsSensitive)
+            sb.AppendLine($"        /// <remarks>Column is marked sensitive in the schema (<c>Sensitive()</c>). Bound parameter values are redacted in diagnostic / trace output.</remarks>");
+        sb.AppendLine($"        public {propertyType} {column.PropertyName}");
+        sb.AppendLine("        {");
+        sb.AppendLine($"            get => {getterExpr};");
+        sb.AppendLine($"            set {{ __{column.PropertyName} = value; __mask |= _Mask_{column.PropertyName}; }}");
+        sb.AppendLine("        }");
     }
 
     /// <summary>

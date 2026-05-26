@@ -470,20 +470,76 @@ internal static class UsageSiteDiscovery
             kind = InterceptorKind.DeleteWhere;
         }
 
+        bool patchUnrecognizedShape = false;
         if (methodName == "Set" && containingType.Name.Contains("UpdateBuilder")
-            && invocation.ArgumentList.Arguments.Count == 1
-            && !methodSymbol.IsGenericMethod)
+            && invocation.ArgumentList.Arguments.Count == 1)
         {
+            // Syntax-only classification of the four Set(...) overloads.
+            //
+            // Semantic overload-resolution (methodSymbol.Parameters[0].Type +
+            // IPatchFor<T> detection) doesn't work in the real IIncrementalGenerator
+            // pipeline: the SyntaxProvider's SemanticModel sees the pre-generator
+            // compilation, so the generated Entity.Patch nested struct isn't visible
+            // and Roslyn binds Set(somePatch) to the SetPoco DIM. Discovery would
+            // emit a SetPoco-shaped interceptor and the user build fails CS9144 at
+            // the call site once Phase 2 emission makes User.Patch visible.
+            //
+            // Patch detection therefore inspects the argument SYNTAX directly:
+            //   Set(new X.Patch { ... })            → UpdateSetPatch
+            //   Set(somePatchVar) when its           → UpdateSetPatch
+            //       declarator initializer is
+            //       new X.Patch { ... }
+            //   Set((ref X.Patch p) => ...)         → UpdateSetPatchAction
+            //   Set(other lambda)                    → UpdateSetAction (existing path)
+            //   Set(other arg) when !IsGenericMethod → UpdateSetPoco (existing path)
+            //
+            // Out-of-scope shapes (factory return, ternary over patches, captured
+            // PatchAction variable) fall through to UpdateSetPoco / UpdateSetAction
+            // and surface as CS9144 at the user's call site — actionable: switch to
+            // a local-variable form.
             var singleArg = invocation.ArgumentList.Arguments[0].Expression;
-            if (singleArg is LambdaExpressionSyntax)
+
+            if (IsPatchConstructionExpression(singleArg))
+            {
+                kind = InterceptorKind.UpdateSetPatch;
+            }
+            else if (singleArg is IdentifierNameSyntax identifierArg
+                && IsPatchVariableReference(identifierArg))
+            {
+                kind = InterceptorKind.UpdateSetPatch;
+            }
+            else if (singleArg is ParenthesizedLambdaExpressionSyntax parLambda
+                && parLambda.ParameterList.Parameters.Count == 1
+                && parLambda.ParameterList.Parameters[0].Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.RefKeyword)))
+            {
+                kind = InterceptorKind.UpdateSetPatchAction;
+            }
+            else if (singleArg is LambdaExpressionSyntax)
             {
                 kind = InterceptorKind.UpdateSetAction;
             }
-            else
+            else if (!methodSymbol.IsGenericMethod)
             {
                 kind = InterceptorKind.UpdateSetPoco;
                 initializedPropertyNames = ExtractInitializedPropertyNamesFromSetPoco(invocation);
             }
+            // Other generic Set overloads on UpdateBuilder fall through with kind unchanged.
+
+            // QRY046 detection: when classification has routed to UpdateSetPoco (or
+            // left the kind as the generic Set fallback) but the argument syntax
+            // contains a `.Patch` member reference, the user likely intended a
+            // Patch overload but used an out-of-scope shape (factory return,
+            // ternary, captured PatchAction variable). Flag the site so the file
+            // emitter can surface QRY046 — more actionable than the eventual
+            // CS9144 the user would otherwise see.
+            //
+            // Heuristic only — no semantic-model dependency, matching the rest of
+            // the Patch classifier's design. False positives are bounded by the
+            // narrow trigger (kind set to UpdateSetPoco/Set AND syntactic ".Patch"
+            // reference in the arg subtree).
+            patchUnrecognizedShape =
+                (kind == InterceptorKind.UpdateSetPoco || kind == InterceptorKind.Set)
+                && ArgumentReferencesPatch(singleArg);
         }
         if (methodName == "Where" && containingType.Name.Contains("UpdateBuilder"))
         {
@@ -864,6 +920,8 @@ internal static class UsageSiteDiscovery
             lambdaInnerSpanStart: setOpLambdaInnerSpanStart);
         if (setOpEnrichmentLambda != null)
             rawSite.EnrichmentLambda = setOpEnrichmentLambda;
+        if (patchUnrecognizedShape)
+            rawSite.PatchUnrecognizedShape = true;
 
         // Set EnrichmentLambda for Select sites with projection parameters (captured variables)
         // so DisplayClassEnricher can resolve the display class for runtime extraction.
@@ -2603,6 +2661,106 @@ internal static class UsageSiteDiscovery
         return false;
     }
 
+
+    /// <summary>
+    /// True when the expression constructs or default-initializes a Patch
+    /// struct — i.e. <c>new X.Patch { ... }</c>, <c>new X.Patch(...)</c>, or
+    /// <c>default(X.Patch)</c>. The type must end in a <c>.Patch</c> identifier
+    /// (qualified or alias-qualified); a bare <c>new Patch(...)</c> is not
+    /// recognized.
+    /// </summary>
+    private static bool IsPatchConstructionExpression(ExpressionSyntax expr)
+    {
+        return expr switch
+        {
+            ObjectCreationExpressionSyntax oc => TypeSyntaxEndsInPatch(oc.Type),
+            DefaultExpressionSyntax de => TypeSyntaxEndsInPatch(de.Type),
+            _ => false,
+        };
+    }
+
+    private static bool TypeSyntaxEndsInPatch(TypeSyntax type)
+    {
+        return type switch
+        {
+            QualifiedNameSyntax q => IsPatchOrUnderscoredPatch(q.Right.Identifier.Text),
+            AliasQualifiedNameSyntax a => IsPatchOrUnderscoredPatch(a.Name.Identifier.Text),
+            _ => false,
+        };
+    }
+
+    /// <summary>
+    /// True when the identifier text is "Patch" or any leading-underscore variant
+    /// ("_Patch", "__Patch", …). Quarry's nested Patch struct auto-renames with
+    /// leading underscores when a column literally named "Patch" would otherwise
+    /// collide (see QRY047); the classifier must accept the renamed forms so
+    /// user code referencing them still routes to UpdateSetPatch.
+    /// </summary>
+    private static bool IsPatchOrUnderscoredPatch(string text)
+    {
+        int i = 0;
+        while (i < text.Length && text[i] == '_') i++;
+        return i < text.Length && string.CompareOrdinal(text, i, "Patch", 0, text.Length - i) == 0
+            && text.Length - i == "Patch".Length;
+    }
+
+    /// <summary>
+    /// True when <paramref name="id"/> refers to a local whose declarator
+    /// initializer is a Patch construction (e.g. <c>var p = new X.Patch { ... };</c>
+    /// or <c>var p = default(X.Patch);</c>). Walks back to the enclosing
+    /// member declaration and looks for a single matching
+    /// <c>VariableDeclaratorSyntax</c> — this covers both same-scope locals
+    /// and variables captured into nested lambdas. Fail-soft: any failure
+    /// (declarator not found, ambiguous shadowing, non-Patch initializer)
+    /// returns false and lets classification fall through to the existing
+    /// SetPoco / SetAction paths.
+    /// </summary>
+    private static bool IsPatchVariableReference(IdentifierNameSyntax id)
+    {
+        var variableName = id.Identifier.Text;
+        var member = id.FirstAncestorOrSelf<MemberDeclarationSyntax>();
+        if (member is null) return false;
+
+        VariableDeclaratorSyntax? matchingDeclarator = null;
+        foreach (var decl in member.DescendantNodes().OfType<VariableDeclaratorSyntax>())
+        {
+            if (decl.Identifier.Text != variableName) continue;
+            if (matchingDeclarator is not null) return false;
+            matchingDeclarator = decl;
+        }
+
+        if (matchingDeclarator is null) return false;
+        var init = matchingDeclarator.Initializer?.Value;
+        return init is not null && IsPatchConstructionExpression(init);
+    }
+
+    /// <summary>
+    /// QRY046 heuristic: returns true when <paramref name="expr"/>'s syntax tree
+    /// contains a member-access or qualified-name node whose right-hand identifier
+    /// is <c>Patch</c>. Used to flag <c>Set(...)</c> sites whose argument hints at
+    /// Patch usage but doesn't match a supported construction shape. Catches:
+    /// factory returns (<c>SomeStaticClass.Patch.From(...)</c>), ternaries / casts
+    /// over Patch values, and any other expression that touches a <c>.Patch</c>
+    /// member. Does not fire for the supported shapes (<c>new X.Patch{}</c>,
+    /// <c>default(X.Patch)</c>) — those are handled earlier in the classifier and
+    /// never reach this check.
+    /// </summary>
+    private static bool ArgumentReferencesPatch(ExpressionSyntax expr)
+    {
+        foreach (var node in expr.DescendantNodesAndSelf())
+        {
+            switch (node)
+            {
+                case IdentifierNameSyntax id when IsPatchOrUnderscoredPatch(id.Identifier.Text):
+                    return true;
+                case MemberAccessExpressionSyntax ma when IsPatchOrUnderscoredPatch(ma.Name.Identifier.Text):
+                    return true;
+                case QualifiedNameSyntax q when IsPatchOrUnderscoredPatch(q.Right.Identifier.Text):
+                    return true;
+            }
+        }
+        return false;
+    }
 
     /// <summary>
     /// Extracts initialized property names from a Set(entity) call's single argument.

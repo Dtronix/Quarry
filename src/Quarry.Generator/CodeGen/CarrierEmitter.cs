@@ -364,6 +364,10 @@ internal static class CarrierEmitter
         if (chain.ChainParameters.Any(p => p.IsCollection))
             EmitCollectionSqlCacheField(sb, chain);
 
+        // Emit Patch fragment table + per-column binder method for chains with Patch sites.
+        if (info.Fields.Any(f => f.Role == FieldRole.Patch))
+            EmitPatchSupport(sb, chain);
+
         // Emit static reader delegate field to avoid duplicating the lambda at each terminal.
         // Only extract when the reader is self-contained (no references to interceptor-class
         // fields like _entityReader_* or _mapper_*).
@@ -598,7 +602,7 @@ internal static class CarrierEmitter
     /// </summary>
     private static void EmitCarrierPreamble(
         StringBuilder sb, CarrierPlan carrier, AssembledPlan chain,
-        bool emitOpId = true, bool emitCtxLocal = true)
+        bool emitOpId = true, bool emitCtxLocal = true, bool throwOnEmptyPatch = true)
     {
         sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
         if (emitCtxLocal)
@@ -608,7 +612,7 @@ internal static class CarrierEmitter
             sb.AppendLine("        var __logger = LogsmithOutput.Logger;");
             sb.AppendLine("        var __opId = __logger != null ? OpId.Next() : 0;");
         }
-        EmitCarrierSqlDispatch(sb, carrier, chain);
+        EmitCarrierSqlDispatch(sb, carrier, chain, throwOnEmptyPatch);
     }
 
     /// <summary>
@@ -636,6 +640,7 @@ internal static class CarrierEmitter
         var hasCollections = chain.ChainParameters.Any(p => p.IsCollection);
         var hasLimitField = HasCarrierField(carrier, FieldRole.Limit);
         var hasOffsetField = HasCarrierField(carrier, FieldRole.Offset);
+        var hasPatch = carrier.Fields.Any(f => f.Role == FieldRole.Patch);
 
         var condMap = TerminalEmitHelpers.BuildParamConditionalMap(chain);
         var hasConditional = chain.ConditionalTerms.Count > 0;
@@ -646,11 +651,36 @@ internal static class CarrierEmitter
         //                 as SQL text is built. Used for SQL construction + cache entry.
         //   __bindShift — set here in command binding, accumulates in GlobalIndex order as
         //                 DbParameters are created. Used for scalar/pagination ParameterName.
+        //   __setShift  — set in the inline SQL builder for Patch chains; equals the number
+        //                 of active SET parameters bound by _BindPatchParams. WHERE-side
+        //                 names must shift past these to land on the correct @pN/$N slot.
         //   __diagShift — set in diagnostic emission, same accumulation as __bindShift.
         // Invariant: after all chain params, __bindShift == __colShift (same collections,
         // same order, same accumulation formula). Pagination uses __bindShift.
         if (hasCollections)
             sb.AppendLine("        var __bindShift = 0;");
+
+        // Patch chains: bind the active SET parameters FIRST so they occupy the leading
+        // @p0..@p(K-1) / $1..$K slots (SQL has SET before WHERE in every dialect, and
+        // positional dialects — PostgreSQL with Npgsql, MySQL — require bind order to
+        // match SQL order). _BindPatchParams advances __pi by one per active bit; after
+        // this returns, __setShift (set during inline SQL build) holds the same count.
+        // Logger + opId threaded in so per-column ParameterLog.{Bound,BoundSensitive}
+        // calls fire from inside the binder. Matches the Insert binder's pattern; see
+        // review.md #18 / F18 + F26.
+        if (hasPatch)
+            sb.AppendLine($"        {carrier.ClassName}._BindPatchParams(__cmd, in __c.Patch, __c.PatchMask, 0, __opId);");
+
+        // Compose the shift expression for downstream WHERE-side parameter names. SET
+        // shift always leads (SET in SQL precedes WHERE); collection shift is
+        // accumulated as WHERE params are bound left-to-right.
+        var whereShiftExpr = (hasPatch, hasCollections) switch
+        {
+            (true, true) => "__bindShift + __setShift",
+            (true, false) => "__setShift",
+            (false, true) => "__bindShift",
+            _ => null
+        };
 
         int? currentBitIndex = null;
         bool inConditionalBlock = false;
@@ -716,8 +746,8 @@ internal static class CarrierEmitter
                 var valueExpr = TerminalEmitHelpers.GetParameterValueExpression(param, i);
 
                 sb.AppendLine($"{indent}var __p{i} = __cmd.CreateParameter();");
-                if (hasCollections)
-                    sb.AppendLine($"{indent}__p{i}.ParameterName = {EmitParamNameExpr(chain.Dialect, i, "__bindShift")};");
+                if (whereShiftExpr != null)
+                    sb.AppendLine($"{indent}__p{i}.ParameterName = {EmitParamNameExpr(chain.Dialect, i, whereShiftExpr)};");
                 else
                     sb.AppendLine($"{indent}__p{i}.ParameterName = \"{FormatParamName(chain.Dialect, i)}\";");
                 sb.AppendLine($"{indent}__p{i}.Value = {valueExpr};");
@@ -743,8 +773,8 @@ internal static class CarrierEmitter
         if (hasLimitField)
         {
             sb.AppendLine($"        var __pL = __cmd.CreateParameter();");
-            if (hasCollections)
-                sb.AppendLine($"        __pL.ParameterName = {EmitParamNameExpr(chain.Dialect, nextIdx, "__bindShift")};");
+            if (whereShiftExpr != null)
+                sb.AppendLine($"        __pL.ParameterName = {EmitParamNameExpr(chain.Dialect, nextIdx, whereShiftExpr)};");
             else
                 sb.AppendLine($"        __pL.ParameterName = \"{FormatParamName(chain.Dialect, nextIdx)}\";");
             sb.AppendLine($"        __pL.Value = (object)__c.Limit;");
@@ -754,8 +784,8 @@ internal static class CarrierEmitter
         if (hasOffsetField)
         {
             sb.AppendLine($"        var __pO = __cmd.CreateParameter();");
-            if (hasCollections)
-                sb.AppendLine($"        __pO.ParameterName = {EmitParamNameExpr(chain.Dialect, nextIdx, "__bindShift")};");
+            if (whereShiftExpr != null)
+                sb.AppendLine($"        __pO.ParameterName = {EmitParamNameExpr(chain.Dialect, nextIdx, whereShiftExpr)};");
             else
                 sb.AppendLine($"        __pO.ParameterName = \"{FormatParamName(chain.Dialect, nextIdx)}\";");
             sb.AppendLine($"        __pO.Value = (object)__c.Offset;");
@@ -1022,7 +1052,11 @@ internal static class CarrierEmitter
         StringBuilder sb, CarrierPlan carrier, AssembledPlan chain,
         string diagnosticKind)
     {
-        EmitCarrierPreamble(sb, carrier, chain, emitOpId: false, emitCtxLocal: false);
+        // throwOnEmptyPatch: false — diagnostic terminals shouldn't throw on a
+        // default-constructed Patch (mask == 0). The runtime SET assembler emits
+        // a "/* empty Patch — no columns assigned */" sentinel comment instead.
+        // See review.md #7.
+        EmitCarrierPreamble(sb, carrier, chain, emitOpId: false, emitCtxLocal: false, throwOnEmptyPatch: false);
         TerminalEmitHelpers.EmitParameterLocals(sb, chain, carrier);
         TerminalEmitHelpers.EmitDiagnosticClauseArray(sb, chain, carrier);
         TerminalEmitHelpers.EmitDiagnosticParameterArray(sb, chain, carrier);
@@ -1099,9 +1133,23 @@ internal static class CarrierEmitter
     /// Emits SQL read from the carrier's static _sql field.
     /// When no collections: direct read. When collections exist: cache check + inline StringBuilder builder.
     /// </summary>
-    private static void EmitCarrierSqlDispatch(StringBuilder sb, CarrierPlan carrier, AssembledPlan chain)
+    private static void EmitCarrierSqlDispatch(StringBuilder sb, CarrierPlan carrier, AssembledPlan chain,
+        bool throwOnEmptyPatch = true)
     {
         var hasCollections = chain.ChainParameters.Any(p => p.IsCollection);
+        var hasPatch = carrier.Fields.Any(f => f.Role == FieldRole.Patch);
+
+        // Patch chains: SQL varies with __c.PatchMask (runtime mask), so the prebuilt
+        // _sql / _sqlCache fast paths are bypassed. The SQL is always assembled by the
+        // inline builder, and `__setShift` (count of active SET params) must remain in
+        // scope for the post-build parameter-binding code to shift downstream WHERE
+        // parameter names by it. `throwOnEmptyPatch` is forwarded so diagnostic-path
+        // callers can opt out of the empty-mask throw (see #7 in review.md).
+        if (hasPatch)
+        {
+            EmitPatchSqlDispatch(sb, carrier, chain, hasCollections, throwOnEmptyPatch);
+            return;
+        }
 
         if (!hasCollections)
         {
@@ -1237,6 +1285,93 @@ internal static class CarrierEmitter
     }
 
     /// <summary>
+    /// Emits the SQL-dispatch block for a chain with a Patch SET clause. The SQL is
+    /// always assembled at execute time because `__c.PatchMask` is runtime-determined;
+    /// the prebuilt-SQL / _sqlCache paths are bypassed. `__setShift` and `__colShift`
+    /// are declared at outer scope so their final values remain visible to the
+    /// parameter-binding code that runs after this dispatch.
+    /// </summary>
+    private static void EmitPatchSqlDispatch(
+        StringBuilder sb, CarrierPlan carrier, AssembledPlan chain, bool hasCollections,
+        bool throwOnEmptyPatch = true)
+    {
+        // Outer-scope shift variables — consumed by EmitCarrierCommandBinding to
+        // shift WHERE-side parameter names. __setShift is pre-computed here as the
+        // popcount of the runtime mask so collection-parts population (which runs
+        // BEFORE the inline SQL builder) can offset its placeholder names past the
+        // SET binds. The inline SQL builder resets __setShift to 0 internally and
+        // re-accumulates it via its per-fragment loop; final value is identical
+        // (number of set bits in __c.PatchMask), preserving the downstream-scalar
+        // shift semantics.
+        sb.AppendLine("        int __setShift = System.Numerics.BitOperations.PopCount(__c.PatchMask);");
+        sb.AppendLine("        int __colShift = 0;");
+
+        // Build ordered list of collection parameters with their ordinals (mirrors the
+        // collection path below). When Patch + collections co-occur (Phase 9 coverage),
+        // both shifts contribute to downstream WHERE indices.
+        var collections = new List<(int GlobalIndex, int CollectionOrdinal)>();
+        int ord = 0;
+        foreach (var p in chain.ChainParameters)
+            if (p.IsCollection) collections.Add((p.GlobalIndex, ord++));
+
+        if (hasCollections)
+        {
+            var condMap = TerminalEmitHelpers.BuildParamConditionalMap(chain);
+            foreach (var p in chain.ChainParameters.Where(p => p.IsCollection))
+            {
+                condMap.TryGetValue(p.GlobalIndex, out var ci);
+                var maskType = chain.ConditionalTerms.Count > 0 ? GetMaskType(chain) : null;
+
+                if (ci.IsConditional && ci.BitIndex.HasValue)
+                {
+                    sb.AppendLine($"        System.Collections.Generic.IReadOnlyList<{p.ElementTypeName}>? __col{p.GlobalIndex} = null;");
+                    sb.AppendLine($"        int __col{p.GlobalIndex}Len = 0;");
+                    sb.AppendLine($"        if ((__c.Mask & unchecked(({maskType})(1 << {ci.BitIndex.Value}))) != 0)");
+                    sb.AppendLine($"        {{");
+                    if (p.IsEnumerableCollection)
+                        sb.AppendLine($"            __col{p.GlobalIndex} = Quarry.Internal.CollectionHelper.Materialize(__c.P{p.GlobalIndex});");
+                    else
+                        sb.AppendLine($"            __col{p.GlobalIndex} = __c.P{p.GlobalIndex};");
+                    sb.AppendLine($"            __col{p.GlobalIndex}Len = __col{p.GlobalIndex}.Count;");
+                    sb.AppendLine($"        }}");
+                }
+                else
+                {
+                    if (p.IsEnumerableCollection)
+                        sb.AppendLine($"        var __col{p.GlobalIndex} = Quarry.Internal.CollectionHelper.Materialize(__c.P{p.GlobalIndex});");
+                    else
+                        sb.AppendLine($"        var __col{p.GlobalIndex} = __c.P{p.GlobalIndex};");
+                    sb.AppendLine($"        var __col{p.GlobalIndex}Len = __col{p.GlobalIndex}.Count;");
+                }
+                sb.AppendLine($"        string[] __col{p.GlobalIndex}Parts;");
+                // includeSetShift=true: this call site is inside EmitPatchSqlDispatch,
+                // so the runtime SET binds will occupy @p0..@p(__setShift-1) BEFORE the
+                // collection's WHERE-side params. Part placeholders shift past them.
+                TerminalEmitHelpers.EmitCollectionPartsPopulation(sb, "        ", p.GlobalIndex, chain.Dialect, includeSetShift: true);
+                sb.AppendLine($"        __colShift += __col{p.GlobalIndex}Len - 1;");
+            }
+            // Reset __colShift to 0 before the inline builder consumes it during SQL
+            // text assembly (parts arrays already encode the per-collection offsets).
+            sb.AppendLine("        __colShift = 0;");
+        }
+
+        // Capacity heuristic: longest variant template + room for runtime SET expansion.
+        var maxTemplateLen = chain.SqlVariants.Values.Any()
+            ? chain.SqlVariants.Values.Max(v => v.Sql.Length)
+            : 64;
+        sb.AppendLine($"        var __sb = new System.Text.StringBuilder({maxTemplateLen + 64});");
+
+        // Patch chains are Tier=Opaque with a single SQL variant — no mask-keyed switch.
+        var variant = chain.SqlVariants.Values.First();
+        var segments = TerminalEmitHelpers.ParseSqlSegments(variant.Sql, chain.Dialect);
+        TerminalEmitHelpers.EmitInlineSqlBuilder(sb, "        ", segments, chain.Dialect, collections,
+            patchFragmentsRef: $"{carrier.ClassName}._PatchFragments",
+            throwOnEmptyPatch: throwOnEmptyPatch);
+
+        sb.AppendLine("        var sql = __sb.ToString();");
+    }
+
+    /// <summary>
     /// Emits the static _sqlCache field for carriers with collection parameters.
     /// </summary>
     private static void EmitCollectionSqlCacheField(StringBuilder sb, AssembledPlan chain)
@@ -1244,6 +1379,142 @@ internal static class CarrierEmitter
         var maxMask = chain.SqlVariants.Count == 1 ? 0 : chain.SqlVariants.Keys.Max();
         var arraySize = maxMask + 1;
         sb.AppendLine($"    internal static readonly Quarry.Internal.CollectionSqlCache?[] _sqlCache = new Quarry.Internal.CollectionSqlCache?[{arraySize}];");
+    }
+
+    /// <summary>
+    /// Emits the Patch support members on the carrier class — the static
+    /// <c>_PatchFragments</c> table consumed by the inline SQL builder, and the static
+    /// <c>_BindPatchParams</c> method that binds active SET parameters at execute time.
+    /// The fragment table is <c>(ulong Bit, string Prefix)[]</c>; the binder is a
+    /// per-column unrolled if-block matching the corresponding fragment-table entry.
+    /// </summary>
+    private static void EmitPatchSupport(StringBuilder sb, AssembledPlan chain)
+    {
+        // Patch columns are identical across all Patch sites in a chain (sourced from
+        // the same entity). Pick the first site's PatchInfo as the source of truth.
+        PatchInfo? patchInfo = null;
+        foreach (var cs in chain.ClauseSites)
+        {
+            if ((cs.Bound.Raw.Kind == InterceptorKind.UpdateSetPatch
+                 || cs.Bound.Raw.Kind == InterceptorKind.UpdateSetPatchAction)
+                && cs.Bound.PatchInfo != null)
+            {
+                patchInfo = cs.Bound.PatchInfo;
+                break;
+            }
+        }
+        if (patchInfo == null || patchInfo.Columns.Count == 0)
+            return;
+
+        // Per-carrier mapper fields. The Patch binder runs inside the file-scoped
+        // Chain_N carrier class, so it can't reach the file static interceptor
+        // class's private `_mapper_*` fields. Emit one mirror field per unique
+        // custom-mapper FQN referenced by Patch columns. The field name matches
+        // the file-scope convention (InterceptorCodeGenerator.GetMappingFieldName)
+        // so the generator templates reuse the same identifier expression.
+        var emittedMappers = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var col in patchInfo.Columns)
+        {
+            if (col.CustomTypeMappingClass == null) continue;
+            if (!emittedMappers.Add(col.CustomTypeMappingClass)) continue;
+            var mapperField = InterceptorCodeGenerator.GetMappingFieldName(col.CustomTypeMappingClass);
+            sb.AppendLine($"    private static readonly {col.CustomTypeMappingClass} {mapperField} = new();");
+        }
+
+        // _PatchFragments: (Bit, Prefix) per column. Prefix is `"col" = ` with the
+        // column already dialect-quoted. The inline SQL builder appends the prefix,
+        // then the dialect-correct placeholder, then advances __setShift.
+        //
+        // INVARIANT: _BindPatchParams (below) and EmitInlineSqlBuilder's PatchSet
+        // case BOTH walk this array forward by index, skipping bits not set in the
+        // mask. The SQL-builder's __setShift counter and the binder's local index
+        // must end at the same value for every mask; that holds because both
+        // iterations are forward over the same array. Keep the two loops aligned
+        // if you change the fragment-table layout — re-ordering or filtering on
+        // one side without the other will silently misalign placeholder names
+        // with their bound parameter values.
+        sb.AppendLine($"    internal static readonly (ulong Bit, string Prefix)[] _PatchFragments = new (ulong, string)[]");
+        sb.AppendLine($"    {{");
+        for (int i = 0; i < patchInfo.Columns.Count; i++)
+        {
+            var col = patchInfo.Columns[i];
+            var hex = $"0x{(1UL << i):X}UL";
+            var prefix = $"{col.QuotedColumnName} = ";
+            sb.AppendLine($"        ({hex}, @\"{InterceptorCodeGenerator.EscapeStringLiteral(prefix)}\"),");
+        }
+        sb.AppendLine($"    }};");
+
+        // _BindPatchParams: unrolled per-column if-blocks. Each block creates and
+        // configures a DbParameter for the column when its mask bit is set.
+        // Mirrors the shape of EmitCarrierInsertTerminal's per-column binding.
+        // The `in {entity}.{structName} __patch` parameter uses the resolved nested-
+        // struct name from PatchInfo (default "Patch"; auto-renamed to "_Patch"+ on
+        // QRY047 collisions). PatchInfo is guaranteed non-null here because the
+        // caller (EmitCarrierClass at line ~369) gates EmitPatchSupport on chains
+        // with FieldRole.Patch carrier fields, which only get populated when a
+        // Patch site with PatchInfo participates in the chain.
+        var entityType = InterceptorCodeGenerator.GetShortTypeName(chain.EntityTypeName);
+        var structName = patchInfo.StructName;
+        var convertBool = InterceptorCodeGenerator.RequiresBoolToIntConversion(chain.Dialect);
+        var dialectLiteral = GetDialectLiteral(chain.Dialect);
+
+        sb.AppendLine($"    internal static void _BindPatchParams(");
+        sb.AppendLine($"        System.Data.Common.DbCommand __cmd,");
+        sb.AppendLine($"        in {entityType}.{structName} __patch,");
+        sb.AppendLine($"        ulong __mask,");
+        sb.AppendLine($"        int __startIdx,");
+        sb.AppendLine($"        long __opId)");
+        sb.AppendLine($"    {{");
+        // __bp = "binder parameter index". Named distinctly from the inline SQL
+        // builder's __pi loop counter so a reader scanning generated code sees
+        // two different identifiers across the two iterations of _PatchFragments.
+        sb.AppendLine($"        int __bp = __startIdx;");
+        // Trace logging is gated once per binder invocation; the captured bool
+        // avoids re-checking IsEnabled on every active column. The logger is
+        // re-read locally rather than threaded through as a parameter to avoid
+        // referencing the Logsmith ILogger type in the static method signature
+        // (which would require a using or fully-qualified name in the carrier's
+        // namespace context).
+        sb.AppendLine($"        var __logger = LogsmithOutput.Logger;");
+        sb.AppendLine($"        bool __traceParams = __logger?.IsEnabled(LogLevel.Trace, ParameterLog.CategoryName) == true;");
+
+        for (int i = 0; i < patchInfo.Columns.Count; i++)
+        {
+            var col = patchInfo.Columns[i];
+            var hex = $"0x{(1UL << i):X}UL";
+            var (valueExpr, needsIntType) = TerminalEmitHelpers.GetInsertColumnBinding(col, "__patch", convertBool);
+
+            sb.AppendLine($"        if ((__mask & {hex}) != 0UL)");
+            sb.AppendLine($"        {{");
+            sb.AppendLine($"            var __pP = __cmd.CreateParameter();");
+            if (chain.Dialect == SqlDialect.PostgreSQL)
+                sb.AppendLine($"            __pP.ParameterName = \"\";");
+            else
+                sb.AppendLine($"            __pP.ParameterName = Quarry.Internal.ParameterNames.AtP(__bp);");
+            sb.AppendLine($"            __pP.Value = (object?){valueExpr} ?? DBNull.Value;");
+            if (needsIntType)
+                sb.AppendLine($"            __pP.DbType = System.Data.DbType.Int32;");
+            if (col.CustomTypeMappingClass != null)
+            {
+                var mappingField = InterceptorCodeGenerator.GetMappingFieldName(col.CustomTypeMappingClass);
+                sb.AppendLine($"            ({mappingField} as Quarry.IDialectAwareTypeMapping)?.ConfigureParameter({dialectLiteral}, __pP);");
+            }
+            sb.AppendLine($"            __cmd.Parameters.Add(__pP);");
+            // ParameterLog parity with the Insert binder. Sensitive columns route to
+            // BoundSensitive (which only records that a binding occurred, no value);
+            // non-sensitive columns log the value's ToString(). The check on
+            // __traceParams keeps the binder allocation-free when tracing is off.
+            sb.AppendLine($"            if (__traceParams)");
+            sb.AppendLine($"            {{");
+            if (col.IsSensitive)
+                sb.AppendLine($"                ParameterLog.BoundSensitive(__opId, __bp);");
+            else
+                sb.AppendLine($"                ParameterLog.Bound(__opId, __bp, __pP.Value?.ToString() ?? \"null\");");
+            sb.AppendLine($"            }}");
+            sb.AppendLine($"            __bp++;");
+            sb.AppendLine($"        }}");
+        }
+        sb.AppendLine($"    }}");
     }
 
     internal static bool HasCarrierField(CarrierPlan carrier, FieldRole role)
@@ -1257,6 +1528,8 @@ internal static class CarrierEmitter
             FieldRole.ExecutionContext => "Ctx",
             FieldRole.Entity => "Entity",
             FieldRole.Collection => "Collection",
+            FieldRole.Patch => "Patch",
+            FieldRole.PatchMask => "PatchMask",
             _ => null
         };
         if (targetName == null) return false;

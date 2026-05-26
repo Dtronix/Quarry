@@ -102,6 +102,71 @@ await db.Users().Update()
     .ExecuteNonQueryAsync();
 ```
 
+**Patch form** -- pass a generated `Entity.Patch` struct. Use this when the column set varies at runtime and cannot be expressed as a literal initializer (e.g. when which columns to update depends on inputs available only at call time, or when the patch is built in one method and applied in another).
+
+For every entity, the generator emits a nested mutable struct alongside the entity class:
+
+```csharp
+public partial class User
+{
+    public struct Patch : Quarry.IPatchFor<User>
+    {
+        public string  UserName  { get; set; }
+        public string? Email     { get; set; }
+        public bool    IsActive  { get; set; }
+        // ... one tracked property per updatable column
+    }
+}
+```
+
+Each property setter records a bit in an internal mask. The SET clause is assembled at execute time from the active bits, so only the columns whose setters fired are written:
+
+```csharp
+// Value form — useful when the patch is built elsewhere (e.g. from a DTO).
+var patch = new User.Patch { UserName = "New", IsActive = true };
+await db.Users().Update()
+    .Set(patch)
+    .Where(u => u.UserId == 1)
+    .ExecuteNonQueryAsync();
+
+// Lambda form — useful when the column set depends on input checks.
+await db.Users().Update()
+    .Set((ref User.Patch p) =>
+    {
+        if (newName is not null) p.UserName = newName;
+        if (deactivate)          p.IsActive = false;
+    })
+    .Where(u => u.UserId == 1)
+    .ExecuteNonQueryAsync();
+```
+
+Identity and computed columns are excluded from the Patch struct. Foreign-key columns (`Ref<T, TKey>`) are included and bind their `.Id` value just like the entity form.
+
+A few invariants worth knowing:
+
+- The Patch struct supports up to 64 updatable columns per entity (one mask bit each). Entities exceeding that limit fail at generation time with **QRY045**.
+- Sending a Patch where no setters fired (mask = 0) throws `InvalidOperationException` at execute time — an empty `SET` clause is invalid SQL in every dialect, and we'd rather fail loudly than silently no-op.
+- The compile-time SQL is a tokenized template (`UPDATE "users"{__PATCH_SET__} WHERE …`); the actual `SET col = @pN, …` is materialized when the chain executes. Because the column set varies, Patch chains can't share a prebuilt SQL string across calls — each invocation rebuilds the SET clause.
+- The generator emits the Patch struct as a nested type on every entity. The default name is `Patch`. If your entity has a column literally named `Patch`, the generator auto-renames the struct to `_Patch` (or more leading underscores until the name is unique among the entity's column properties); reference partial updates as `Entity._Patch` in that case. **QRY047** surfaces the rename so you know which name to use. If even maximally-prefixed names collide, Patch struct emission is suppressed entirely for that entity (partial-update Set is unavailable until the columns are renamed).
+- If your codebase already defines a nested type named `Patch` inside one of your entity classes (not via the schema, but via a partial-class extension), you'll see **CS0102 (duplicate member)** at build time. The fix is to rename the user-defined nested type — the generator owns the `Patch` slot.
+
+The cross-method-boundary use case is the main payoff. The other Set overloads can't express it: the assignment-lambda and entity-initializer forms both decide the column set at the call site, so there's no way for a helper method to assemble a "partial update" payload elsewhere and pass it through:
+
+```csharp
+static User.Patch BuildPatchFromInput(EditModel m)
+{
+    var p = new User.Patch();
+    if (m.Name  is not null) p.UserName = m.Name;
+    if (m.Email is not null) p.Email    = m.Email;
+    return p;
+}
+
+await db.Users().Update()
+    .Set(BuildPatchFromInput(model))
+    .Where(u => u.UserId == id)
+    .ExecuteNonQueryAsync();
+```
+
 ### Where / All safety requirement
 
 `ExecuteNonQueryAsync()` is not available on `IUpdateBuilder<T>`. You must call `Where()` or `All()` first, which transitions the chain to `IExecutableUpdateBuilder<T>` where the execution terminal is defined. This is enforced at compile time through the type system -- there is no way to accidentally execute an unfiltered update.

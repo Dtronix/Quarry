@@ -337,6 +337,36 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                     }
                 }
 
+                // Report QRY045 when the entity has more updatable (non-Identity,
+                // non-Computed) columns than the Patch ulong mask can address.
+                // The Patch struct itself is suppressed inside GenerateEntityClass
+                // for the same condition — keep the two checks in sync.
+                int updatableCount = EntityCodeGenerator.CountUpdatableColumns(entity);
+                if (updatableCount > EntityCodeGenerator.PatchColumnLimit)
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        DiagnosticDescriptors.PatchColumnLimitExceeded,
+                        entity.Location,
+                        entity.EntityName,
+                        updatableCount));
+                }
+
+                // Report QRY047 when a column is literally named "Patch" — the
+                // generator's default struct name collides, so the resolver picks
+                // a leading-underscore variant. If all candidates collide the
+                // resolver returns null and Patch struct emission is suppressed
+                // entirely. Keep the diagnostic shape in sync with
+                // EntityCodeGenerator.ResolvePatchStructName.
+                if (EntityCodeGenerator.HasPatchNameCollision(entity))
+                {
+                    var resolvedName = EntityCodeGenerator.ResolvePatchStructName(entity) ?? "";
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        DiagnosticDescriptors.PatchColumnNameCollision,
+                        entity.Location,
+                        entity.EntityName,
+                        resolvedName));
+                }
+
                 var entitySource = EntityCodeGenerator.GenerateEntityClass(entity, contextInfo.Namespace);
                 var entityFileName = $"{contextInfo.Namespace}.{entity.EntityName}.g.cs";
                 context.AddSource(entityFileName, entitySource);
@@ -714,6 +744,26 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                         new Microsoft.CodeAnalysis.Text.LinePosition(execRaw.Line - 1, execRaw.Column - 1))),
                     $"{GetRelativePath(execRaw.FilePath)}:{execRaw.Line}"));
             }
+        }
+
+        // Report QRY046 warning for Set sites flagged with PatchUnrecognizedShape
+        // — the user's argument syntactically referenced a `.Patch` member but
+        // didn't match a recognized Patch construction shape, so it fell through
+        // to UpdateSetPoco classification. Surface this at compile time with an
+        // actionable message before the user hits CS9144.
+        foreach (var site in group.Sites)
+        {
+            if (!site.Bound.Raw.PatchUnrecognizedShape) continue;
+            var entityType = site.Bound.Raw.EntityTypeName ?? "T";
+            // Strip namespace from "Namespace.Entity" → just "Entity" for the message.
+            var lastDot = entityType.LastIndexOf('.');
+            if (lastDot >= 0) entityType = entityType.Substring(lastDot + 1);
+            spc.ReportDiagnostic(Diagnostic.Create(
+                DiagnosticDescriptors.PatchUnrecognizedShape,
+                Location.Create(site.FilePath, site.Bound.Raw.Location.Span, new Microsoft.CodeAnalysis.Text.LinePositionSpan(
+                    new Microsoft.CodeAnalysis.Text.LinePosition(site.Line - 1, site.Column - 1),
+                    new Microsoft.CodeAnalysis.Text.LinePosition(site.Line - 1, site.Column - 1))),
+                entityType));
         }
 
         try

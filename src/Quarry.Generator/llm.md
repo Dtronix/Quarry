@@ -245,6 +245,22 @@ Subquery aliases are generated as `sq0`, `sq1`, etc. Correlation is always `inne
 
 Explicit joins support 2–6 tables via T4-generated `IJoinedQueryBuilder5/6` and `JoinedCarrierBase5/6`. New join kinds: `CrossJoin<T>()` (no condition), `FullOuterJoin<T>(condition)`. **Join-aware nullable readers:** the projection analyzer inspects join-side nullability and wraps reader column reads on LEFT/RIGHT/FULL OUTER nullable sides with `IsDBNull` guards. Declared tuple types unchanged; only generated reader code is affected.
 
+### Partial Updates via Patch
+
+Two `Update().Set(...)` overloads accept a generated per-entity `Patch` struct so the column set can vary at runtime — the missing case in the existing `Set(entity)` and `Set(u => u.X = v)` forms, both of which lock the column set at the call site.
+
+**Generation.** `EntityCodeGenerator.GeneratePatchStruct` emits a nested `public struct Patch : Quarry.IPatchFor<TEntity>` inside every entity with 1–64 updatable columns (identity + computed excluded; FKs / enums / custom-mapped types included with their entity-side types — `EntityRef<T, TKey>`, the enum type, the `Mapped<T>` user type). Each property setter ORs a constant bit into a hidden `internal ulong __mask` field. Entities exceeding 64 updatable columns raise **QRY045** at generation time and self-suppress Patch emission. The `_Mask_{Col}` constants are emitted alongside the properties for downstream code (no current external consumers beyond the carrier binder).
+
+**Discovery.** Patch classification in `UsageSiteDiscovery` is *syntax-only*, not semantic. The SyntaxProvider's `SemanticModel` runs on the pre-generator compilation, so the generated `Entity.Patch` struct isn't visible and Roslyn would otherwise bind `Set(somePatch)` to the SetPoco DIM. Instead `IsPatchConstructionExpression` recognizes `new X.Patch { … }` / `default(X.Patch)`, `IsPatchVariableReference` walks the enclosing `MemberDeclarationSyntax` to verify a local's declarator initializer matches that shape, and the `ref` modifier on a single lambda parameter discriminates `Set(PatchAction<TPatch>)`. Unsupported shapes (factory returns, ternaries) fall through to UpdateSetPoco and surface as CS9144 at the user's call site — actionable.
+
+**IR & SQL.** `PatchInfo` mirrors `InsertInfo` and lives on `BoundCallSite`. ChainAnalyzer emits a single sentinel `SetTerm` with a `PatchSetPlaceholderExpr` value (renders as literal `{__PATCH_SET__}`) and zero per-column `QueryParameter`s — the column set is runtime-determined, so compile-time can't allocate parameter slots. `SqlAssembler.RenderUpdateSql` emits `UPDATE "users"{__PATCH_SET__} WHERE …` (no space before the token); the runtime emitter owns the entire ` SET … ` clause including its leading space.
+
+**Runtime SET assembly.** `TerminalEmitHelpers.ParseSqlSegments` recognizes the `{__PATCH_SET__}` token as a `PatchSet` segment. `EmitInlineSqlBuilder`'s PatchSet case emits an empty-mask guard (`throw new InvalidOperationException` when `__c.PatchMask == 0UL`), then walks a per-chain fragment table `(ulong Bit, string Prefix)[] _PatchFragments`, appending each active fragment's prefix + dialect-correct placeholder and bumping a local `__setShift` counter. WHERE-side scalar parameters reference `(idx + __colShift + __setShift)` so their placeholder names shift past the runtime-bound SET params; for MySQL only bind order matters.
+
+**Carrier wiring.** Chains with any Patch site get two extra carrier fields — `Patch Patch` and `ulong PatchMask` — plus the per-chain `_PatchFragments` table and a static `_BindPatchParams(DbCommand, in Patch, ulong mask, int startIdx)` method with unrolled per-column if-blocks (FK `.Id` extraction, enum cast, custom-mapper `ToDb` + `ConfigureParameter`, bool → int conversion where the dialect requires). Because `_BindPatchParams` lives on the file-scoped `Chain_N` carrier class, it can't see the interceptor class's private `_mapper_X` fields; `EmitPatchSupport` therefore emits a per-carrier mirror field for each unique mapper FQN referenced by the chain's Patch columns. The `Set(Patch)` interceptor body is `__c.Patch = patch; __c.PatchMask = patch.__mask;` — the lambda form invokes `action(ref __c.Patch)` then mirrors the mask.
+
+**Tier.** Patch chains are always `OptimizationTier.PrebuiltDispatch` *for the chain shape* but always `Opaque` at the SQL level — there's no prebuilt variant set, every execute rebuilds the SET clause. Users who want a prebuilt SQL string for a fixed column set should stay on `Set(new User { … })` (untouched `UpdateSetPoco`).
+
 ### SQL Manifest Emission
 
 Gated by MSBuild property `QuarrySqlManifestPath`. `ManifestEmitter` runs after Stage 6 and writes per-dialect markdown files (one per dialect present in the compilation). `WriteIfChanged` compares against on-disk content to suppress no-op writes. Output includes every chain's SQL, parameter table (including LIMIT/OFFSET parameters), bitmask-labeled conditional variants (`Variant[0b0001]`), and per-file summary. Write failures surface as `QRY040` warnings.
@@ -392,7 +408,7 @@ All pipeline models implement `IEquatable<T>` for incremental caching.
 
 | Category | Kinds |
 |----------|-------|
-| Clause | Select, Where, OrderBy, ThenBy, GroupBy, Having, Set, DeleteWhere, UpdateWhere, UpdateSetAction, UpdateSetPoco |
+| Clause | Select, Where, OrderBy, ThenBy, GroupBy, Having, Set, DeleteWhere, UpdateWhere, UpdateSetAction, UpdateSetPoco, UpdateSetPatch, UpdateSetPatchAction |
 | Terminal | ExecuteFetchAll, ExecuteFetchFirst, ExecuteFetchFirstOrDefault, ExecuteFetchSingle, ExecuteFetchSingleOrDefault, ExecuteScalar, ExecuteNonQuery, ToAsyncEnumerable, ToDiagnostics, Prepare |
 | Insert Terminal | InsertExecuteNonQuery, InsertExecuteScalar, InsertToDiagnostics |
 | Batch Insert | BatchInsertExecuteNonQuery, BatchInsertExecuteScalar, BatchInsertToDiagnostics, BatchInsertColumnSelector, BatchInsertValues |
@@ -429,6 +445,9 @@ All pipeline models implement `IEquatable<T>` for incremental caching.
 | QRY042 | Info | RawSqlAsync convertible to chain query (code fix available) |
 | QRY043 | Error | Row entity type not materializable (no parameterless ctor, init-only property, abstract class, or interface) |
 | QRY044 | Warning | `[QuarryContext]` namespace missing from `<InterceptorsNamespaces>` |
+| QRY045 | Error | Entity has more than 64 updatable columns; cannot generate `Patch` struct (single-`ulong` mask cap) |
+| QRY046 | Warning | `Set(...)` argument is not a recognized Patch construction shape (descriptor reserved; detection wiring is a future enhancement — see workflow.md) |
+| QRY047 | Warning | Entity has a column named `Patch`; nested struct auto-renamed to `_Patch` (or more underscores) to avoid CS0102 — reference as `Entity._Patch`. If all candidates collide, Patch struct emission is suppressed for the entity. |
 | QRY050-055 | Mixed | Migration diagnostics |
 | QRY060 | Error | No FK column for `One<T>` navigation |
 | QRY061 | Error | Ambiguous FK for `One<T>` navigation |

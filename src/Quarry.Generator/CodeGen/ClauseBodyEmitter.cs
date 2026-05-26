@@ -568,6 +568,104 @@ internal static class ClauseBodyEmitter
     }
 
     /// <summary>
+    /// Emits an UpdateSetPatch interceptor (<c>Set(TEntity.Patch)</c> value form).
+    /// Copies the Patch value into the carrier and mirrors <c>patch.__mask</c> into a
+    /// carrier field so downstream terminal emission can use it without re-reading the
+    /// (potentially struct-copy-modified) Patch value.
+    /// </summary>
+    public static void EmitUpdateSetPatch(
+        StringBuilder sb,
+        TranslatedCallSite site,
+        string methodName,
+        int? clauseBit,
+        AssembledPlan? prebuiltChain,
+        bool isFirstInChain,
+        CarrierPlan? carrier,
+        CarrierAssignmentRecorder? recorder = null)
+    {
+        // PatchInfo.StructName is "Patch" by default, or "_Patch" / "__Patch" etc.
+        // when a column named "Patch" forces a rename (see QRY047).
+        var structName = site.PatchInfo?.StructName ?? "Patch";
+        EmitPatchInterceptor(sb, site, methodName, clauseBit, prebuiltChain, carrier,
+            parameterDecl: "patch",
+            parameterType: entityType => $"{entityType}.{structName}",
+            bodyAssign: (carrierClass, _) => new[]
+            {
+                "__c.Patch = patch;",
+                "__c.PatchMask = patch.__mask;",
+            });
+    }
+
+    /// <summary>
+    /// Emits an UpdateSetPatchAction interceptor (<c>Set(PatchAction&lt;TEntity.Patch&gt;)</c>
+    /// lambda form). Invokes the user lambda against the carrier's Patch field by ref so
+    /// any property writes flip mask bits in-place; then mirrors the resulting mask to
+    /// the carrier's <c>PatchMask</c> field for terminal-side consumption.
+    /// </summary>
+    public static void EmitUpdateSetPatchAction(
+        StringBuilder sb,
+        TranslatedCallSite site,
+        string methodName,
+        int? clauseBit,
+        AssembledPlan? prebuiltChain,
+        bool isFirstInChain,
+        CarrierPlan? carrier,
+        CarrierAssignmentRecorder? recorder = null)
+    {
+        var structName = site.PatchInfo?.StructName ?? "Patch";
+        EmitPatchInterceptor(sb, site, methodName, clauseBit, prebuiltChain, carrier,
+            parameterDecl: "action",
+            parameterType: entityType => $"Quarry.PatchAction<{entityType}.{structName}>",
+            bodyAssign: (carrierClass, _) => new[]
+            {
+                "action(ref __c.Patch);",
+                "__c.PatchMask = __c.Patch.__mask;",
+            });
+    }
+
+    /// <summary>
+    /// Shared helper for the two Patch-form Set interceptors. The signature shape and
+    /// return-cast are identical across the value form and the ref-lambda form; only
+    /// the parameter type and the body's carrier-mutation lines differ. Centralizing
+    /// the structure here keeps the two emit paths from drifting (e.g., on builder-
+    /// interface renaming, mask-bit accumulation, or carrier-cast pattern changes).
+    /// </summary>
+    private static void EmitPatchInterceptor(
+        StringBuilder sb,
+        TranslatedCallSite site,
+        string methodName,
+        int? clauseBit,
+        AssembledPlan? prebuiltChain,
+        CarrierPlan? carrier,
+        string parameterDecl,
+        System.Func<string, string> parameterType,
+        System.Func<string, string, string[]> bodyAssign)
+    {
+        if (carrier == null || prebuiltChain == null) return;
+
+        var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
+        var isExecutable = site.BuilderKind is BuilderKind.ExecutableUpdate;
+        var concreteBaseName = isExecutable ? "ExecutableUpdateBuilder" : "UpdateBuilder";
+        var returnInterfaceBaseName = "I" + concreteBaseName;
+        var returnInterface = $"{returnInterfaceBaseName}<{entityType}>";
+
+        sb.AppendLine($"    public static {returnInterface} {methodName}(");
+        sb.AppendLine($"        this {returnInterface} builder,");
+        sb.AppendLine($"        {parameterType(entityType)} {parameterDecl})");
+        sb.AppendLine($"    {{");
+
+        sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
+        foreach (var line in bodyAssign(carrier.ClassName, entityType))
+            sb.AppendLine($"        {line}");
+
+        if (clauseBit.HasValue)
+            sb.AppendLine($"        __c.Mask |= unchecked(({CarrierEmitter.GetMaskType(prebuiltChain)})(1 << {clauseBit.Value}));");
+
+        sb.AppendLine($"        return Unsafe.As<{returnInterface}>(builder);");
+        sb.AppendLine($"    }}");
+    }
+
+    /// <summary>
     /// Emits an UpdateSetPoco interceptor (Set with entity POCO).
     /// </summary>
     public static void EmitUpdateSetPoco(

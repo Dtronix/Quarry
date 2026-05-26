@@ -239,6 +239,13 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
     // Reported as QRY043 by PipelineOrchestrator; suppresses interceptor emission.
     public string? MaterializabilityError { get; set; }
 
+    // Set by UsageSiteDiscovery when a Set(...) argument syntactically references
+    // a `.Patch` member but doesn't match one of the supported Patch construction
+    // shapes (new X.Patch{}, default(X.Patch), or a variable initialized to those).
+    // Reported as QRY046 — actionable hint to refactor to a recognized form.
+    // Not part of Equals/GetHashCode (mutable flag).
+    public bool PatchUnrecognizedShape { get; set; }
+
     // Transient: lambda syntax for deferred batch enrichment. Not part of Equals/GetHashCode.
     public LambdaExpressionSyntax? EnrichmentLambda { get; set; }
 

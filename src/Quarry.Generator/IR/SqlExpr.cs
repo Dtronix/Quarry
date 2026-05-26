@@ -60,7 +60,8 @@ internal enum SqlExprKind
     RawCall,
     ExprList,
     Subquery,
-    NavigationAccess
+    NavigationAccess,
+    PatchSetPlaceholder
 }
 
 /// <summary>

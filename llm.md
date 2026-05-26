@@ -207,6 +207,13 @@ await db.Users().Update().Set(u => u.UserName = "New").Where(u => u.UserId == 1)
 await db.Users().Update().Set(u => { u.UserName = "New"; u.IsActive = true; }).Where(u => u.UserId == 1).ExecuteNonQueryAsync();
 await db.Users().Update().Set(new User { UserName = "New" }).Where(u => u.UserId == 1).ExecuteNonQueryAsync();
 
+// Runtime-conditional column set — pass a generated User.Patch (value form or by-ref lambda)
+var patch = new User.Patch { UserName = "New" };
+await db.Users().Update().Set(patch).Where(u => u.UserId == 1).ExecuteNonQueryAsync();
+await db.Users().Update()
+    .Set((ref User.Patch p) => { if (newName is not null) p.UserName = newName; })
+    .Where(u => u.UserId == 1).ExecuteNonQueryAsync();
+
 // Delete — requires Where() or All()
 await db.Users().Delete().Where(u => u.UserId == 1).ExecuteNonQueryAsync();
 ```
@@ -332,7 +339,7 @@ All base class methods throw `InvalidOperationException` — generator replaces 
 
 **Modification entry points** are on `IEntityAccessor<T>`: `.Insert(entity)`, `.Update()`, `.Delete()`, `.InsertBatch(selector)`. Access via the entity accessor method — `db.Users().Insert(...)`, NOT `db.Insert(...)`.
 
-**Update `.Set()` overloads:** `Set(Action<T> assignment)` uses assignment syntax (`u => u.Name = value` or `u => { u.Name = value; u.Active = true; }`), and `Set(T entity)` uses initializer-aware entity form. There is NO two-argument `Set(selector, value)` overload.
+**Update `.Set()` overloads:** `Set(Action<T> assignment)` uses assignment syntax (`u => u.Name = value` or `u => { u.Name = value; u.Active = true; }`), `Set(T entity)` uses initializer-aware entity form (column set fixed at the call site), and the runtime-variable column-set forms `Set(T.Patch patch)` / `Set((ref T.Patch p) => …)` use the per-entity generated `Patch` struct whose property setters track which columns were assigned via a hidden `ulong` mask. There is NO two-argument `Set(selector, value)` overload.
 
 **Modification:** `IDeleteBuilder<T>` → `IExecutableDeleteBuilder<T>` (via Where/All). `IUpdateBuilder<T>` → `IExecutableUpdateBuilder<T>`. `IInsertBuilder<T>`. `IBatchInsertBuilder<T>` → `IExecutableBatchInsert<T>` (via Values).
 **All** support `.Prepare()` → `PreparedQuery<TResult>`.

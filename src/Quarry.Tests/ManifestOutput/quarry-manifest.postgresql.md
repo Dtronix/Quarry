@@ -78,6 +78,14 @@ UPDATE "accounts" SET "Balance" = $1 WHERE "AccountId" = 1
 
 ---
 
+### Accounts().Update().Set(...).Where(...).Prepare().ToDiagnostics()
+
+```sql
+UPDATE "accounts"{__PATCH_SET__} WHERE "AccountId" = 1
+```
+
+---
+
 ### Accounts().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -433,6 +441,14 @@ SELECT "Total" FROM "orders" WHERE "Total" > 100
 
 ```sql
 UPDATE "orders" SET "Priority" = 2 WHERE "OrderId" = 1
+```
+
+---
+
+### Orders().Update().Set(...).Where(...).Prepare().ToDiagnostics()
+
+```sql
+UPDATE "orders"{__PATCH_SET__} WHERE "OrderId" = 1
 ```
 
 ---
@@ -2342,6 +2358,14 @@ UPDATE "users" SET "UserName" = $1, "IsActive" = FALSE WHERE "UserId" = 2
 
 ---
 
+### Users().Update().Set(...).Where(...).ExecuteNonQueryAsync()
+
+```sql
+UPDATE "users"{__PATCH_SET__} WHERE "UserId" = 1
+```
+
+---
+
 ### Users().Update().Set(...).Where(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -2423,6 +2447,38 @@ UPDATE "users" SET "UserName" = 'x', "IsActive" = FALSE WHERE "UserId" = 1
 
 ---
 
+### Users().Update().Set(...).Where(...).Prepare().ToDiagnostics()
+
+```sql
+UPDATE "users"{__PATCH_SET__} WHERE "UserId" = $1
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Users().Update().Set(...).Where(...).Prepare().ToDiagnostics()
+
+```sql
+UPDATE "users"{__PATCH_SET__} WHERE "UserId" = 1
+```
+
+---
+
+### Users().Update().Set(...).Where(...).Prepare().ToDiagnostics()
+
+```sql
+UPDATE "users"{__PATCH_SET__} WHERE "UserId" IN ({__COL_P0__})
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int[]` |
+
+---
+
 ### Users().Update().Set(...).Where(...).Set(...).Prepare().ToDiagnostics() — 2 variants
 
 ```sql
@@ -2470,6 +2526,14 @@ UPDATE "users" SET "UserName" = $1, "IsActive" = $2 WHERE "UserId" = 3
 |-----------|------|
 | `@p0` | `string` |
 | `@p1` | `bool` |
+
+---
+
+### Users().Update().Where(...).Set(...).Prepare().ToDiagnostics()
+
+```sql
+UPDATE "users"{__PATCH_SET__} WHERE "UserId" = 1
+```
 
 ---
 
@@ -5201,7 +5265,7 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 586 |
+| Total discovered | 600 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 110 |
-| Rendered | 476 |
+| Consolidated (deduped) | 117 |
+| Rendered | 483 |
