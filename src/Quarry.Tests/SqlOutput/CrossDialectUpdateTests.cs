@@ -1312,6 +1312,13 @@ internal class CrossDialectUpdateTests
             pg:     "UPDATE \"accounts\" SET \"UserId\" = $1, \"AccountName\" = $2 WHERE \"AccountId\" = 1",
             mysql:  "UPDATE `accounts` SET `UserId` = ?, `AccountName` = ? WHERE `AccountId` = 1",
             ss:     "UPDATE [accounts] SET [UserId] = @p0, [AccountName] = @p1 WHERE [AccountId] = 1");
+
+        // Execute to verify the per-column binder actually routes FK .Id extraction
+        // and AccountName binding correctly across all four dialects.
+        Assert.That(await lt.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await pg.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await my.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await ss.ExecuteNonQueryAsync(), Is.EqualTo(1));
     }
 
     [Test]
@@ -1337,6 +1344,12 @@ internal class CrossDialectUpdateTests
             pg:     "UPDATE \"orders\" SET \"Priority\" = $1 WHERE \"OrderId\" = 1",
             mysql:  "UPDATE `orders` SET `Priority` = ? WHERE `OrderId` = 1",
             ss:     "UPDATE [orders] SET [Priority] = @p0 WHERE [OrderId] = 1");
+
+        // Execute to verify the underlying-int cast actually binds correctly.
+        Assert.That(await lt.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await pg.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await my.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await ss.ExecuteNonQueryAsync(), Is.EqualTo(1));
     }
 
     [Test]
@@ -1365,6 +1378,13 @@ internal class CrossDialectUpdateTests
             pg:     "UPDATE \"accounts\" SET \"Balance\" = $1 WHERE \"AccountId\" = 1",
             mysql:  "UPDATE `accounts` SET `Balance` = ? WHERE `AccountId` = 1",
             ss:     "UPDATE [accounts] SET [Balance] = @p0 WHERE [AccountId] = 1");
+
+        // Execute to verify MoneyMapping.ToDb fires on the carrier-scope mapper
+        // field (catches future regressions if the mapper is moved/renamed).
+        Assert.That(await lt.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await pg.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await my.ExecuteNonQueryAsync(), Is.EqualTo(1));
+        Assert.That(await ss.ExecuteNonQueryAsync(), Is.EqualTo(1));
     }
 
     [Test]

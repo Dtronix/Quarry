@@ -47,6 +47,16 @@ public interface IExecutableDeleteBuilder<T> where T : class
 /// <summary>
 /// Interface for constructing UPDATE operations (before WHERE/All).
 /// </summary>
+/// <remarks>
+/// DO NOT add additional generic <c>Set</c> overloads as default interface members
+/// here. Adding generic <c>Set</c> DIMs has previously broken existing
+/// <c>Set(T entity)</c> interceptor binding (Roslyn stops routing the user's call
+/// through the emitted interceptor once the DIM overload set widens). New
+/// <c>Set</c> overloads — including the runtime-conditional <c>Set(T.Patch)</c>
+/// and <c>Set(PatchAction&lt;T.Patch&gt;)</c> forms — are defined as extension
+/// methods on <see cref="Quarry.UpdateBuilderPatchExtensions"/> instead. See the
+/// 2026-05-22 decision in <c>_sessions/add-patch-partial-update/workflow.md</c>.
+/// </remarks>
 public interface IUpdateBuilder<T> where T : class
 {
     IUpdateBuilder<T> Set(T entity)

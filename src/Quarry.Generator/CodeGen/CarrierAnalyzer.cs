@@ -235,7 +235,7 @@ internal static class CarrierAnalyzer
         {
             var entityType = InterceptorCodeGenerator.GetShortTypeName(assembled.EntityTypeName);
             fields.Add(new Models.CarrierField("Patch", entityType + ".Patch", Models.FieldRole.Patch, isReferenceType: false));
-            fields.Add(new Models.CarrierField("PatchMask", "ulong", Models.FieldRole.Patch, isReferenceType: false));
+            fields.Add(new Models.CarrierField("PatchMask", "ulong", Models.FieldRole.PatchMask, isReferenceType: false));
         }
 
         // BatchEntities field for batch insert chains

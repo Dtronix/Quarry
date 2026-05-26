@@ -16,7 +16,8 @@ internal enum FieldRole
     Offset,
     Timeout,
     Entity,
-    Patch
+    Patch,
+    PatchMask
 }
 
 /// <summary>

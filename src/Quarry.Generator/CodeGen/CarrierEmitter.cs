@@ -1404,6 +1404,15 @@ internal static class CarrierEmitter
         // _PatchFragments: (Bit, Prefix) per column. Prefix is `"col" = ` with the
         // column already dialect-quoted. The inline SQL builder appends the prefix,
         // then the dialect-correct placeholder, then advances __setShift.
+        //
+        // INVARIANT: _BindPatchParams (below) and EmitInlineSqlBuilder's PatchSet
+        // case BOTH walk this array forward by index, skipping bits not set in the
+        // mask. The SQL-builder's __setShift counter and the binder's local index
+        // must end at the same value for every mask; that holds because both
+        // iterations are forward over the same array. Keep the two loops aligned
+        // if you change the fragment-table layout — re-ordering or filtering on
+        // one side without the other will silently misalign placeholder names
+        // with their bound parameter values.
         sb.AppendLine($"    internal static readonly (ulong Bit, string Prefix)[] _PatchFragments = new (ulong, string)[]");
         sb.AppendLine($"    {{");
         for (int i = 0; i < patchInfo.Columns.Count; i++)
@@ -1428,7 +1437,10 @@ internal static class CarrierEmitter
         sb.AppendLine($"        ulong __mask,");
         sb.AppendLine($"        int __startIdx)");
         sb.AppendLine($"    {{");
-        sb.AppendLine($"        int __pi = __startIdx;");
+        // __bp = "binder parameter index". Named distinctly from the inline SQL
+        // builder's __pi loop counter so a reader scanning generated code sees
+        // two different identifiers across the two iterations of _PatchFragments.
+        sb.AppendLine($"        int __bp = __startIdx;");
 
         for (int i = 0; i < patchInfo.Columns.Count; i++)
         {
@@ -1442,7 +1454,7 @@ internal static class CarrierEmitter
             if (chain.Dialect == SqlDialect.PostgreSQL)
                 sb.AppendLine($"            __pP.ParameterName = \"\";");
             else
-                sb.AppendLine($"            __pP.ParameterName = Quarry.Internal.ParameterNames.AtP(__pi);");
+                sb.AppendLine($"            __pP.ParameterName = Quarry.Internal.ParameterNames.AtP(__bp);");
             sb.AppendLine($"            __pP.Value = (object?){valueExpr} ?? DBNull.Value;");
             if (needsIntType)
                 sb.AppendLine($"            __pP.DbType = System.Data.DbType.Int32;");
@@ -1452,7 +1464,7 @@ internal static class CarrierEmitter
                 sb.AppendLine($"            ({mappingField} as Quarry.IDialectAwareTypeMapping)?.ConfigureParameter({dialectLiteral}, __pP);");
             }
             sb.AppendLine($"            __cmd.Parameters.Add(__pP);");
-            sb.AppendLine($"            __pi++;");
+            sb.AppendLine($"            __bp++;");
             sb.AppendLine($"        }}");
         }
         sb.AppendLine($"    }}");
@@ -1470,6 +1482,7 @@ internal static class CarrierEmitter
             FieldRole.Entity => "Entity",
             FieldRole.Collection => "Collection",
             FieldRole.Patch => "Patch",
+            FieldRole.PatchMask => "PatchMask",
             _ => null
         };
         if (targetName == null) return false;

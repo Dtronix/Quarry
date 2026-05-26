@@ -188,6 +188,8 @@ internal static class EntityCodeGenerator
         sb.AppendLine();
         sb.AppendLine($"        private {fieldType} __{column.PropertyName};");
         sb.AppendLine($"        /// <summary>Gets or sets the {column.PropertyName} value. Setting flips <c>_Mask_{column.PropertyName}</c> in <c>__mask</c>.</summary>");
+        if (column.Modifiers.IsSensitive)
+            sb.AppendLine($"        /// <remarks>Column is marked sensitive in the schema (<c>Sensitive()</c>). Bound parameter values are redacted in diagnostic / trace output.</remarks>");
         sb.AppendLine($"        public {propertyType} {column.PropertyName}");
         sb.AppendLine("        {");
         sb.AppendLine($"            get => {getterExpr};");

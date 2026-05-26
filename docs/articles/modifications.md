@@ -147,6 +147,7 @@ A few invariants worth knowing:
 - The Patch struct supports up to 64 updatable columns per entity (one mask bit each). Entities exceeding that limit fail at generation time with **QRY045**.
 - Sending a Patch where no setters fired (mask = 0) throws `InvalidOperationException` at execute time — an empty `SET` clause is invalid SQL in every dialect, and we'd rather fail loudly than silently no-op.
 - The compile-time SQL is a tokenized template (`UPDATE "users"{__PATCH_SET__} WHERE …`); the actual `SET col = @pN, …` is materialized when the chain executes. Because the column set varies, Patch chains can't share a prebuilt SQL string across calls — each invocation rebuilds the SET clause.
+- The generator emits the `Patch` struct as a nested type on every entity unconditionally. If your codebase already defines a nested type named `Patch` inside one of your entity classes, you'll see **CS0102 (duplicate member)** at build time. The fix is to rename the user-defined nested type — the generator owns the `Patch` slot.
 
 The cross-method-boundary use case is the main payoff. The other Set overloads can't express it: the assignment-lambda and entity-initializer forms both decide the column set at the call site, so there's no way for a helper method to assemble a "partial update" payload elsewhere and pass it through:
 
