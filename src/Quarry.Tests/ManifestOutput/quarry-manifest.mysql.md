@@ -492,6 +492,19 @@ SELECT `Status`, MIN(`Total`) AS `Item2` FROM `orders` GROUP BY `Status`
 ### Orders().Where(...).OrderBy(...).Distinct(...).Select(...).ExecuteFetchAllAsync()
 
 ```sql
+SELECT `d`.`Total` FROM (SELECT DISTINCT `Total` AS `Total`, (`Total` + ?) AS `_o0` FROM `orders` WHERE `OrderId` IN ({__COL_P0__})) AS `d` ORDER BY `d`.`_o0` ASC
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int[]` |
+| `@p1` | `decimal` |
+
+---
+
+### Orders().Where(...).OrderBy(...).Distinct(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
 SELECT `d`.`Total` FROM (SELECT DISTINCT `Total` AS `Total`, (`Total` + ?) AS `_o0` FROM `orders` WHERE `Total` > ?) AS `d` ORDER BY `d`.`_o0` ASC
 ```
 
@@ -515,6 +528,20 @@ SELECT `t0`.`Total` FROM `orders` AS `t0` INNER JOIN `users` AS `j0` ON `t0`.`Us
 ```sql
 SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `UserId` = 5
 ```
+
+---
+
+### Orders().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT `Total`, LAG(`Total`, ?, ?) OVER (ORDER BY `OrderId`) AS `Prev` FROM `orders` WHERE `Total` > ?
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+| `@p1` | `int` |
+| `@p2` | `decimal` |
 
 ---
 
@@ -909,6 +936,24 @@ SELECT `OrderId`, NTILE(2) OVER (ORDER BY `OrderDate`) AS `Grp` FROM `orders` WH
 |-----------|------|
 | `@p0` | `int` |
 | `@p1` | `int` |
+
+---
+
+### Orders().Where(...).Where(...).OrderBy(...).Distinct(...).Select(...).ExecuteFetchAllAsync() — 2 variants
+
+```sql
+-- base
+SELECT `d`.`Total` FROM (SELECT DISTINCT `Total` AS `Total`, (`Total` + ?) AS `_o0` FROM `orders` WHERE `Total` > ?) AS `d` ORDER BY `d`.`_o0` ASC
+
+-- +applyMinOff
+SELECT `d`.`Total` FROM (SELECT DISTINCT `Total` AS `Total`, (`Total` + ?) AS `_o0` FROM `orders` WHERE (`Total` > ?) AND (`OrderId` >= ?)) AS `d` ORDER BY `d`.`_o0` ASC
+```
+
+| Parameter | Type | Conditional |
+|-----------|------|-------------|
+| `@p0` | `decimal` | |
+| `@p1` | `int` | applyMinOff |
+| `@p2` | `decimal` | |
 
 ---
 
@@ -5066,7 +5111,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 561 |
+| Total discovered | 565 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 98 |
-| Rendered | 463 |
+| Consolidated (deduped) | 99 |
+| Rendered | 466 |

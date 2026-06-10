@@ -1,5 +1,6 @@
 using System.Threading.Tasks;
 using MySqlConnector;
+using Quarry;
 using Quarry.Tests.Samples;
 using My = Quarry.Tests.Samples.My;
 
@@ -194,5 +195,109 @@ public class MySqlIntegrationTests
         Assert.That(totals, Does.Contain(150.00m),
             "Order 3 Total (150.00) must survive `Total > 100` filter — its absence " +
             "indicates the threshold parameter did not reach the WHERE `?`.");
+    }
+
+    [Test]
+    public async Task WindowFunctionProjectionParams_OnMySQL_PreservesBindingAlignment()
+    {
+        // Audit surface #1 from issue #303: parameterized window-function arguments in
+        // the SELECT projection render textually BEFORE the WHERE clause, but their
+        // chain-call order (Select after Where) gives them HIGHER global slots than the
+        // WHERE parameter. SQL text: `LAG(Total, ?, ?) OVER ... WHERE Total > ?` is
+        // slots [1, 2, 0]; chain-order binding would feed `threshold` into the LAG
+        // offset. The captured locals (not literals) force parameterization.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (_, _, My, _) = t;
+
+        decimal threshold = 100.00m;
+        int lagOffset = 1;
+        decimal lagDefault = 0.00m;
+
+        var rows = await My.Orders()
+            .Where(o => o.Total > threshold)
+            .Select(o => (o.Total, Prev: Sql.Lag(o.Total, lagOffset, lagDefault, over => over.OrderBy(o.OrderId))))
+            .ExecuteFetchAllAsync();
+
+        // Orders 1 (250.00) and 3 (150.00) survive `Total > 100`; LAG over OrderId
+        // gives order 1 the default (0.00) and order 3 the previous Total (250.00).
+        Assert.That(rows, Has.Count.EqualTo(2),
+            "Expected orders 1 and 3 — a different count means a window-function arg " +
+            "and the WHERE threshold swapped `?` slots.");
+        Assert.That(rows, Does.Contain((250.00m, 0.00m)),
+            "Order 1 must carry the LAG default (0.00) — anything else means lagDefault " +
+            "did not reach the LAG default `?` slot.");
+        Assert.That(rows, Does.Contain((150.00m, 250.00m)),
+            "Order 3 must carry order 1's Total (250.00) as its LAG value — anything else " +
+            "means lagOffset/lagDefault bound to the wrong `?` slots.");
+    }
+
+    [Test]
+    public async Task ConditionalMaskWithDistinctOrderByWrap_OnMySQL_PreservesBindingAlignmentPerVariant()
+    {
+        // Audit surface #2 from issue #303: conditional clauses interact with the wrap's
+        // hoisted ORDER BY param. The chain ranking is shared across mask variants —
+        // masking the conditional WHERE off removes its `?` from the text but must not
+        // disturb the surviving slots' relative order. Both variants execute here.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (_, _, My, _) = t;
+
+        decimal threshold = 100.00m;
+        decimal bias = 10000.00m;
+        int minId = 3;
+
+        // Variant: conditional filter OFF (mask 0) — slots [bias(2), threshold(0)] in text.
+        bool applyMinOff = false;
+        IQueryBuilder<My.Order> qOff = My.Orders().Where(o => o.Total > threshold);
+        if (applyMinOff) { qOff = qOff.Where(o => o.OrderId >= minId); }
+        var totalsOff = await qOff
+            .OrderBy(o => o.Total + bias)
+            .Distinct()
+            .Select(o => o.Total)
+            .ExecuteFetchAllAsync();
+
+        Assert.That(totalsOff, Is.EqualTo(new[] { 150.00m, 250.00m }),
+            "Mask-off variant must order by (Total + bias) ASC over orders 3 and 1 — " +
+            "zero rows means bias landed in the WHERE `?`; wrong order means the hoisted " +
+            "ORDER BY slot misbound.");
+
+        // Variant: conditional filter ON (mask 1) — slots [bias(2), threshold(0), minId(1)] in text.
+        bool applyMinOn = true;
+        IQueryBuilder<My.Order> qOn = My.Orders().Where(o => o.Total > threshold);
+        if (applyMinOn) { qOn = qOn.Where(o => o.OrderId >= minId); }
+        var totalsOn = await qOn
+            .OrderBy(o => o.Total + bias)
+            .Distinct()
+            .Select(o => o.Total)
+            .ExecuteFetchAllAsync();
+
+        Assert.That(totalsOn, Is.EqualTo(new[] { 150.00m }),
+            "Mask-on variant must keep only order 3 (OrderId >= 3, Total 150.00) — " +
+            "a different set means the conditional WHERE param and another slot swapped.");
+    }
+
+    [Test]
+    public async Task CollectionExpansionWithDistinctOrderByWrap_OnMySQL_PreservesBindingAlignment()
+    {
+        // Audit surface #3 from issue #303: runtime collection expansion interleaved
+        // with the wrap's hoisted ORDER BY param. Text order is [bias, id, id] (the
+        // hoisted `?` first, then one `?` per expanded element inside IN (...)), while
+        // chain order is [collection(0), bias(1)]. The method-call indirection keeps
+        // the array from being constant-folded, forcing the runtime expansion path.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (_, _, My, _) = t;
+
+        var wantedIds = BuildWantedIds();
+        decimal bias = 10000.00m;
+
+        var totals = await My.Orders()
+            .Where(o => wantedIds.Contains(o.OrderId))
+            .OrderBy(o => o.Total + bias)
+            .Distinct()
+            .Select(o => o.Total)
+            .ExecuteFetchAllAsync();
+
+        Assert.That(totals, Is.EqualTo(new[] { 150.00m, 250.00m }),
+            "Orders 1 and 3 ordered by (Total + bias) ASC — zero rows means bias landed " +
+            "in an IN-list `?` slot; wrong membership means an id reached the ORDER BY `?`.");
     }
 }
