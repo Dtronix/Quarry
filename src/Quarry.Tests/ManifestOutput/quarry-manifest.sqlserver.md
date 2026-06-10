@@ -513,6 +513,21 @@ SELECT [Status], MIN([Total]) AS [Item2] FROM [orders] GROUP BY [Status]
 
 ---
 
+### Orders().Where(...).OrderBy(...).Select(...).Limit(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [Total], LAG([Total], @p1, @p2) OVER (ORDER BY [OrderId]) AS [Prev] FROM [orders] WHERE [Total] > @p0 ORDER BY [OrderId] ASC OFFSET 0 ROWS FETCH NEXT @p3 ROWS ONLY
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+| `@p1` | `int` |
+| `@p2` | `decimal` |
+| `@p3` | `int` |
+
+---
+
 ### Orders().Where(...).OrderBy(...).Select(...).ToDiagnostics()
 
 ```sql
@@ -5077,7 +5092,7 @@ WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 565 |
+| Total discovered | 566 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 101 |
-| Rendered | 464 |
+| Rendered | 465 |

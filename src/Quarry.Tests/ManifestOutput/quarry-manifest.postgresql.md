@@ -525,6 +525,21 @@ SELECT "Status", MIN("Total") AS "Item2" FROM "orders" GROUP BY "Status"
 
 ---
 
+### Orders().Where(...).OrderBy(...).Select(...).Limit(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "Total", LAG("Total", $2, $3) OVER (ORDER BY "OrderId") AS "Prev" FROM "orders" WHERE "Total" > $1 ORDER BY "OrderId" ASC LIMIT $4
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+| `@p1` | `int` |
+| `@p2` | `decimal` |
+| `@p3` | `int` |
+
+---
+
 ### Orders().Where(...).OrderBy(...).Select(...).ToDiagnostics()
 
 ```sql
@@ -5265,7 +5280,7 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 600 |
+| Total discovered | 601 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 117 |
-| Rendered | 483 |
+| Rendered | 484 |

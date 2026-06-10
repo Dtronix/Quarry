@@ -1101,5 +1101,67 @@ internal class CrossDialectWindowFunctionTests
             ss:     "SELECT [OrderId], LAG([Total], 1, @p0) OVER (ORDER BY [OrderDate]) AS [PrevTotal] FROM [orders]");
     }
 
+    [Test]
+    public async Task WindowFunction_ParamArgs_WithParameterizedLimit_NumbersPaginationByGlobalSlot()
+    {
+        // #303 review finding #7: pagination placeholders must carry the parameter's
+        // TRUE global slot (allocated last by ChainAnalyzer), not the clause-level
+        // running index. The running index does not count projection params, so this
+        // shape — captured LAG args (slots 1, 2) + captured Limit (slot 3) — used to
+        // render LIMIT $2 / LIMIT @p1: a collision with the LAG offset's placeholder.
+        // On PostgreSQL that silently bound the LAG offset's VALUE to LIMIT; on
+        // SQLite/SqlServer the bound name (@p3) didn't match the placeholder (@p1).
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        decimal threshold = 100.00m;
+        int lagOffset = 2;
+        decimal lagDefault = 7.00m;
+        int take = 1;
+
+        var lt = Lite.Orders().Where(o => o.Total > threshold).OrderBy(o => o.OrderId)
+            .Select(o => (o.Total, Prev: Sql.Lag(o.Total, lagOffset, lagDefault, over => over.OrderBy(o.OrderId))))
+            .Limit(take).Prepare();
+        var pg = Pg.Orders().Where(o => o.Total > threshold).OrderBy(o => o.OrderId)
+            .Select(o => (o.Total, Prev: Sql.Lag(o.Total, lagOffset, lagDefault, over => over.OrderBy(o.OrderId))))
+            .Limit(take).Prepare();
+        var my = My.Orders().Where(o => o.Total > threshold).OrderBy(o => o.OrderId)
+            .Select(o => (o.Total, Prev: Sql.Lag(o.Total, lagOffset, lagDefault, over => over.OrderBy(o.OrderId))))
+            .Limit(take).Prepare();
+        var ss = Ss.Orders().Where(o => o.Total > threshold).OrderBy(o => o.OrderId)
+            .Select(o => (o.Total, Prev: Sql.Lag(o.Total, lagOffset, lagDefault, over => over.OrderBy(o.OrderId))))
+            .Limit(take).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"Total\", LAG(\"Total\", @p1, @p2) OVER (ORDER BY \"OrderId\") AS \"Prev\" FROM \"orders\" WHERE \"Total\" > @p0 ORDER BY \"OrderId\" ASC LIMIT @p3",
+            pg:     "SELECT \"Total\", LAG(\"Total\", $2, $3) OVER (ORDER BY \"OrderId\") AS \"Prev\" FROM \"orders\" WHERE \"Total\" > $1 ORDER BY \"OrderId\" ASC LIMIT $4",
+            mysql:  "SELECT `Total`, LAG(`Total`, ?, ?) OVER (ORDER BY `OrderId`) AS `Prev` FROM `orders` WHERE `Total` > ? ORDER BY `OrderId` ASC LIMIT ?",
+            ss:     "SELECT [Total], LAG([Total], @p1, @p2) OVER (ORDER BY [OrderId]) AS [Prev] FROM [orders] WHERE [Total] > @p0 ORDER BY [OrderId] ASC OFFSET 0 ROWS FETCH NEXT @p3 ROWS ONLY");
+
+        // Execution on all four dialects: orders 1 (250.00) and 3 (150.00) survive the
+        // filter; LAG offset 2 is out of range for both rows, so both carry the default
+        // (7.00); LIMIT 1 keeps order 1. A pre-fix swap shows up as a wrong row count
+        // (LIMIT fed the LAG offset) or a wrong Prev value.
+        var expected = (250.00m, 7.00m);
+
+        var ltRows = await lt.ExecuteFetchAllAsync();
+        Assert.That(ltRows, Has.Count.EqualTo(1), "SQLite row count");
+        Assert.That(ltRows[0], Is.EqualTo(expected), "SQLite values");
+
+        var pgRows = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgRows, Has.Count.EqualTo(1), "PostgreSQL row count — 2 rows means LIMIT received the LAG offset value");
+        Assert.That(pgRows[0], Is.EqualTo(expected), "PostgreSQL values");
+
+        var myRows = await my.ExecuteFetchAllAsync();
+        Assert.That(myRows, Has.Count.EqualTo(1), "MySQL row count");
+        Assert.That(myRows[0], Is.EqualTo(expected), "MySQL values");
+
+        var ssRows = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssRows, Has.Count.EqualTo(1), "SqlServer row count");
+        Assert.That(ssRows[0], Is.EqualTo(expected), "SqlServer values");
+    }
+
     #endregion
 }

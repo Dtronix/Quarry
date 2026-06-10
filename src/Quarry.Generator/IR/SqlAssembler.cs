@@ -1091,27 +1091,29 @@ internal static class SqlAssembler
         }
         else
         {
-            // At least one value is parameterized — remap param indices and
-            // use the mixed formatter that handles literal/parameterized combinations.
+            // At least one value is parameterized — use the mixed formatter that
+            // handles literal/parameterized combinations.
             //
-            // Marker emission (MySQL, #303) uses the parameter's TRUE global slot from
-            // the plan (ChainAnalyzer allocates pagination slots last) because markers
-            // carry slot identity: the running paramIndex only tracks clause-level
-            // params and lags the real slot when projection params exist (see the
-            // totalPlanParams note at the end of RenderSelectSql). Non-marker dialects
-            // keep the running index — their pre-existing placeholder numbering on
-            // projection-param chains is unchanged here and tracked separately.
+            // Placeholders carry the parameter's TRUE global slot from the plan
+            // (ChainAnalyzer allocates pagination slots last), not the running
+            // paramIndex: the running index only tracks clause-level params and lags
+            // the real slot when projection params exist (see the totalPlanParams note
+            // at the end of RenderSelectSql). Using the running index produced $N /
+            // @pN collisions with projection placeholders on such chains — LIMIT could
+            // silently receive a window-function argument's value on PostgreSQL — and
+            // mis-indexed MySQL bind-order markers (#303 review finding #7). The carrier
+            // binds pagination at slot ChainParameters.Count(+1), matching these values.
             int? limitIdx = null;
             int? offsetIdx = null;
 
             if (hasParamLimit)
             {
-                limitIdx = config.EmitMySqlBindMarkers ? pag.LimitParamIndex!.Value : paramIndex;
+                limitIdx = pag.LimitParamIndex!.Value;
                 paramIndex++;
             }
             if (hasParamOffset)
             {
-                offsetIdx = config.EmitMySqlBindMarkers ? pag.OffsetParamIndex!.Value : paramIndex;
+                offsetIdx = pag.OffsetParamIndex!.Value;
                 paramIndex++;
             }
 
