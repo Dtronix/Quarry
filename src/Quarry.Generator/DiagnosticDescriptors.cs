@@ -678,6 +678,35 @@ internal static class DiagnosticDescriptors
                      "SetPoco and produce a CS9144 interceptor-signature error. Refactoring the argument to a local variable " +
                      "initialized via 'new X.Patch { ... }' or 'default(X.Patch)' lets the classifier route to the correct overload.");
 
+    /// <summary>
+    /// QRY048: MySQL bind-order extraction failed for a chain; parameter binding
+    /// falls back to chain (GlobalIndex) order.
+    /// Severity: Warning
+    /// </summary>
+    /// <remarks>
+    /// MySQL's bare <c>?</c> placeholders bind positionally (Nth <c>?</c> ← Nth parameter
+    /// added), so the generator derives each chain's SQL-text bind order from rendered
+    /// markers and reorders the emitted binding to match (#303). When extraction or
+    /// validation fails — slot set mismatch against the mask's active parameters,
+    /// duplicate/out-of-range slots, cross-variant order contradiction, missing
+    /// coverage, or unexpected pagination placement — the chain falls back to
+    /// chain-order binding, which may not match the SQL text: values can bind to the
+    /// wrong placeholders at runtime. This warning surfaces at compile time exactly
+    /// the silent-misbind class that #303 fixed.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor MySqlBindOrderFallback = new(
+        id: "QRY048",
+        title: "MySQL bind-order extraction failed; chain binds in chain order",
+        messageFormat: "MySQL bind-order extraction failed for this chain ({0}); parameters bind in chain-call order, which may not match the SQL text's '?' positions. Verify the executed query's parameter values or simplify the chain.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "MySQL placeholders are positional, so the generator reorders parameter binding to match each " +
+                     "chain's SQL-text placeholder order. When the text order cannot be reliably extracted or validated, " +
+                     "binding falls back to chain-call order, which can misalign values with placeholders on chains whose " +
+                     "renderers emit parameters out of chain order (e.g. DISTINCT + ORDER BY wraps, window-function " +
+                     "arguments, parameterized pagination combined with projection parameters).");
+
     // ─── Navigation join diagnostics (QRY060–QRY065) ──────────────────
 
     /// <summary>

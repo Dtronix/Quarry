@@ -232,6 +232,41 @@ public class MySqlIntegrationTests
     }
 
     [Test]
+    public async Task WindowFunctionParamsWithParameterizedLimit_OnMySQL_PreservesBindingAlignment()
+    {
+        // Review finding #7/#13 for issue #303: parameterized pagination combined with
+        // projection parameters. The LIMIT `?` is textually LAST but its global slot is
+        // allocated after every chain param, while the projection params (LAG args)
+        // render FIRST with mid-range slots: text [1, 2, 0, 3] vs chain [0, 1, 2, 3].
+        // Marker emission must use the pagination param's true global slot (not the
+        // clause-level running index, which excludes projection params) for the
+        // extraction to validate and reorder this shape.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (_, _, My, _) = t;
+
+        decimal threshold = 100.00m;
+        int lagOffset = 1;
+        decimal lagDefault = 0.00m;
+        int take = 1;
+
+        var rows = await My.Orders()
+            .Where(o => o.Total > threshold)
+            .OrderBy(o => o.OrderId)
+            .Select(o => (o.Total, Prev: Sql.Lag(o.Total, lagOffset, lagDefault, over => over.OrderBy(o.OrderId))))
+            .Limit(take)
+            .ExecuteFetchAllAsync();
+
+        // Orders 1 (250.00) and 3 (150.00) survive the filter; OrderId ASC puts order 1
+        // first; LIMIT 1 keeps only it, carrying the LAG default.
+        Assert.That(rows, Has.Count.EqualTo(1),
+            "Expected exactly 1 row — a different count means `take` and another value " +
+            "swapped `?` slots (e.g. threshold bound to LIMIT).");
+        Assert.That(rows[0], Is.EqualTo((250.00m, 0.00m)),
+            "Order 1 with the LAG default — anything else means a LAG arg, the WHERE " +
+            "threshold, or the LIMIT param landed in the wrong `?` slot.");
+    }
+
+    [Test]
     public async Task ConditionalMaskWithDistinctOrderByWrap_OnMySQL_PreservesBindingAlignmentPerVariant()
     {
         // Audit surface #2 from issue #303: conditional clauses interact with the wrap's

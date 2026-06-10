@@ -515,6 +515,21 @@ SELECT `d`.`Total` FROM (SELECT DISTINCT `Total` AS `Total`, (`Total` + ?) AS `_
 
 ---
 
+### Orders().Where(...).OrderBy(...).Select(...).Limit(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT `Total`, LAG(`Total`, ?, ?) OVER (ORDER BY `OrderId`) AS `Prev` FROM `orders` WHERE `Total` > ? ORDER BY `OrderId` ASC LIMIT ?
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+| `@p1` | `int` |
+| `@p2` | `decimal` |
+| `@p3` | `int` |
+
+---
+
 ### Orders().Where(...).OrderBy(...).Select(...).ToDiagnostics()
 
 ```sql
@@ -5111,7 +5126,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 565 |
+| Total discovered | 566 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 99 |
-| Rendered | 466 |
+| Rendered | 467 |

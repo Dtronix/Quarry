@@ -80,6 +80,43 @@ internal static class PipelineOrchestrator
 
         ct.ThrowIfCancellationRequested();
 
+        // SQL post-processing: collection tokenization + MySQL bind-order extraction.
+        // Runs here — before file grouping — so both RegisterImplementationSourceOutput
+        // consumers (interceptor emission and the SQL manifest) see final SQL with no
+        // dependence on cross-output execution ordering, and so incremental equality
+        // always compares post-processed plans (a fresh recompute and a cached group
+        // carry identical SQL strings).
+        for (int i = 0; i < assembledPlans.Count; i++)
+        {
+            var assembled = assembledPlans[i];
+            var isCarrierEligible = carrierPlans[i].IsEligible;
+            if (assembled.Dialect == Sql.SqlDialect.MySQL)
+            {
+                // A single pass rewrites bind-order markers to '?' (or collection
+                // expansion tokens) and extracts the SQL-text bind order for the carrier
+                // bind loop (#303). Runs for ALL MySQL plans — markers must never leak
+                // into manifests or generated SQL — with collection tokenization gated
+                // on carrier eligibility exactly like the non-MySQL path below.
+                var failure = RewriteMySqlBindMarkers(assembled, isCarrierEligible);
+                if (failure != null)
+                {
+                    // QRY048: binding stays in chain order, which may not match the SQL
+                    // text's '?' positions — surface the potential misbind loudly
+                    // instead of shipping it silently (the pre-#303 failure mode).
+                    diagnostics.Add(new DiagnosticInfo(
+                        DiagnosticDescriptors.MySqlBindOrderFallback.Id,
+                        assembled.ExecutionSite.Bound.Raw.Location,
+                        failure));
+                }
+            }
+            else if (isCarrierEligible && assembled.Plan.Parameters.Count > 0)
+            {
+                TokenizeCollectionParameters(assembled.SqlVariants, assembled.Plan.Parameters, assembled.Dialect);
+            }
+        }
+
+        ct.ThrowIfCancellationRequested();
+
         // Resolve unresolved result types from chain projections (e.g., tuple types
         // that the semantic model couldn't resolve during discovery due to reassignment).
         var resultTypePatches = BuildResultTypePatches(assembledPlans);
@@ -449,4 +486,244 @@ internal static class PipelineOrchestrator
         return result.ToImmutable();
     }
 
+    /// <summary>
+    /// Replaces collection parameter placeholders in pre-built SQL with expansion tokens.
+    /// For example, <c>IN (@p0)</c> becomes <c>IN ({__COL_P0__})</c> when P0 is a collection.
+    /// The carrier terminal expands these tokens at runtime based on the actual collection size.
+    /// </summary>
+    private static void TokenizeCollectionParameters(
+        Dictionary<int, AssembledSqlVariant> sqlMap,
+        IReadOnlyList<QueryParameter> chainParams,
+        Sql.SqlDialect dialect)
+    {
+        // Find collection parameter indices and their tokens
+        var collectionParams = new List<(int Index, string Token)>();
+        foreach (var param in chainParams)
+        {
+            if (!param.IsCollection) continue;
+            collectionParams.Add((param.GlobalIndex, $"{{__COL_P{param.GlobalIndex}__}}"));
+        }
+
+        if (collectionParams.Count == 0) return;
+
+        // Replace placeholders with tokens in all SQL variants.
+        // Collect updates and apply after iteration to avoid allocating a key list copy.
+        // MySQL never reaches this method — its collection tokenization happens inside
+        // RewriteMySqlBindMarkers' single marker pass (#303), which replaced the old
+        // positional Nth-'?' substitution (and its miscount hazard when a SQL string
+        // literal contains '?').
+        var pendingUpdates = new List<(int Key, string Sql, int ParamCount)>();
+        foreach (var kvp in sqlMap)
+        {
+            var sbSql = new System.Text.StringBuilder(kvp.Value.Sql);
+            foreach (var (paramIdx, token) in collectionParams)
+            {
+                var placeholder = dialect switch
+                {
+                    Sql.SqlDialect.PostgreSQL => $"${paramIdx + 1}",
+                    _ => $"@p{paramIdx}"
+                };
+                sbSql.Replace(placeholder, token);
+            }
+            var sql = sbSql.ToString();
+
+            if (sql != kvp.Value.Sql)
+            {
+                pendingUpdates.Add((kvp.Key, sql, kvp.Value.ParameterCount));
+            }
+        }
+        foreach (var (key, sql, paramCount) in pendingUpdates)
+        {
+            sqlMap[key] = new AssembledSqlVariant(sql, paramCount);
+        }
+    }
+
+    /// <summary>
+    /// MySQL assembly post-pass (#303). A single scan per SQL variant rewrites
+    /// <c>{__Q{n}__}</c> bind-order markers to <c>?</c> — or to <c>{__COL_P{n}__}</c>
+    /// expansion tokens for collection parameters on carrier-eligible chains — and
+    /// extracts the variant's SQL-text slot order. Per-variant orders are validated
+    /// against the mask's expected active-parameter set and merged into a single chain
+    /// ranking, stored on <see cref="AssembledPlan.MySqlBindOrder"/> when it differs
+    /// from GlobalIndex (identity) order.
+    /// </summary>
+    /// <returns>
+    /// Null on success (order stored or proven identity); otherwise a short reason
+    /// string describing why extraction/validation failed. The caller reports it as
+    /// QRY048 — binding then falls back to identity (the pre-#303 behavior), which may
+    /// misalign on chains whose text order genuinely diverges. The rewritten
+    /// (marker-free) SQL is always applied regardless of the outcome.
+    /// </returns>
+    internal static string? RewriteMySqlBindMarkers(AssembledPlan assembled, bool isCarrierEligible)
+    {
+        var chainParams = assembled.Plan.Parameters;
+        HashSet<int>? collectionSlots = null;
+        if (isCarrierEligible)
+        {
+            foreach (var p in chainParams)
+            {
+                if (p.IsCollection)
+                    (collectionSlots ??= new HashSet<int>()).Add(p.GlobalIndex);
+            }
+        }
+        Func<int, bool>? isCollectionSlot = collectionSlots != null ? collectionSlots.Contains : null;
+
+        // Slot layout mirrors the carrier bind loop: chain params 0..N-1, then the
+        // parameterized limit/offset slots. Pagination slots come straight from the
+        // plan (ChainAnalyzer allocates them last) — the same source AppendPagination's
+        // marker emission uses — rather than being derived from paramCount arithmetic.
+        var paramCount = chainParams.Count;
+        var pag = assembled.Plan.Pagination;
+        int? limitSlot = pag?.LimitParamIndex;
+        int? offsetSlot = pag?.OffsetParamIndex;
+        var totalSlots = paramCount;
+        if (limitSlot != null) totalSlots = Math.Max(totalSlots, limitSlot.Value + 1);
+        if (offsetSlot != null) totalSlots = Math.Max(totalSlots, offsetSlot.Value + 1);
+
+        var condMap = assembled.GetParamConditionalMap();
+
+        // Deterministic mask order keeps the merge (and thus the generated bind order)
+        // stable regardless of dictionary enumeration order.
+        var maskKeys = new List<int>(assembled.SqlVariants.Keys);
+        maskKeys.Sort();
+
+        List<int>? master = null;
+        List<(int Key, string Sql, int ParamCount)>? updates = null;
+        string? failure = null;
+        var seen = new HashSet<int>();
+        var textOrder = new List<int>();
+
+        // The bind loop indexes ChainParameters by list position while marker slots carry
+        // GlobalIndex values; the two coincide for every chain ChainAnalyzer produces.
+        // Guard the invariant — on violation, the marker rewrite below still runs (markers
+        // must never leak) but the bind order stays identity rather than reordering
+        // against the wrong axis.
+        for (int i = 0; i < paramCount; i++)
+        {
+            if (chainParams[i].GlobalIndex != i)
+            {
+                failure = $"parameter list position {i} carries GlobalIndex {chainParams[i].GlobalIndex}";
+                break;
+            }
+        }
+
+        foreach (var mask in maskKeys)
+        {
+            var variant = assembled.SqlVariants[mask];
+            textOrder.Clear();
+            var rewritten = MySqlBindMarkers.RewriteAndExtract(variant.Sql, isCollectionSlot, textOrder);
+            if (!ReferenceEquals(rewritten, variant.Sql))
+                (updates ??= new List<(int, string, int)>()).Add((mask, rewritten, variant.ParameterCount));
+
+            if (failure != null || textOrder.Count == 0)
+                continue;
+
+            // Per-variant validation: no duplicates, all slots in range, and the slot set
+            // must equal this mask's expected active set. A mismatch means a renderer
+            // skipped or duplicated a bound slot (e.g. an ORDER BY term whose params are
+            // reserved but textually elided) — bind order is then unreliable for this
+            // chain, so leave it identity.
+            seen.Clear();
+            foreach (var slot in textOrder)
+            {
+                if (slot < 0 || slot >= totalSlots || !seen.Add(slot))
+                {
+                    failure = $"duplicate or out-of-range placeholder slot {slot} in the SQL variant for mask {mask}";
+                    break;
+                }
+            }
+            if (failure != null) continue;
+
+            for (int i = 0; i < paramCount && failure == null; i++)
+            {
+                var active = !condMap.TryGetValue(i, out var ci)
+                    || !ci.IsConditional
+                    || ci.BitIndex == null
+                    || (mask & (1 << ci.BitIndex.Value)) != 0;
+                if (active != seen.Contains(i))
+                    failure = $"placeholder slot set does not match the active parameter set for mask {mask} (parameter {i})";
+            }
+            if (failure == null && limitSlot != null && !seen.Contains(limitSlot.Value))
+                failure = $"limit placeholder missing from the SQL variant for mask {mask}";
+            if (failure == null && offsetSlot != null && !seen.Contains(offsetSlot.Value))
+                failure = $"offset placeholder missing from the SQL variant for mask {mask}";
+            if (failure != null) continue;
+
+            if (!TryMergeTextOrder(ref master, textOrder))
+                failure = "contradictory placeholder order across SQL variants";
+        }
+
+        // Apply the rewritten SQL regardless of order validity — markers must never
+        // survive into manifests or generated source.
+        if (updates != null)
+        {
+            foreach (var (key, sql, pc) in updates)
+                assembled.SqlVariants[key] = new AssembledSqlVariant(sql, pc);
+        }
+
+        if (failure != null)
+            return failure;
+        if (master == null)
+            return null; // no parameterized variants — nothing to order
+
+        // Pagination binds after the chain-param loop in the emitter; verify the ranking
+        // agrees (LIMIT/OFFSET is textually last in every MySQL statement Quarry emits,
+        // LIMIT before OFFSET), then drop those slots — the emitter's bind-after-loop
+        // structure already handles them.
+        var tail = master.Count;
+        if (offsetSlot != null && (tail == 0 || master[--tail] != offsetSlot.Value))
+            return "offset placeholder is not in trailing position";
+        if (limitSlot != null && (tail == 0 || master[--tail] != limitSlot.Value))
+            return "limit placeholder is not in trailing position";
+        if (tail != paramCount)
+            return "a parameter never appears in any SQL variant";
+
+        var identity = true;
+        for (int i = 0; i < tail; i++)
+        {
+            if (master[i] != i) { identity = false; break; }
+        }
+        if (identity)
+            return null;
+
+        master.RemoveRange(tail, master.Count - tail);
+        assembled.MySqlBindOrder = master;
+        return null;
+    }
+
+    /// <summary>
+    /// Merges a variant's SQL-text slot sequence into the master ranking, preserving both
+    /// relative orders. Slots that co-occur in two variants must agree on relative order —
+    /// renderers traverse clauses in a fixed structural order, so a contradiction indicates
+    /// a bug and aborts the merge (the caller reports QRY048). Slots never seen together
+    /// (mutually exclusive conditional branches) are placed right after the previously
+    /// matched slot; their relative bind order is immaterial since they never co-bind.
+    /// Internal for unit testing.
+    /// </summary>
+    internal static bool TryMergeTextOrder(ref List<int>? master, List<int> incoming)
+    {
+        if (master == null)
+        {
+            master = new List<int>(incoming);
+            return true;
+        }
+
+        var lastPos = -1;
+        foreach (var slot in incoming)
+        {
+            var pos = master.IndexOf(slot);
+            if (pos >= 0)
+            {
+                if (pos <= lastPos)
+                    return false;
+                lastPos = pos;
+            }
+            else
+            {
+                master.Insert(lastPos + 1, slot);
+                lastPos++;
+            }
+        }
+        return true;
+    }
 }

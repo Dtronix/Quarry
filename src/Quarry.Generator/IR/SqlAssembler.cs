@@ -1092,18 +1092,26 @@ internal static class SqlAssembler
         else
         {
             // At least one value is parameterized — remap param indices and
-            // use the mixed formatter that handles literal/parameterized combinations
+            // use the mixed formatter that handles literal/parameterized combinations.
+            //
+            // Marker emission (MySQL, #303) uses the parameter's TRUE global slot from
+            // the plan (ChainAnalyzer allocates pagination slots last) because markers
+            // carry slot identity: the running paramIndex only tracks clause-level
+            // params and lags the real slot when projection params exist (see the
+            // totalPlanParams note at the end of RenderSelectSql). Non-marker dialects
+            // keep the running index — their pre-existing placeholder numbering on
+            // projection-param chains is unchanged here and tracked separately.
             int? limitIdx = null;
             int? offsetIdx = null;
 
             if (hasParamLimit)
             {
-                limitIdx = paramIndex;
+                limitIdx = config.EmitMySqlBindMarkers ? pag.LimitParamIndex!.Value : paramIndex;
                 paramIndex++;
             }
             if (hasParamOffset)
             {
-                offsetIdx = paramIndex;
+                offsetIdx = config.EmitMySqlBindMarkers ? pag.OffsetParamIndex!.Value : paramIndex;
                 paramIndex++;
             }
 
@@ -1609,7 +1617,7 @@ internal static class SqlAssembler
         // SQL-text order therefore diverges from slot order here. Named (@pN) and
         // explicitly indexed ($N) placeholders carry identity, so three dialects absorb
         // the divergence; MySQL's opaque '?' does not (#303). MySQL renders these
-        // placeholders as {__Q{n}__} markers; QuarryGenerator.RewriteMySqlBindMarkers
+        // placeholders as {__Q{n}__} markers; PipelineOrchestrator.RewriteMySqlBindMarkers
         // extracts the text-order ranking from the assembled variants and CarrierEmitter
         // binds in that order — no renderer-side ordering obligation exists beyond
         // rendering each param at its correct global slot.

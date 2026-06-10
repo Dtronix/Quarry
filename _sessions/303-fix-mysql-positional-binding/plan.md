@@ -104,6 +104,17 @@ Phase 2 depends on 1; Phase 3 on 2; Phase 4 independent of 3 but last for doc ac
 - **Incremental caching**: `MySqlBindOrder` participates in `AssembledPlan` equality (EquatableArray) — empty-when-identity keeps unaffected chains' cache keys stable.
 - Rollback: revert is clean per phase; Phase 1 alone is inert (computed, unconsumed).
 
+## Implementation deviations (recorded 2026-06-10, post-review)
+
+- **INSERT VALUES markers descoped** (Phase 1.2 listed SqlAssembler.cs:833): INSERT binds in column order by construction (VALUES order == bind order, no other clauses) and its parameters live in `InsertInfo`, not `ChainParameters` — markers would only add validation noise. INSERT renders bare `?` via `FormatParameter`.
+- **ReaderCodeGenerator formatter wiring descoped** (Phase 1.2 listed ReaderCodeGenerator.cs:38/342): those `QuoteSqlExpression` calls produce runtime/dynamic SQL strings (reader column arrays) where markers would leak into shipped code; they keep default placeholder formatting.
+- **`MySqlBindOrder` shape**: landed as a nullable settable `IReadOnlyList<int>` excluded from `AssembledPlan.Equals` instead of an equality-participating `EquatableArray<int>` — the ranking is derived deterministically from `SqlVariants`, which Equals already compares, so including it would be redundant; null (not empty) means identity.
+- **Comparison-render isolation**: implemented as marker-free `with`-copies of the config (`cmpConfig`) at the wrap-detection sites plus the `forComparison` gate in `AppendProjectionColumnSql`, rather than relying on `forComparison` alone.
+- **Validation failure handling** (post-review remediation of findings #1/#6): extraction/validation failure now emits warning **QRY048** at the chain's terminal (with a reason) in addition to the identity fallback; the bare `Debug.Assert` was removed.
+- **Post-process location** (post-review remediation of findings #8/#17): `RewriteMySqlBindMarkers` + `TokenizeCollectionParameters` moved from the interceptor output action into `PipelineOrchestrator.AnalyzeAndGroupTranslated` (before file grouping), removing the dependence on cross-output execution order and restoring incremental-cache equality for post-processed plans.
+- **Pagination marker slots** (post-review remediation of finding #7): pagination markers carry `PaginationPlan.LimitParamIndex`/`OffsetParamIndex` (true global slots) instead of the clause-level running index, which lags when projection params exist; the extraction validates against the same plan slots. Non-MySQL dialects keep the running index — their pre-existing numbering on projection-param + pagination chains is a separate issue.
+- **No ParameterName changes for reordered chains** (post-review, finding #9): on MySQL every name path already emits the constant `"?"`; the driver binds purely positionally, so permutation requires no naming work.
+
 ## Out of scope
 
 - Npgsql named-mode migration; any dialect other than MySQL.

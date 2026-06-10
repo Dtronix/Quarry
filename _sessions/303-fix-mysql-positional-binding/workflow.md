@@ -6,7 +6,7 @@ remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 
 ## State
-phase: IMPLEMENT
+phase: REMEDIATE
 status: active
 issue: #303
 pr:
@@ -37,6 +37,8 @@ Note: the new reproducer test `MySqlIntegrationTests.DistinctOrderByWrap_Paramet
 - 2026-06-10: `ReplaceNthOccurrence(sql, '?', ...)` MySQL special case in TokenizeCollectionParameters is replaced by direct marker matching (also fixes latent miscount if a SQL string literal contains `?`).
 
 - 2026-06-10: Marker rewrite is range-based single-pass (user refinement): scanner records marker ranges and builds output once via StringBuilder — no string.Replace. Collection tokenization for MySQL folds into the same pass (TokenizeCollectionParameters MySQL branch deleted, not rewritten). Rewrite runs for ALL MySQL plans (not just carrier-eligible) since manifests read variant SQL; collection-token emission keeps the carrier-eligibility gate.
+
+- 2026-06-10 (REMEDIATE): Validation/merge failure now emits warning QRY048 (new descriptor) with a reason at the chain's terminal, plus identity fallback — replaces the silent fallback + Debug.Assert (review #1/#6). Post-process (RewriteMySqlBindMarkers + TokenizeCollectionParameters) moved into PipelineOrchestrator.AnalyzeAndGroupTranslated so both output actions see final SQL and incremental equality is consistent (review #8/#17). Pagination markers use PaginationPlan.LimitParamIndex/OffsetParamIndex true slots — fixes window-param + parameterized-Limit chains on MySQL (review #7/#13); the equivalent pre-existing numbering issue on non-MySQL dialects is spun off as a separate issue. Dead ParameterName guard removed — MySQL names are the constant "?" in every path (review #9/#16). Plan deviations recorded in plan.md (review #2/#3). TryMergeTextOrder made internal + unit-tested (review #4/#12).
 
 ## Suspend State
 

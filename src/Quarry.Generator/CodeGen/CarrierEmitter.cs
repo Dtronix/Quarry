@@ -756,12 +756,11 @@ internal static class CarrierEmitter
                 var valueExpr = TerminalEmitHelpers.GetParameterValueExpression(param, i);
 
                 sb.AppendLine($"{indent}var __p{i} = __cmd.CreateParameter();");
-                // Reordered MySQL chains use slot-keyed literal names: the shift-based
-                // name expression assumes GlobalIndex add order and could produce
-                // duplicate names after permutation, and MySqlConnector never matches
-                // names against bare '?' placeholders anyway — names exist only for
-                // ADO.NET collection uniqueness.
-                if (whereShiftExpr != null && bindOrder == null)
+                // Bind-order permutation (#303) needs no ParameterName handling: it only
+                // applies on MySQL, where both name paths below emit the constant "?"
+                // (FormatParamName/EmitParamNameExpr) — the driver binds purely by
+                // position and never name-matches against bare '?' placeholders.
+                if (whereShiftExpr != null)
                     sb.AppendLine($"{indent}__p{i}.ParameterName = {EmitParamNameExpr(chain.Dialect, i, whereShiftExpr)};");
                 else
                     sb.AppendLine($"{indent}__p{i}.ParameterName = \"{FormatParamName(chain.Dialect, i)}\";");
