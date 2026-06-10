@@ -127,6 +127,17 @@ Clauses inside `if/else` blocks deeper than the execution terminal's nesting dep
 
 **Code generation** (CarrierEmitter): Single variant → `static readonly string _sql`. Multiple variants → `static readonly string[] _sql` indexed by mask value (gaps filled with `null!`). Carrier accumulates a `byte` mask field via `Mask |= (1 << bitIndex)` as conditional clause interceptors execute. Terminal dispatches via direct array index: `_sql[__c.Mask]`.
 
+### MySQL Positional Bind Order
+
+MySqlConnector binds the Nth `?` in SQL text to the Nth `cmd.Parameters.Add()`; the other three dialects carry slot identity in the placeholder itself (`@pN` by name, `$N` by index). Renderers may emit placeholders out of chain order — e.g. the DISTINCT+ORDER BY wrap hoists ORDER BY exprs textually before WHERE — so MySQL needs the bind sequence to follow SQL-text order, not `GlobalIndex` order (#303).
+
+Mechanism (correct by construction for any renderer — no per-renderer ordering obligation):
+1. **Marker emission** — when `SqlDialectConfig.EmitMySqlBindMarkers` is set (only by `SqlAssembler.Assemble`, MySQL only), placeholders render as `{__Q{globalIndex}__}` (`MySqlBindMarkers`) instead of bare `?`. Render paths outside variant assembly (diagnostics fragments, runtime column arrays, wrap-detection comparison renders) stay marker-free.
+2. **Rewrite + extraction** — `QuarryGenerator.RewriteMySqlBindMarkers` runs at the collection-tokenization point for every MySQL plan: one pass per variant rewrites markers to `?` (or `{__COL_P{n}__}` for carrier-eligible collection params — this replaced the Nth-`?` substitution and its literal-`?` miscount hazard), records the text-order slot sequence, validates it against the mask's expected active set, and merges per-variant sequences into one chain ranking. Validation failure ⇒ identity fallback (pre-#303 behavior). Stored as `AssembledPlan.MySqlBindOrder` (null = identity; excluded from equality — derived from `SqlVariants`).
+3. **Reordered binding** — `CarrierEmitter.EmitCarrierCommandBinding` iterates the ranking when present; identity emits byte-identical code to before. Reordered chains use slot-keyed literal `ParameterName`s (shift-based names assume add-order and could collide; MySQL never name-matches `?` anyway). Pagination slots are verified to rank last and keep their bind-after-loop position. Insert/batch-insert bind in column order by construction and never carry markers; Patch SET stays runtime-assembled and binds first (SET precedes WHERE textually).
+
+Parameter logging / `ToDiagnostics` lists remain in `GlobalIndex` order — a cosmetic divergence from text order on reordered MySQL chains.
+
 ### Error Propagation & QRY900
 
 Errors propagate through two channels due to the Bind/Translate return type asymmetry:

@@ -12,7 +12,7 @@ issue: #303
 pr:
 session: 1
 phases-total: 4
-phases-complete: 3
+phases-complete: 4
 
 ## Problem Statement
 MySQL positional `?` binding misalignment in the DistinctOrderBy wrap path (and audit of other surfaces) — GitHub issue #303.
@@ -43,4 +43,4 @@ Note: the new reproducer test `MySqlIntegrationTests.DistinctOrderByWrap_Paramet
 ## Session Log
 | # | Phase Start | Phase End | Summary |
 |---|------------|-----------|---------|
-| 1 | INTAKE | | Pruned stale worktree + deleted prior plan branch; created worktree; copied 303 reproducer; baseline 3234/3235 (reproducer only failure). DESIGN: bare-? + marker-scan decided. PLAN: 4 phases approved. IMPLEMENT: phase 1 (marker emission + extraction, inert) committed 9e00328; phase 2 (CarrierEmitter consumes MySqlBindOrder) committed c1f4d83 — reproducer green, 3256/3256. Phase 3: 3 audit integration tests (window-fn params, conditional×wrap, collection×wrap) all green first run; manifest +3 chains. |
+| 1 | INTAKE | | Pruned stale worktree + deleted prior plan branch; created worktree; copied 303 reproducer; baseline 3234/3235 (reproducer only failure). DESIGN: bare-? + marker-scan decided. PLAN: 4 phases approved. IMPLEMENT: phase 1 (marker emission + extraction, inert) committed 9e00328; phase 2 (CarrierEmitter consumes MySqlBindOrder) committed c1f4d83 — reproducer green, 3256/3256. Phase 3: 3 audit integration tests (window-fn params, conditional×wrap, collection×wrap) all green first run; manifest +3 chains, committed 2638907. Phase 4: docs (generator llm.md subsection, wrap comment updated). |

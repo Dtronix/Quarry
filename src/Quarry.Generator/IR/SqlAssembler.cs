@@ -1605,6 +1605,14 @@ internal static class SqlAssembler
         // body), so each non-projected ORDER BY expression must be pre-rendered at its
         // post-body global offset. Inactive and projected ORDER BY terms still reserve
         // their slots in the global numbering (mirroring the flat path).
+        //
+        // SQL-text order therefore diverges from slot order here. Named (@pN) and
+        // explicitly indexed ($N) placeholders carry identity, so three dialects absorb
+        // the divergence; MySQL's opaque '?' does not (#303). MySQL renders these
+        // placeholders as {__Q{n}__} markers; QuarryGenerator.RewriteMySqlBindMarkers
+        // extracts the text-order ranking from the assembled variants and CarrierEmitter
+        // binds in that order — no renderer-side ordering obligation exists beyond
+        // rendering each param at its correct global slot.
         var bodyParamCount = 0;
         foreach (var join in plan.Joins)
             if (join.OnCondition != null) bodyParamCount += CountParameters(join.OnCondition);
