@@ -274,7 +274,14 @@ internal static class SqlExprRenderer
         }
         else if (!genericParams && config.Dialect == SqlDialect.MySQL)
         {
-            sb.Append('?'); // MySQL uses positional ? parameters
+            // MySQL uses positional ? parameters. During variant assembly the placeholder
+            // is emitted as an indexed bind-order marker so the assembly post-pass can
+            // recover SQL-text order for the carrier bind loop (#303); everywhere else
+            // (diagnostics fragments, comparison renders) it stays a bare '?'.
+            if (config.EmitMySqlBindMarkers)
+                MySqlBindMarkers.AppendTo(sb, idx);
+            else
+                sb.Append('?');
         }
         else
         {

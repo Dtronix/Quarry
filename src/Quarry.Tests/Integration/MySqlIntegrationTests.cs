@@ -141,4 +141,58 @@ public class MySqlIntegrationTests
     // the code path GH-258 actually surfaces on real Npgsql, and we want
     // the same path exercised on MySqlConnector.
     private static int[] BuildWantedIds() => new[] { 1, 3 };
+
+    [Test]
+    public async Task DistinctOrderByWrap_ParameterizedWhereAndOrderBy_OnMySQL_PreservesBindingAlignment()
+    {
+        // Regression guard for MySQL positional `?` placeholder binding under the
+        // DistinctOrderBy wrap path.
+        //
+        // ChainAnalyzer assigns global parameter indices in chain-call order, and
+        // CarrierEmitter binds DbParameters in that same order. For SQLite and
+        // SqlServer the placeholders are named (@pN — bound by ParameterName) and
+        // for PostgreSQL they are explicitly numbered (`$N` — Npgsql positional
+        // mode indexes the Bind frame by N), so out-of-order placeholder texts
+        // bind correctly on those three. MySQL is the lone dialect where the
+        // placeholder is opaque `?` and the Nth `?` in the SQL text is bound to
+        // the Nth DbParameter added — if SQL text order ever diverges from the
+        // chain-order add sequence, MySQL silently swaps values.
+        //
+        // The DistinctOrderBy wrap (SqlAssembler.RenderSelectSqlWithDistinctOrderByWrap)
+        // is the documented divergence point: it hoists the OrderBy expression into
+        // the inner SELECT (textually BEFORE the WHERE) while keeping the OrderBy
+        // capture at its chain-order global slot (after the WHERE capture). Quarry
+        // chains: `.Where(p0).OrderBy(p1).Distinct()` → MySQL SQL becomes
+        // `... (col + ?) AS _o0 ... WHERE col > ?` — first `?` is bias-slot, second
+        // is threshold-slot, but cmd.Parameters has threshold (P0) before bias (P1).
+        //
+        // Pre-fix observable: with threshold=100 / bias=10000 the executed query
+        // collapses to `WHERE Total > 10000` (bias bound to the WHERE `?`) and
+        // returns zero rows instead of the two distinct totals (250.00, 150.00)
+        // from orders 1 and 3. The non-overlapping value ranges make the failure
+        // mode unambiguous: a swap produces empty results, not a subtly wrong set.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (_, _, My, _) = t;
+
+        decimal threshold = 100.00m;
+        decimal bias = 10000.00m;
+
+        var totals = await My.Orders()
+            .Where(o => o.Total > threshold)
+            .OrderBy(o => o.Total + bias)
+            .Distinct()
+            .Select(o => o.Total)
+            .ExecuteFetchAllAsync();
+
+        Assert.That(totals, Has.Count.EqualTo(2),
+            "Expected 2 distinct Totals (250.00 from order 1, 150.00 from order 3). " +
+            "Zero rows = MySQL bound `bias` to the WHERE `?` slot (positional ? misalignment " +
+            "in the DistinctOrderBy wrap path).");
+        Assert.That(totals, Does.Contain(250.00m),
+            "Order 1 Total (250.00) must survive `Total > 100` filter — its absence " +
+            "indicates the threshold parameter did not reach the WHERE `?`.");
+        Assert.That(totals, Does.Contain(150.00m),
+            "Order 3 Total (150.00) must survive `Total > 100` filter — its absence " +
+            "indicates the threshold parameter did not reach the WHERE `?`.");
+    }
 }

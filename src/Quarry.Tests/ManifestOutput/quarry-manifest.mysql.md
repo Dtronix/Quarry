@@ -489,6 +489,19 @@ SELECT `Status`, MIN(`Total`) AS `Item2` FROM `orders` GROUP BY `Status`
 
 ---
 
+### Orders().Where(...).OrderBy(...).Distinct(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT `d`.`Total` FROM (SELECT DISTINCT `Total` AS `Total`, (`Total` + ?) AS `_o0` FROM `orders` WHERE `Total` > ?) AS `d` ORDER BY `d`.`_o0` ASC
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+| `@p1` | `decimal` |
+
+---
+
 ### Orders().Where(...).OrderBy(...).Select(...).ToDiagnostics()
 
 ```sql
@@ -5053,7 +5066,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 560 |
+| Total discovered | 561 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 98 |
-| Rendered | 462 |
+| Rendered | 463 |

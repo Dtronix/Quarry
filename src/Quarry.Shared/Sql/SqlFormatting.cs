@@ -202,22 +202,29 @@ internal static partial class SqlFormatting
     /// Formats pagination when limit/offset values may be any combination of literals and parameters.
     /// Each of limit/offset is resolved from either a literal value or a parameter index.
     /// </summary>
+    /// <param name="parameterFormatter">
+    /// Optional override for parameter-placeholder formatting. The generator's SQL
+    /// assembly passes a bind-order-marker formatter for MySQL variants (#303); when
+    /// null, placeholders use <see cref="FormatParameter"/> as always. Runtime and
+    /// tool callers never pass this.
+    /// </param>
     internal static string FormatMixedPagination(
         SqlDialect dialect,
         int? literalLimit, int? limitParamIndex,
-        int? literalOffset, int? offsetParamIndex)
+        int? literalOffset, int? offsetParamIndex,
+        Func<int, string>? parameterFormatter = null)
     {
         // Resolve each to its string representation
         string? limitStr = literalLimit.HasValue
             ? literalLimit.Value.ToString()
             : limitParamIndex.HasValue
-                ? FormatParameter(dialect, limitParamIndex.Value)
+                ? (parameterFormatter?.Invoke(limitParamIndex.Value) ?? FormatParameter(dialect, limitParamIndex.Value))
                 : null;
 
         string? offsetStr = literalOffset.HasValue
             ? literalOffset.Value.ToString()
             : offsetParamIndex.HasValue
-                ? FormatParameter(dialect, offsetParamIndex.Value)
+                ? (parameterFormatter?.Invoke(offsetParamIndex.Value) ?? FormatParameter(dialect, offsetParamIndex.Value))
                 : null;
 
         if (limitStr == null && offsetStr == null)
@@ -301,7 +308,14 @@ internal static partial class SqlFormatting
     ///     (<c>TRUE</c>/<c>FALSE</c> on PostgreSQL, <c>1</c>/<c>0</c> elsewhere)</item>
     /// </list>
     /// </summary>
-    public static string? QuoteSqlExpression(string? sqlExpression, SqlDialect dialect, int paramOffset = 0)
+    /// <param name="parameterFormatter">
+    /// Optional override for <c>{@N}</c> placeholder formatting, invoked with the final
+    /// index (<c>N + paramOffset</c>). The generator's SQL assembly passes a bind-order
+    /// marker formatter for MySQL variants (#303); when null, placeholders use
+    /// <see cref="FormatParameter"/> as always.
+    /// </param>
+    public static string? QuoteSqlExpression(string? sqlExpression, SqlDialect dialect, int paramOffset = 0,
+        Func<int, string>? parameterFormatter = null)
     {
         if (sqlExpression == null)
             return null;
@@ -332,7 +346,8 @@ internal static partial class SqlFormatting
                         && int.TryParse(identifier.Substring(1), out var paramIdx))
                     {
                         // {@N} → dialect-specific parameter placeholder
-                        sb.Append(FormatParameter(dialect, paramIdx + paramOffset));
+                        sb.Append(parameterFormatter?.Invoke(paramIdx + paramOffset)
+                            ?? FormatParameter(dialect, paramIdx + paramOffset));
                     }
                     else
                     {

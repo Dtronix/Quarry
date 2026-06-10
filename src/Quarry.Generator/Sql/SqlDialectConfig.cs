@@ -13,6 +13,16 @@ internal sealed record SqlDialectConfig(
     bool MySqlBackslashEscapes = true)
 {
     /// <summary>
+    /// When true, MySQL parameter placeholders render as <c>{__Q{n}__}</c> bind-order
+    /// markers instead of bare <c>?</c>. Set only by SqlAssembler's variant rendering
+    /// (see <see cref="IR.MySqlBindMarkers"/>); markers are rewritten back to <c>?</c>
+    /// during assembly post-processing, after the SQL-text bind order is extracted.
+    /// Render paths outside variant assembly (diagnostics fragments, runtime column
+    /// arrays, comparison keys) must leave this false so their output stays marker-free.
+    /// </summary>
+    public bool EmitMySqlBindMarkers { get; init; }
+
+    /// <summary>
     /// Parses a <c>QuarryContextAttribute</c> into both a <see cref="SqlDialectConfig"/>
     /// (dialect + mode flags) and a <c>Schema</c> string. Single pass over
     /// <see cref="AttributeData.NamedArguments"/> so callers don't need to iterate twice.

@@ -84,6 +84,18 @@ internal sealed class AssembledPlan : IEquatable<AssembledPlan>
     /// <summary>Trace comment lines for this chain (non-null only when traced with QUARRY_TRACE).</summary>
     public IReadOnlyList<string>? TraceLines { get; set; }
 
+    /// <summary>
+    /// MySQL only: SQL-text-order ranking of bind slots (chain parameter global indices,
+    /// plus the limit/offset slots when parameterized), extracted from bind-order markers
+    /// during assembly post-processing (#303). Null means identity — bind in GlobalIndex
+    /// order, which is the overwhelmingly common case. CarrierEmitter emits its
+    /// DbParameter bind blocks in this order so the Nth '?' in the SQL text receives the
+    /// Nth added parameter. Intentionally excluded from <see cref="Equals(AssembledPlan)"/>:
+    /// it is derived deterministically from <see cref="SqlVariants"/>, so equal variants
+    /// imply an equal ranking.
+    /// </summary>
+    public IReadOnlyList<int>? MySqlBindOrder { get; set; }
+
     /// <summary>For batch inserts: the RETURNING/OUTPUT suffix to append after row expansion.</summary>
     public string? BatchInsertReturningSuffix { get; }
 

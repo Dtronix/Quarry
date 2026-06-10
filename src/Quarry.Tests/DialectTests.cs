@@ -314,6 +314,25 @@ public class DialectTests
         Assert.That(result, Is.EqualTo(expected));
     }
 
+    [Test]
+    public void FormatMixedPagination_ParameterFormatterOverride_UsedForBothSlots()
+    {
+        // The generator's SQL assembly passes a bind-order-marker formatter for MySQL
+        // variants (#303); the formatter receives each slot's final index verbatim.
+        var dialect = SqlDialectFactory.GetDialect(SqlDialect.MySQL);
+        var result = SqlFormatting.FormatMixedPagination(dialect, null, 3, null, 4,
+            idx => $"{{__Q{idx}__}}");
+        Assert.That(result, Is.EqualTo("LIMIT {__Q3__} OFFSET {__Q4__}"));
+    }
+
+    [Test]
+    public void FormatMixedPagination_NullFormatter_KeepsDialectPlaceholders()
+    {
+        var dialect = SqlDialectFactory.GetDialect(SqlDialect.MySQL);
+        var result = SqlFormatting.FormatMixedPagination(dialect, null, 3, null, 4, null);
+        Assert.That(result, Is.EqualTo("LIMIT ? OFFSET ?"));
+    }
+
     #endregion
 
     #region Identity/Returning Clause Tests
@@ -508,6 +527,25 @@ public class DialectTests
     {
         // Expressions without {placeholders} should pass through unchanged
         Assert.That(SqlFormatting.QuoteSqlExpression(input, dialect), Is.EqualTo(expected));
+    }
+
+    [Test]
+    public void QuoteSqlExpression_ParameterFormatterOverride_ReceivesOffsetIndex()
+    {
+        // The generator's SQL assembly passes a bind-order-marker formatter for MySQL
+        // variants (#303); the formatter receives N + paramOffset for each {@N}.
+        var result = SqlFormatting.QuoteSqlExpression(
+            "NTILE({@0}) OVER (ORDER BY {Date})", SqlDialect.MySQL, paramOffset: 2,
+            parameterFormatter: idx => $"{{__Q{idx}__}}");
+        Assert.That(result, Is.EqualTo("NTILE({__Q2__}) OVER (ORDER BY `Date`)"));
+    }
+
+    [Test]
+    public void QuoteSqlExpression_NullFormatter_KeepsDialectPlaceholders()
+    {
+        var result = SqlFormatting.QuoteSqlExpression(
+            "NTILE({@0}) OVER (ORDER BY {Date})", SqlDialect.MySQL, paramOffset: 2);
+        Assert.That(result, Is.EqualTo("NTILE(?) OVER (ORDER BY `Date`)"));
     }
 
     #endregion
