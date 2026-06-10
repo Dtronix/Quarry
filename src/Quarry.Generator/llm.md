@@ -281,6 +281,12 @@ Structurally-identical carrier classes are merged at emission time. Carrier clas
 
 For chains with N conditional terms (up to 8 bits = 256 variants), shared prefix/suffix is rendered once and variant-specific middle segments are assembled via `StringBuilder.Append` rather than re-rendering from scratch per mask. Applies to SELECT and DELETE multi-mask chains.
 
+### Generated Output Files
+
+- `{Namespace}.{Entity}.g.cs` — Entity class (FK as `EntityRef<T,K>`, nav as `NavigationList<T>`, nested `Patch` struct).
+- `{Context}.g.cs` — Context partial: constructors, accessor properties, Insert/Update/Delete methods, MigrateAsync (self-contained: uses `SqlDialect.{Dialect}` enum directly, no instance field dependency).
+- `{Context}.Interceptors.g.cs` — `file static` class with `[InterceptsLocation]` methods + carrier classes (each with `_sql` field).
+
 ## File Map
 
 ### Entry Point
