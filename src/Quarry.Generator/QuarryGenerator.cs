@@ -1021,6 +1021,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         // parameterized limit/offset slots (allocated last by ChainAnalyzer and rendered
         // by AppendPagination from the running param index in that same order).
         var paramCount = chainParams.Count;
+
         var pag = assembled.Plan.Pagination;
         int? limitSlot = pag?.LimitParamIndex != null ? paramCount : null;
         int? offsetSlot = pag?.OffsetParamIndex != null ? (limitSlot != null ? paramCount + 1 : paramCount) : null;
@@ -1038,6 +1039,20 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         var valid = true;
         var seen = new HashSet<int>();
         var textOrder = new List<int>();
+
+        // The bind loop indexes ChainParameters by list position while marker slots carry
+        // GlobalIndex values; the two coincide for every chain ChainAnalyzer produces.
+        // Guard the invariant — on violation, the marker rewrite below still runs (markers
+        // must never leak) but the bind order stays identity rather than reordering
+        // against the wrong axis.
+        for (int i = 0; i < paramCount; i++)
+        {
+            if (chainParams[i].GlobalIndex != i)
+            {
+                valid = false;
+                break;
+            }
+        }
 
         foreach (var mask in maskKeys)
         {

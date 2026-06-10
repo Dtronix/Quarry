@@ -682,11 +682,21 @@ internal static class CarrierEmitter
             _ => null
         };
 
+        // MySQL binds the Nth '?' in the SQL text to the Nth parameter added, so the bind
+        // blocks must be emitted in the SQL-text ranking extracted at assembly time (#303)
+        // — e.g. the DistinctOrderBy wrap hoists ORDER BY params textually before WHERE.
+        // Null = identity: every other dialect (named @pN / explicit $N placeholders carry
+        // identity in the placeholder itself), and MySQL chains whose SQL-text order
+        // already matches chain order — the overwhelmingly common case, which emits
+        // byte-identically to before.
+        var bindOrder = chain.Dialect == SqlDialect.MySQL ? chain.MySqlBindOrder : null;
+
         int? currentBitIndex = null;
         bool inConditionalBlock = false;
 
-        for (int i = 0; i < paramCount; i++)
+        for (int k = 0; k < paramCount; k++)
         {
+            var i = bindOrder != null ? bindOrder[k] : k;
             var param = chain.ChainParameters[i];
             condMap.TryGetValue(i, out var ci);
 
@@ -746,7 +756,12 @@ internal static class CarrierEmitter
                 var valueExpr = TerminalEmitHelpers.GetParameterValueExpression(param, i);
 
                 sb.AppendLine($"{indent}var __p{i} = __cmd.CreateParameter();");
-                if (whereShiftExpr != null)
+                // Reordered MySQL chains use slot-keyed literal names: the shift-based
+                // name expression assumes GlobalIndex add order and could produce
+                // duplicate names after permutation, and MySqlConnector never matches
+                // names against bare '?' placeholders anyway — names exist only for
+                // ADO.NET collection uniqueness.
+                if (whereShiftExpr != null && bindOrder == null)
                     sb.AppendLine($"{indent}__p{i}.ParameterName = {EmitParamNameExpr(chain.Dialect, i, whereShiftExpr)};");
                 else
                     sb.AppendLine($"{indent}__p{i}.ParameterName = \"{FormatParamName(chain.Dialect, i)}\";");
