@@ -311,6 +311,105 @@ public class MySqlIntegrationTests
     }
 
     [Test]
+    public async Task TwoIndependentConditionalFiltersWithDistinctOrderByWrap_OnMySQL_PreservesBindingAlignment()
+    {
+        // Review pass-2 High finding for issue #303: with TWO independently if-gated
+        // parameterized filters, the mask enumerator hands the cross-variant merge the
+        // singleton variants before the combined one. The original anchor-insertion
+        // merge reported a false "contradictory placeholder order", fell back to
+        // identity binding, and silently re-shipped the #303 misbind for every wrap
+        // variant of this shape. The topological merge must rank the hoisted ORDER BY
+        // slot first across all four mask variants; each variant executes here.
+        // Chain slots: threshold(0), minId(1, bit 0), maxId(2, bit 1), bias(3, hoisted).
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (_, _, My, _) = t;
+
+        decimal threshold = 100.00m;
+        int minId = 2;
+        int maxId = 3;
+        decimal bias = 10000.00m;
+
+        // One chain site, all four mask variants executed. Expected sets are chosen so
+        // an identity-order misbind is distinctive: mask 00 collapses to zero rows
+        // (bias → threshold `?`), mask 01 to zero rows (bias → OrderId `?`), and
+        // mask 10 gains order 2's 75.50 (maxId → threshold `?`).
+        var cases = new (bool ByMin, bool ByMax, decimal[] Expected)[]
+        {
+            (false, false, new[] { 150.00m, 250.00m }),
+            (true,  false, new[] { 150.00m }),
+            (false, true,  new[] { 150.00m, 250.00m }),
+            (true,  true,  new[] { 150.00m }),
+        };
+
+        foreach (var (byMin, byMax, expected) in cases)
+        {
+            IQueryBuilder<My.Order> q = My.Orders().Where(o => o.Total > threshold);
+            if (byMin) { q = q.Where(o => o.OrderId >= minId); }
+            if (byMax) { q = q.Where(o => o.OrderId <= maxId); }
+            var totals = await q
+                .OrderBy(o => o.Total + bias)
+                .Distinct()
+                .Select(o => o.Total)
+                .ExecuteFetchAllAsync();
+
+            Assert.That(totals, Is.EqualTo(expected),
+                $"Mask (byMin={byMin}, byMax={byMax}): a wrong set means the merge fell " +
+                "back to identity binding and the hoisted ORDER BY `?` received a WHERE value.");
+        }
+    }
+
+    [Test]
+    public async Task ParameterizedCteFilter_OnMySQL_BindsInnerParamsBeforeOuter()
+    {
+        // Issue #303 audit surface: CTE parameter rebasing. Inner-chain params are
+        // rebased onto the outer slot range and the WITH clause renders first, so
+        // SQL-text order equals chain order (identity) by construction — this pins that
+        // claim with a real MySqlConnector execution (the pre-existing CTE tests inline
+        // literal filters, leaving parameterized CTE chains unexecuted on MySQL).
+        // The outer filter stays literal: combining a captured inner param with a
+        // captured outer param trips pre-existing generator defect QRY037 (the outer
+        // carrier param field is never assigned) — tracked as a separate issue.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (_, _, My, _) = t;
+
+        decimal threshold = 100.00m;
+
+        var rows = await My.With<My.Order>(orders => orders.Where(o => o.Total > threshold))
+            .FromCte<My.Order>()
+            .Where(o => o.OrderId >= 2)
+            .Select(o => (o.OrderId, o.Total))
+            .ExecuteFetchAllAsync();
+
+        // CTE keeps orders 1 (250.00) and 3 (150.00); the outer filter keeps order 3.
+        Assert.That(rows, Is.EqualTo(new[] { (3, 150.00m) }),
+            "Expected only order 3 — a different set means the inner CTE param did not " +
+            "reach the WITH clause's `?` (threshold 100 lost or misbound).");
+    }
+
+    [Test]
+    public async Task ParameterizedUnion_OnMySQL_BindsOperandParamsInChainOrder()
+    {
+        // Issue #303 audit surface: set operations. Operand params occupy sequential
+        // outer slots (first operand, then second) and operands render in that same
+        // order, so text order is identity by construction — pinned here with a real
+        // MySqlConnector execution using non-overlapping operand ranges.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (_, _, My, _) = t;
+
+        decimal hi = 200.00m;
+        decimal lo = 100.00m;
+
+        var totals = await My.Orders().Where(o => o.Total > hi).Select(o => o.Total)
+            .Union(My.Orders().Where(o => o.Total < lo).Select(o => o.Total))
+            .ExecuteFetchAllAsync();
+
+        // First operand: only order 1 (250.00 > 200); second: only order 2 (75.50 < 100).
+        Assert.That(totals, Is.EquivalentTo(new[] { 250.00m, 75.50m }),
+            "Expected exactly {250.00, 75.50} — any other set means the two operand " +
+            "thresholds swapped `?` slots (e.g. `> 100` UNION `< 200` returns all three).");
+    }
+
+    [Test]
     public async Task CollectionExpansionWithDistinctOrderByWrap_OnMySQL_PreservesBindingAlignment()
     {
         // Audit surface #3 from issue #303: runtime collection expansion interleaved

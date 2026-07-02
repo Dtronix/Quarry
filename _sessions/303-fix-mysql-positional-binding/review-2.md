@@ -3,23 +3,23 @@
 ## Classifications
 | # | Class | Rec | Sev | Section | Finding | Action Taken |
 |---|---|---|---|---|---|---|
-| 1 | A | A | High | Plan Compliance | QRY048 never registered in s_deferredDescriptors — pass-1 #1/#6 remediation is inert; plan.md/Decisions inaccurately state it "is emitted" | |
-| 2 | A | A | Med | Plan Compliance | Merge implemented as insert-after-anchor guess instead of planned GlobalIndex tiebreak; deviation unrecorded and is the direct cause of #4 | |
-| 3 | A | A | High | Correctness | QRY048 dropped at reporting (GetDescriptorById → null → continue); all five fallback paths silent (same root as #1) | |
-| 4 | A | A | High | Correctness | TryMergeTextOrder false contradiction on ≥2 independent conditional parameterized clauses → identity fallback; wrap + that shape still ships the #303 misbind with zero diagnostics | |
-| 5 | B | B | Med | Correctness | Zero-marker variants bypass validation; a render surface missing the marker flag entirely degrades to silent identity ("never appears in any variant" check unreachable) | |
-| 6 | D | D | Low | Correctness | Verified non-issue: rebased inner renders (CTE/set-op) cannot carry parameterized pagination — global-slot premise safe | |
-| 7 | D | D | Low | Correctness | Verified non-issue: emitter safety under permutation (validated permutation, order-agnostic if-blocks, sum-only __bindShift, constant "?" names, idempotent re-run) | |
-| 8 | D | D | Low | Security | Pass-1 #11 accepted-risk premise ("loud once QRY048 lands") void until #3 fixed — restored by #3, no separate action | |
-| 9 | B | B | Med | Test Quality | No generation-level test asserting QRY048 surfaces as an actual compiler diagnostic (would have caught #1 immediately) | |
-| 10 | B | B | Med | Test Quality | No test covers ≥2 independent conditional parameterized clauses — the exact input family the mask enumerator feeds the merge | |
-| 11 | D | D | Low | Test Quality | Verified strength: new integration tests well-designed; marker-leak assertions + exact-match corpus guard leakage | |
-| 12 | B | B | Low | Consistency | QRY048 is the sole PipelineOrchestrator-emitted diagnostic missing from the documented registration convention — add the registration step to llm.md's diagnostic guidance | |
-| 13 | D | D | Low | Consistency | llm.md describes QRY048 as user-visible — accurate once #3 lands; no separate action | |
-| 14 | D | D | Low | Integration | Verified non-issue: all-dialect pagination change is corpus-output-identical; old numbering was demonstrably broken where it diverged | |
-| 15 | D | D | Low | Integration | Verified non-issue: orchestrator relocation removes output-ordering dependence and restores incremental equality as claimed | |
-| 16 | A | A | Med | Integration | Sequencing constraint: QRY048 registration (#3) and merge fix (#4) must land together or common conditional chains emit false warnings | |
-| 17 | D | D | Low | Integration | Verified non-issue: no public API changes | |
+| 1 | A | A | High | Plan Compliance | QRY048 never registered in s_deferredDescriptors — pass-1 #1/#6 remediation is inert; plan.md/Decisions inaccurately state it "is emitted" | MySqlBindOrderFallback added to s_deferredDescriptors; plan.md/Decisions corrected; end-to-end surfacing test added (see #9) |
+| 2 | A | A | Med | Plan Compliance | Merge implemented as insert-after-anchor guess instead of planned GlobalIndex tiebreak; deviation unrecorded and is the direct cause of #4 | Replaced by TryMergeTextOrders — topological sort with GlobalIndex tiebreak, as planned; deviation + correction recorded in plan.md |
+| 3 | A | A | High | Correctness | QRY048 dropped at reporting (GetDescriptorById → null → continue); all five fallback paths silent (same root as #1) | Same fix as #1 — registered; MarkerShapedStringLiteral generation test proves a real fallback surfaces as a Warning diagnostic |
+| 4 | A | A | High | Correctness | TryMergeTextOrder false contradiction on ≥2 independent conditional parameterized clauses → identity fallback; wrap + that shape still ships the #303 misbind with zero diagnostics | Topological merge (#2) eliminates the false contradiction; generation test (no QRY048 + hoisted-first binding) and 4-mask MySQL execution test added |
+| 5 | B | B | Med | Correctness | Zero-marker variants bypass validation; a render surface missing the marker flag entirely degrades to silent identity ("never appears in any variant" check unreachable) | Zero-count exemption removed — marker-free variants run the active-set validation; whole-surface miss now fails to QRY048 (surfacing path covered by the #3 test) |
+| 6 | D | D | Low | Correctness | Verified non-issue: rebased inner renders (CTE/set-op) cannot carry parameterized pagination — global-slot premise safe | No action (verified non-issue) |
+| 7 | D | D | Low | Correctness | Verified non-issue: emitter safety under permutation (validated permutation, order-agnostic if-blocks, sum-only __bindShift, constant "?" names, idempotent re-run) | No action (verified non-issue) |
+| 8 | D | D | Low | Security | Pass-1 #11 accepted-risk premise ("loud once QRY048 lands") void until #3 fixed — restored by #3, no separate action | No action — premise restored by #3 |
+| 9 | B | B | Med | Test Quality | No generation-level test asserting QRY048 surfaces as an actual compiler diagnostic (would have caught #1 immediately) | MarkerShapedStringLiteral_MySQL_SurfacesQRY048_AsWarning: marker-shaped string constant in UPDATE SET (inlined as SQL literal) forces a real extraction failure → asserts QRY048 Warning with reason + marker-free output; descriptor-shape test added |
+| 10 | B | B | Med | Test Quality | No test covers ≥2 independent conditional parameterized clauses — the exact input family the mask enumerator feeds the merge | MySqlBindOrderMergeTests rewritten for TryMergeTextOrders incl. singleton-then-combined family + order-independence; generation test + 4-mask MySQL execution test added |
+| 11 | D | D | Low | Test Quality | Verified strength: new integration tests well-designed; marker-leak assertions + exact-match corpus guard leakage | No action (verified strength) |
+| 12 | B | B | Low | Consistency | QRY048 is the sole PipelineOrchestrator-emitted diagnostic missing from the documented registration convention — add the registration step to llm.md's diagnostic guidance | llm.md: registration requirement added to the bind-order mechanism section and the DiagnosticInfo component row |
+| 13 | D | D | Low | Consistency | llm.md describes QRY048 as user-visible — accurate once #3 lands; no separate action | No action — accurate once #3 landed; llm.md further expanded per #12 |
+| 14 | D | D | Low | Integration | Verified non-issue: all-dialect pagination change is corpus-output-identical; old numbering was demonstrably broken where it diverged | No action (verified non-issue) |
+| 15 | D | D | Low | Integration | Verified non-issue: orchestrator relocation removes output-ordering dependence and restores incremental equality as claimed | No action (verified non-issue) |
+| 16 | A | A | Med | Integration | Sequencing constraint: QRY048 registration (#3) and merge fix (#4) must land together or common conditional chains emit false warnings | Both fixes land in the same commit; corpus build verified: zero QRY048 emissions across the full test suite |
+| 17 | D | D | Low | Integration | Verified non-issue: no public API changes | No action (verified non-issue) |
 
 **User directive (2026-07-02, classification):** in addition to the A/B fixes, add integration tests for every pass-2 gap that is testable — at minimum the ≥2-independent-conditional × wrap MySQL execution shape (#4/#10) and the QRY048 diagnostic surfacing test (#9).
 

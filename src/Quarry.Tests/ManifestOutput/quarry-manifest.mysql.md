@@ -587,6 +587,18 @@ SELECT `OrderId`, NTILE(?) OVER (ORDER BY `OrderDate`) AS `Grp` FROM `orders`
 
 ---
 
+### Orders().Where(...).Select(...).Orders()
+
+```sql
+SELECT `Total` FROM `orders` WHERE `Total` < ?
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+
+---
+
 ### Orders().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
 
 ```sql
@@ -944,6 +956,19 @@ SELECT `t0`.`Total` FROM `orders` AS `t0` INNER JOIN `users` AS `j0` ON `t0`.`Us
 
 ---
 
+### Orders().Where(...).Select(...).Union(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT `Total` FROM `orders` WHERE `Total` > ? UNION SELECT `Total` FROM `orders` WHERE `Total` < ?
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+| `@p1` | `decimal` |
+
+---
+
 ### Orders().Where(...).Select(...).UnionAll(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -984,6 +1009,31 @@ SELECT `d`.`Total` FROM (SELECT DISTINCT `Total` AS `Total`, (`Total` + ?) AS `_
 | `@p0` | `decimal` | |
 | `@p1` | `int` | applyMinOff |
 | `@p2` | `decimal` | |
+
+---
+
+### Orders().Where(...).Where(...).Where(...).OrderBy(...).Distinct(...).Select(...).ExecuteFetchAllAsync() — 4 variants
+
+```sql
+-- base
+SELECT `d`.`Total` FROM (SELECT DISTINCT `Total` AS `Total`, (`Total` + ?) AS `_o0` FROM `orders` WHERE `Total` > ?) AS `d` ORDER BY `d`.`_o0` ASC
+
+-- +byMin
+SELECT `d`.`Total` FROM (SELECT DISTINCT `Total` AS `Total`, (`Total` + ?) AS `_o0` FROM `orders` WHERE (`Total` > ?) AND (`OrderId` >= ?)) AS `d` ORDER BY `d`.`_o0` ASC
+
+-- +byMax
+SELECT `d`.`Total` FROM (SELECT DISTINCT `Total` AS `Total`, (`Total` + ?) AS `_o0` FROM `orders` WHERE (`Total` > ?) AND (`OrderId` <= ?)) AS `d` ORDER BY `d`.`_o0` ASC
+
+-- +byMin, +byMax
+SELECT `d`.`Total` FROM (SELECT DISTINCT `Total` AS `Total`, (`Total` + ?) AS `_o0` FROM `orders` WHERE (`Total` > ?) AND (`OrderId` >= ?) AND (`OrderId` <= ?)) AS `d` ORDER BY `d`.`_o0` ASC
+```
+
+| Parameter | Type | Conditional |
+|-----------|------|-------------|
+| `@p0` | `decimal` | |
+| `@p1` | `int` | byMin |
+| `@p2` | `int` | byMax |
+| `@p3` | `decimal` | |
 
 ---
 
@@ -5022,6 +5072,18 @@ WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `Ord
 
 ---
 
+### With(...).FromCte(...).Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `Total` > ?) SELECT `OrderId`, `Total` FROM `Order` WHERE `OrderId` >= 2
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+
+---
+
 ### With(...).With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -5141,7 +5203,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 567 |
+| Total discovered | 571 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 99 |
-| Rendered | 468 |
+| Rendered | 472 |

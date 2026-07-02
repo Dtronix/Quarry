@@ -829,6 +829,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         DiagnosticDescriptors.IntersectAllNotSupported,
         DiagnosticDescriptors.ExceptAllNotSupported,
         DiagnosticDescriptors.SetOperationProjectionMismatch,
+        // MySQL bind-order fallback, also emitted by PipelineOrchestrator.
+        DiagnosticDescriptors.MySqlBindOrderFallback,
     }.ToDictionary(d => d.Id);
 
     private static DiagnosticDescriptor? GetDescriptorById(string id) =>

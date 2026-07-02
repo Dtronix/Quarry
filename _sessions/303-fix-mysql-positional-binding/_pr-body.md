@@ -33,12 +33,19 @@ Issue #303: confirmed end-to-end reproducer (`.Where(o => o.Total > threshold).O
 
 ## Gaps in original plan implemented
 
-Found by the structured review (18 findings: 8 fixed-now, 4 gap-fixes, 6 no-action; see `review.md` classifications in the branch history):
+Found by the structured review, pass 1 (18 findings: 8 fixed-now, 4 gap-fixes, 6 no-action; see `review.md` classifications in the branch history):
 
 - Post-process relocated from the interceptor output action into `PipelineOrchestrator.AnalyzeAndGroupTranslated` — both output consumers (interceptor emission, SQL manifest) now see final SQL with no dependence on Roslyn's cross-output execution order, and incremental equality compares post-processed plans consistently.
 - Pagination markers/validation use `PaginationPlan.LimitParamIndex`/`OffsetParamIndex` (true slots) — fixes the window-param + parameterized-`Limit` shape on MySQL, then widened to all dialects (see Impact).
 - Dead `ParameterName` guard removed; comments/llm.md corrected (MySQL parameter names are the constant `"?"` — the driver binds purely positionally).
-- `TryMergeTextOrder` made internal with 8 direct unit tests (merge, insertion, contradiction-abort, determinism).
+- Cross-variant merge made internal with direct unit tests.
+
+Found by review pass 2 (user-requested full re-verification; 17 findings: 5 fixed-now, 4 gap-fixes, 8 verified non-issues; see `review-2.md`):
+
+- **QRY048 was inert as first shipped**: the descriptor was never added to `QuarryGenerator.s_deferredDescriptors`, so every emission was silently dropped at report time — all five fallback paths were invisible. Registered, and guarded end-to-end by a generation test that forces a real extraction failure (marker-shaped string constant inlined via UPDATE SET) and asserts the Warning surfaces.
+- **Cross-variant merge false contradiction**: the interim anchor-insertion merge reported "contradictory placeholder order" for any chain with ≥2 independently if-gated parameterized clauses (mask enumeration feeds `[0]`, `[1]` before `[0,1]`), silently falling back to identity — re-shipping the #303 misbind for wrap chains of that shape. Replaced with `TryMergeTextOrders`: a topological sort over pairwise order constraints with smallest-slot-first (GlobalIndex) tiebreak, as the plan originally specified. Covered by 12 merge unit tests (including the singleton-then-combined family and order-independence), a generation test, and a MySQL execution test running all four mask variants.
+- **Zero-marker variants no longer bypass validation**: a variant with active parameters but no extracted markers (an entire render surface missing marker emission) now fails to QRY048 instead of silently passing.
+- llm.md documents the deferred-diagnostic registration requirement; plan/decision records corrected where they overstated QRY048's status.
 
 ## Migration Steps
 
@@ -62,4 +69,5 @@ No new dependencies; no user-input paths changed. Markers exist only inside the 
 ## Test Evidence
 
 - Baseline before fix: 3234 passing + the new reproducer failing (0 rows).
-- After: full suite **3269 + 201 (migration) + 146 (analyzers) green**, including 5 new MySQL integration tests (reproducer + 4 audit surfaces), a 4-dialect SQL-output + execution guard for pagination numbering, 11 marker unit tests, 8 merge unit tests, and 3 generation-level bind-order tests.
+- After pass-2 remediation: full suite green (all three projects), including 8 MySQL integration tests for this issue (reproducer + audit surfaces + the multi-conditional × wrap shape across all four mask variants + parameterized CTE and Union pins), a 4-dialect SQL-output + execution guard for pagination numbering, 11 marker unit tests, 12 merge unit tests, and 6 generation-level bind-order/diagnostic tests.
+- Discovered while adding the CTE pin (verified pre-existing on master, filed separately): a CTE chain combining a captured inner-lambda param with a captured outer `Where` param trips QRY037 — the outer carrier param field is never assigned. The new CTE test keeps its outer filter literal to sidestep it.

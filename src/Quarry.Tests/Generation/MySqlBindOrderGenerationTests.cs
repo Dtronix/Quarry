@@ -79,18 +79,20 @@ public static class Queries
                 .WithNullableContextOptions(NullableContextOptions.Enable));
     }
 
-    private static string RunGeneratorAndGetInterceptors(string source)
+    private static (string Code, IReadOnlyList<Diagnostic> Diagnostics) RunGenerator(string source)
     {
         var generator = new QuarryGenerator();
         GeneratorDriver driver = CSharpGeneratorDriver.Create(new[] { generator.AsSourceGenerator() });
-        driver = driver.RunGeneratorsAndUpdateCompilation(CreateCompilation(source), out _, out _);
+        driver = driver.RunGeneratorsAndUpdateCompilation(CreateCompilation(source), out _, out var diagnostics);
         var result = driver.GetRunResult();
 
         var interceptorsTree = result.GeneratedTrees
             .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
         Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
-        return interceptorsTree!.GetText().ToString();
+        return (interceptorsTree!.GetText().ToString(), diagnostics);
     }
+
+    private static string RunGeneratorAndGetInterceptors(string source) => RunGenerator(source).Code;
 
     private static string BuildSource(string dialect, bool distinct)
         => SourceTemplate
@@ -135,6 +137,147 @@ public static class Queries
         Assert.That(p0, Is.LessThan(p1),
             "Flat MySQL chain renders placeholders in chain order; binding must stay " +
             "in GlobalIndex order (identity — byte-identical to pre-#303 emission)");
+    }
+
+    private const string TwoConditionalFiltersSource = @"
+using Quarry;
+namespace TestApp;
+
+public class OrderSchema : Schema
+{
+    public static string Table => ""orders"";
+    public Key<int> OrderId => Identity();
+    public Col<int> UserId { get; }
+    public Col<decimal> Total { get; }
+}
+
+[QuarryContext(Dialect = SqlDialect.MySQL)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<Order> Orders();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db, bool byMin, bool byMax)
+    {
+        decimal threshold = 100.00m;
+        int minId = 1;
+        int maxId = 3;
+        decimal bias = 10000.00m;
+        IQueryBuilder<Order> q = db.Orders().Where(o => o.Total > threshold);
+        if (byMin) { q = q.Where(o => o.OrderId >= minId); }
+        if (byMax) { q = q.Where(o => o.OrderId <= maxId); }
+        var totals = await q
+            .OrderBy(o => o.Total + bias)
+            .Distinct()
+            .Select(o => o.Total)
+            .ExecuteFetchAllAsync();
+    }
+}
+";
+
+    [Test]
+    public void TwoIndependentConditionalFilters_WrapChain_MySQL_NoQRY048_BindsHoistedOrderByFirst()
+    {
+        // Review pass-2 High finding: the mask enumerator feeds the merge singleton
+        // variants ([threshold], [threshold,minId], [threshold,maxId]) before the
+        // combined one; the old anchor-insertion merge guessed a placement, reported a
+        // false "contradictory placeholder order" on the combined variant, and fell
+        // back to identity — silently shipping the #303 misbind for this shape. The
+        // topological merge must rank the hoisted ORDER BY slot first with no QRY048.
+        var (code, diagnostics) = RunGenerator(TwoConditionalFiltersSource);
+
+        Assert.That(diagnostics.Where(d => d.Id == "QRY048"), Is.Empty,
+            "Independently conditional filters must merge cleanly — a QRY048 here means " +
+            "the cross-variant merge reported a false contradiction");
+        Assert.That(code, Does.Not.Contain("{__Q"),
+            "Bind-order markers must never leak into generated source");
+
+        // Chain order: threshold(0), minId(1), maxId(2), bias(3). SQL-text order in the
+        // wrap: hoisted bias first, then the WHERE slots in clause order.
+        var p3 = code.IndexOf("var __p3 = __cmd.CreateParameter();", StringComparison.Ordinal);
+        var p0 = code.IndexOf("var __p0 = __cmd.CreateParameter();", StringComparison.Ordinal);
+        var p1 = code.IndexOf("var __p1 = __cmd.CreateParameter();", StringComparison.Ordinal);
+        var p2 = code.IndexOf("var __p2 = __cmd.CreateParameter();", StringComparison.Ordinal);
+        Assert.That(p3, Is.GreaterThanOrEqualTo(0), "P3 (bias) bind block should exist");
+        Assert.That(p3, Is.LessThan(p0),
+            "Hoisted ORDER BY param (1st '?' in every variant) must bind before the WHERE " +
+            "threshold — identity order here means the merge fell back");
+        Assert.That(p0, Is.LessThan(p1), "WHERE slots keep clause order after the hoisted slot");
+        Assert.That(p1, Is.LessThan(p2), "WHERE slots keep clause order after the hoisted slot");
+    }
+
+    private const string MarkerLiteralSource = @"
+using Quarry;
+namespace TestApp;
+
+public class OrderSchema : Schema
+{
+    public static string Table => ""orders"";
+    public Key<int> OrderId => Identity();
+    public Col<string> Notes => Length(200);
+    public Col<decimal> Total { get; }
+}
+
+[QuarryContext(Dialect = SqlDialect.MySQL)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<Order> Orders();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        int id = 1;
+        await db.Orders()
+            .Update()
+            .Set(o => o.Notes = ""{__Q0__}"")
+            .Where(o => o.OrderId == id)
+            .ExecuteNonQueryAsync();
+    }
+}
+";
+
+    [Test]
+    public void MarkerShapedStringLiteral_MySQL_SurfacesQRY048_AsWarning()
+    {
+        // A developer string constant shaped like a bind-order marker, in a position the
+        // renderer inlines as a quoted SQL literal (UPDATE SET; top-level WHERE constants
+        // are parameterized instead), is rewritten inside the quoted text — extraction
+        // then sees slot 0 twice and validation fails. That fallback must surface as a
+        // QRY048 warning — review pass 2 found the descriptor missing from
+        // s_deferredDescriptors, which silently dropped every emission and made all five
+        // fallback paths (and this corruption) invisible. This is the end-to-end guard on
+        // the registration.
+        var (code, diagnostics) = RunGenerator(MarkerLiteralSource);
+
+        var qry048 = diagnostics.Where(d => d.Id == "QRY048").ToList();
+        Assert.That(qry048, Is.Not.Empty,
+            "Bind-order extraction failure must surface as QRY048 — silence means the " +
+            "descriptor is not registered in s_deferredDescriptors and the fallback is invisible");
+        Assert.That(qry048[0].Severity, Is.EqualTo(DiagnosticSeverity.Warning));
+        Assert.That(qry048[0].GetMessage(), Does.Contain("duplicate"),
+            "The message should carry the extraction-failure reason");
+
+        Assert.That(code, Does.Not.Contain("{__Q"),
+            "Markers must be stripped from generated source even when extraction fails");
+
+        // Identity fallback: chain order P0 first (single real param, so bind order is
+        // trivially identity — the point is the chain still generates).
+        Assert.That(code, Does.Contain("var __p0 = __cmd.CreateParameter();"),
+            "The chain must still generate with identity binding after the fallback");
+    }
+
+    [Test]
+    public void Descriptor_QRY048_IsRegisteredWarningWithReasonSlot()
+    {
+        var d = Quarry.Generators.DiagnosticDescriptors.MySqlBindOrderFallback;
+        Assert.That(d.Id, Is.EqualTo("QRY048"));
+        Assert.That(d.DefaultSeverity, Is.EqualTo(DiagnosticSeverity.Warning));
+        Assert.That(d.MessageFormat.ToString(), Does.Contain("{0}"),
+            "QRY048 must carry the extraction-failure reason");
     }
 
     [Test]

@@ -587,7 +587,7 @@ internal static class PipelineOrchestrator
         var maskKeys = new List<int>(assembled.SqlVariants.Keys);
         maskKeys.Sort();
 
-        List<int>? master = null;
+        List<int[]>? sequences = null;
         List<(int Key, string Sql, int ParamCount)>? updates = null;
         string? failure = null;
         var seen = new HashSet<int>();
@@ -615,14 +615,16 @@ internal static class PipelineOrchestrator
             if (!ReferenceEquals(rewritten, variant.Sql))
                 (updates ??= new List<(int, string, int)>()).Add((mask, rewritten, variant.ParameterCount));
 
-            if (failure != null || textOrder.Count == 0)
+            if (failure != null)
                 continue;
 
             // Per-variant validation: no duplicates, all slots in range, and the slot set
             // must equal this mask's expected active set. A mismatch means a renderer
             // skipped or duplicated a bound slot (e.g. an ORDER BY term whose params are
             // reserved but textually elided) — bind order is then unreliable for this
-            // chain, so leave it identity.
+            // chain, so leave it identity. Marker-free variants are NOT exempt: a variant
+            // with active parameters but zero extracted markers means an entire render
+            // surface missed marker emission, which must be loud (QRY048), not silent.
             seen.Clear();
             foreach (var slot in textOrder)
             {
@@ -649,8 +651,8 @@ internal static class PipelineOrchestrator
                 failure = $"offset placeholder missing from the SQL variant for mask {mask}";
             if (failure != null) continue;
 
-            if (!TryMergeTextOrder(ref master, textOrder))
-                failure = "contradictory placeholder order across SQL variants";
+            if (textOrder.Count > 0)
+                (sequences ??= new List<int[]>()).Add(textOrder.ToArray());
         }
 
         // Apply the rewritten SQL regardless of order validity — markers must never
@@ -663,8 +665,11 @@ internal static class PipelineOrchestrator
 
         if (failure != null)
             return failure;
-        if (master == null)
+        if (sequences == null)
             return null; // no parameterized variants — nothing to order
+
+        if (!TryMergeTextOrders(sequences, totalSlots, out var master))
+            return "contradictory placeholder order across SQL variants";
 
         // Pagination binds after the chain-param loop in the emitter; verify the ranking
         // agrees (LIMIT/OFFSET is textually last in every MySQL statement Quarry emits,
@@ -692,36 +697,73 @@ internal static class PipelineOrchestrator
     }
 
     /// <summary>
-    /// Merges a variant's SQL-text slot sequence into the master ranking, preserving both
-    /// relative orders. Slots that co-occur in two variants must agree on relative order —
-    /// renderers traverse clauses in a fixed structural order, so a contradiction indicates
-    /// a bug and aborts the merge (the caller reports QRY048). Slots never seen together
-    /// (mutually exclusive conditional branches) are placed right after the previously
-    /// matched slot; their relative bind order is immaterial since they never co-bind.
-    /// Internal for unit testing.
+    /// Merges the per-variant SQL-text slot sequences into the single chain ranking via
+    /// a topological sort over the pairwise order constraints each variant contributes.
+    /// Slots that co-occur in two variants must agree on relative order — renderers
+    /// traverse clauses in a fixed structural order, so a cycle indicates a bug and
+    /// aborts the merge (the caller reports QRY048). Slots never seen together
+    /// (mutually exclusive conditional branches) carry no constraint against each other;
+    /// among unconstrained candidates the smallest slot is emitted first (GlobalIndex
+    /// tiebreak), so the ranking is deterministic regardless of variant enumeration
+    /// order. An incremental anchor-insertion merge is NOT equivalent: fed the mask
+    /// variants in ascending order (e.g. [0], [1], [0,1] from two independently
+    /// conditional parameters), it guesses a placement for slots it has not yet seen
+    /// co-occur and then reports a false contradiction when the combined variant
+    /// arrives. Internal for unit testing.
     /// </summary>
-    internal static bool TryMergeTextOrder(ref List<int>? master, List<int> incoming)
+    internal static bool TryMergeTextOrders(List<int[]> sequences, int totalSlots, out List<int> master)
     {
-        if (master == null)
+        master = new List<int>();
+        var present = new bool[totalSlots];
+        var edge = new bool[totalSlots * totalSlots];
+        var indegree = new int[totalSlots];
+        var nodeCount = 0;
+
+        foreach (var seq in sequences)
         {
-            master = new List<int>(incoming);
-            return true;
+            for (int i = 0; i < seq.Length; i++)
+            {
+                var slot = seq[i];
+                if (!present[slot])
+                {
+                    present[slot] = true;
+                    nodeCount++;
+                }
+                if (i > 0)
+                {
+                    var prev = seq[i - 1];
+                    if (!edge[prev * totalSlots + slot])
+                    {
+                        edge[prev * totalSlots + slot] = true;
+                        indegree[slot]++;
+                    }
+                }
+            }
         }
 
-        var lastPos = -1;
-        foreach (var slot in incoming)
+        // Kahn's algorithm; slot counts are tiny, so the O(slots²) ready-scan keeps the
+        // smallest-slot-first tiebreak without a priority queue.
+        var emitted = new bool[totalSlots];
+        while (master.Count < nodeCount)
         {
-            var pos = master.IndexOf(slot);
-            if (pos >= 0)
+            var pick = -1;
+            for (int slot = 0; slot < totalSlots; slot++)
             {
-                if (pos <= lastPos)
-                    return false;
-                lastPos = pos;
+                if (present[slot] && !emitted[slot] && indegree[slot] == 0)
+                {
+                    pick = slot;
+                    break;
+                }
             }
-            else
+            if (pick < 0)
+                return false; // cycle — contradictory relative order across variants
+
+            emitted[pick] = true;
+            master.Add(pick);
+            for (int next = 0; next < totalSlots; next++)
             {
-                master.Insert(lastPos + 1, slot);
-                lastPos++;
+                if (edge[pick * totalSlots + next])
+                    indegree[next]--;
             }
         }
         return true;
