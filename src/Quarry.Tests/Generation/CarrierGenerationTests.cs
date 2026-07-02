@@ -4485,6 +4485,57 @@ public class Queries
             + string.Join("; ", qry037.Select(d => d.GetMessage())));
     }
 
+    [Test]
+    public void CteInnerAndOuterCapturedParams_NoQRY037_AssignsBothPFields()
+    {
+        // Issue #305: a captured param inside the With<T>() lambda AND a captured param
+        // in the outer Where used to trip QRY037 — AssembledPlan's site-parameter walk
+        // advanced the global offset by 0 for the CteDefinition site (its Clause is
+        // null), so the outer Where interceptor was emitted against P0 (the CTE's slot)
+        // and P1 was never assigned. The fix advances the offset by the CteDef's
+        // inner-param count; both P-fields must now be assigned, and the chain must
+        // build cleanly.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<Order> Orders();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        decimal threshold = 100.00m;
+        int minId = 2;
+        await db.With<Order>(orders => orders.Where(o => o.Total > threshold))
+            .FromCte<Order>()
+            .Where(o => o.OrderId >= minId)
+            .Select(o => (o.OrderId, o.Total))
+            .ExecuteFetchAllAsync();
+    }
+}
+";
+        var compilation = CreateCompilation(source);
+        var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry037 = diagnostics.Where(d => d.Id == "QRY037").ToList();
+        Assert.That(qry037, Is.Empty,
+            "Inner+outer captured CTE params must not trip QRY037. Diagnostics: "
+            + string.Join("; ", qry037.Select(d => d.GetMessage())));
+
+        var tree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.EndsWith(".g.cs") && t.FilePath.Contains(".Interceptors."));
+        Assert.That(tree, Is.Not.Null, "Interceptor file must be generated for the CTE chain");
+        var code = tree!.GetText().ToString();
+
+        Assert.That(code, Does.Match(@"__c\.P0\s*="),
+            "The With interceptor must assign the CTE's inner captured param to P0");
+        Assert.That(code, Does.Match(@"__c\.P1\s*="),
+            "The outer Where interceptor must assign its captured param to P1 (the "
+            + "slot after the CTE's inner param), not stomp P0");
+    }
+
     /// <summary>
     /// Helper to build a synthetic CarrierPlan with the given carrier name and fields.
     /// Bypasses the full pipeline so the gap-detection logic can be tested in isolation.
