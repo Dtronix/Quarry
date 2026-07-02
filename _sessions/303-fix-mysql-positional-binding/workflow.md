@@ -9,8 +9,8 @@ base-branch: master
 phase: REMEDIATE
 status: active
 issue: #303
-pr:
-session: 1
+pr: #304
+session: 2
 phases-total: 4
 phases-complete: 4
 
@@ -45,4 +45,5 @@ Note: the new reproducer test `MySqlIntegrationTests.DistinctOrderByWrap_Paramet
 ## Session Log
 | # | Phase Start | Phase End | Summary |
 |---|------------|-----------|---------|
-| 1 | INTAKE | | Pruned stale worktree + deleted prior plan branch; created worktree; copied 303 reproducer; baseline 3234/3235 (reproducer only failure). DESIGN: bare-? + marker-scan decided. PLAN: 4 phases approved. IMPLEMENT: phase 1 (marker emission + extraction, inert) committed 9e00328; phase 2 (CarrierEmitter consumes MySqlBindOrder) committed c1f4d83 — reproducer green, 3256/3256. Phase 3: 3 audit integration tests (window-fn params, conditional×wrap, collection×wrap) all green first run; manifest +3 chains, committed 2638907. Phase 4: docs (generator llm.md subsection, wrap comment updated). |
+| 1 | INTAKE | REMEDIATE | Pruned stale worktree + deleted prior plan branch; created worktree; copied 303 reproducer; baseline 3234/3235 (reproducer only failure). DESIGN: bare-? + marker-scan decided. PLAN: 4 phases approved. IMPLEMENT: phase 1 (marker emission + extraction, inert) committed 9e00328; phase 2 (CarrierEmitter consumes MySqlBindOrder) committed c1f4d83 — reproducer green, 3256/3256. Phase 3: 3 audit integration tests (window-fn params, conditional×wrap, collection×wrap) all green first run; manifest +3 chains, committed 2638907. Phase 4: docs (generator llm.md subsection, wrap comment updated). |
+| 2 | REMEDIATE | | Resumed at REMEDIATE step 8: verified PR #304 open/mergeable, CI green on head 0e64940, origin/master unmoved (no rebase needed); recorded pr number + session bump. |
