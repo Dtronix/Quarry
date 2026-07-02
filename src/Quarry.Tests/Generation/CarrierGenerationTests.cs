@@ -4529,11 +4529,18 @@ public static class Queries
         Assert.That(tree, Is.Not.Null, "Interceptor file must be generated for the CTE chain");
         var code = tree!.GetText().ToString();
 
-        Assert.That(code, Does.Match(@"__c\.P0\s*="),
-            "The With interceptor must assign the CTE's inner captured param to P0");
-        Assert.That(code, Does.Match(@"__c\.P1\s*="),
-            "The outer Where interceptor must assign its captured param to P1 (the "
-            + "slot after the CTE's inner param), not stomp P0");
+        // Count-based: the pre-fix stomp signature was TWO P0 assignments (CTE capture
+        // in the With interceptor + the misrouted outer Where) and ZERO P1 assignments.
+        // The QRY037-absence assertion above already implies P1 is assigned somewhere;
+        // the exact counts additionally reject a wrong-interceptor routing where P1 is
+        // assigned but P0 is still double-written.
+        var p0Assignments = System.Text.RegularExpressions.Regex.Matches(code, @"__c\.P0\s*=").Count;
+        var p1Assignments = System.Text.RegularExpressions.Regex.Matches(code, @"__c\.P1\s*=").Count;
+        Assert.That(p0Assignments, Is.EqualTo(1),
+            "Exactly one P0 assignment expected (the With interceptor's CTE capture); "
+            + "two means the outer Where is stomping the CTE's slot again");
+        Assert.That(p1Assignments, Is.EqualTo(1),
+            "Exactly one P1 assignment expected (the outer Where interceptor)");
     }
 
     /// <summary>

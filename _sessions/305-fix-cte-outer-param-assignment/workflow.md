@@ -5,7 +5,7 @@ platform: github
 base-branch: master
 
 ## State
-phase: IMPLEMENT
+phase: REVIEW
 status: active
 issue: #305
 pr:
@@ -51,6 +51,10 @@ Baseline test status: all green at 7bb0e35 — Quarry.Tests 3281 passed, Quarry.
   `ParameterizedCteInnerAndOuterParams_OnMySQL_BindsInnerBeforeOuter` exactly as specified
   in issue #305.
 
+- 2026-07-02: REVIEW classifications applied as recommended (user AFK at prompt; same
+  autonomous-default as DESIGN): F1→D, F2→B, F3→B, F4→B, F5→C. Final: 0A/3B/1C/1D.
+  F5's issue creation deferred until user confirmation (outward-facing action).
+
 ## Working Notes
 - **Root cause (confirmed by code trace, DESIGN 2026-07-02):** not in ChainAnalyzer or
   SqlAssembler — both are correct. `ChainAnalyzer` inserts CTE inner params into the
@@ -83,6 +87,13 @@ Baseline test status: all green at 7bb0e35 — Quarry.Tests 3281 passed, Quarry.
   AssembledPlan covers every consumer.
 - Generator llm.md's QRY table skips QRY037 (jumps QRY036→QRY040) — pre-existing doc
   gap, out of scope here.
+- **Gotcha (REMEDIATE):** restoring a source file via `mv backup.cs file.cs` preserves the
+  backup's OLD mtime — msbuild then treats the project as up-to-date and keeps the stale
+  assembly built from the intermediate (mutated) source. Symptom here: the F2 QRY048 pin
+  passed, then failed after the bite-verification cycle, because the generator DLL still
+  had the conditional-map branch removed. Fix: `touch` the file (or `git checkout --`,
+  which sets a fresh mtime) before rebuilding. When bite-verifying by mutating source,
+  prefer `git stash` / `git checkout -- <file>` over manual backup files.
 - Main repo (Quarry-master) has an uncommitted, unrelated change to
   `src/Quarry.Generator/CodeGen/CarrierEmitter.cs` (Patch-chain `__colShift`
   CS0219 avoidance). It is NOT part of this branch; worktree branched from clean

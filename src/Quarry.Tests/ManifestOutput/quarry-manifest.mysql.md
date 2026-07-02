@@ -5379,6 +5379,20 @@ WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `Ord
 
 ---
 
+### With(...).With(...).FromCte(...).Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `Total` > ?), `User` AS (SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `IsActive` = ?) SELECT `OrderId`, `Total` FROM `Order` WHERE `OrderId` >= ?
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+| `@p1` | `bool` |
+| `@p2` | `int` |
+
+---
+
 ### With(...).With(...).With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
