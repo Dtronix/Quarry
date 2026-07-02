@@ -16,6 +16,12 @@ namespace Quarry.Generators.IR;
 internal static class SqlAssembler
 {
     /// <summary>
+    /// Cached delegate for marker-formatted MySQL placeholders, passed to the
+    /// SqlFormatting helpers that take an optional parameter formatter (#303).
+    /// </summary>
+    private static readonly Func<int, string> MySqlMarkerFormatter = MySqlBindMarkers.Format;
+
+    /// <summary>
     /// Resolves the result type name from the execution site, falling back to the
     /// projection's result type for non-identity projections (e.g., Select with a lambda).
     /// </summary>
@@ -35,6 +41,13 @@ internal static class SqlAssembler
         var dialectConfig = executionSite.Bound.DialectConfig;
         var dialect = dialectConfig.Dialect;
         var resultTypeName = ResolveResultTypeName(executionSite, plan);
+
+        // MySQL variant rendering emits indexed bind-order markers in place of bare '?'
+        // so the assembly post-pass (QuarryGenerator) can recover SQL-text bind order for
+        // the carrier bind loop (#303). Scoped to this Assemble call's render tree only —
+        // render paths outside variant assembly keep the unflagged per-context config.
+        if (dialect == SqlDialect.MySQL)
+            dialectConfig = dialectConfig with { EmitMySqlBindMarkers = true };
 
         var sqlVariants = new Dictionary<int, AssembledSqlVariant>();
 
@@ -113,8 +126,15 @@ internal static class SqlAssembler
             var asmUid = executionSite.Bound.Raw.UniqueId;
             foreach (var kvp in sqlVariants)
             {
+                // MySQL variants still carry bind-order markers at this point (rewritten to
+                // '?' in QuarryGenerator's post-pass) — strip them so trace comments show
+                // the SQL as it will ship. Collection tokenization hasn't happened yet, so
+                // no collection predicate applies here.
+                var traceSql = dialect == SqlDialect.MySQL
+                    ? MySqlBindMarkers.RewriteAndExtract(kvp.Value.Sql, isCollectionSlot: null, textOrder: null)
+                    : kvp.Value.Sql;
                 TraceCapture.Log(asmUid, $"[Trace] Assembly (mask={kvp.Key}):");
-                TraceCapture.Log(asmUid, $"  sql={kvp.Value.Sql}");
+                TraceCapture.Log(asmUid, $"  sql={traceSql}");
                 TraceCapture.Log(asmUid, $"  paramCount={kvp.Value.ParameterCount}");
             }
         }
@@ -1071,24 +1091,35 @@ internal static class SqlAssembler
         }
         else
         {
-            // At least one value is parameterized — remap param indices and
-            // use the mixed formatter that handles literal/parameterized combinations
+            // At least one value is parameterized — use the mixed formatter that
+            // handles literal/parameterized combinations.
+            //
+            // Placeholders carry the parameter's TRUE global slot from the plan
+            // (ChainAnalyzer allocates pagination slots last), not the running
+            // paramIndex: the running index only tracks clause-level params and lags
+            // the real slot when projection params exist (see the totalPlanParams note
+            // at the end of RenderSelectSql). Using the running index produced $N /
+            // @pN collisions with projection placeholders on such chains — LIMIT could
+            // silently receive a window-function argument's value on PostgreSQL — and
+            // mis-indexed MySQL bind-order markers (#303 review finding #7). The carrier
+            // binds pagination at slot ChainParameters.Count(+1), matching these values.
             int? limitIdx = null;
             int? offsetIdx = null;
 
             if (hasParamLimit)
             {
-                limitIdx = paramIndex;
+                limitIdx = pag.LimitParamIndex!.Value;
                 paramIndex++;
             }
             if (hasParamOffset)
             {
-                offsetIdx = paramIndex;
+                offsetIdx = pag.OffsetParamIndex!.Value;
                 paramIndex++;
             }
 
             var pagination = SqlFormatting.FormatMixedPagination(
-                dialect, pag.LiteralLimit, limitIdx, pag.LiteralOffset, offsetIdx);
+                dialect, pag.LiteralLimit, limitIdx, pag.LiteralOffset, offsetIdx,
+                config.EmitMySqlBindMarkers ? MySqlMarkerFormatter : null);
             if (!string.IsNullOrEmpty(pagination))
             {
                 sb.Append(' ');
@@ -1388,7 +1419,11 @@ internal static class SqlAssembler
         var dialect = config.Dialect;
         if (col.IsAggregateFunction && !string.IsNullOrEmpty(col.SqlExpression))
         {
-            var rendered = SqlFormatting.QuoteSqlExpression(col.SqlExpression!, dialect, paramOffset);
+            // Emission renders get bind-order markers on MySQL (#303); comparison renders
+            // must stay marker-free so wrap-detection string equality keeps today's
+            // semantics (both sides bare '?').
+            var formatter = config.EmitMySqlBindMarkers && !forComparison ? MySqlMarkerFormatter : null;
+            var rendered = SqlFormatting.QuoteSqlExpression(col.SqlExpression!, dialect, paramOffset, formatter);
             // SQL Server's ROW_NUMBER/RANK/DENSE_RANK/NTILE return BIGINT; SqlDataReader.GetInt32
             // does not auto-narrow. ProjectionAnalyzer flags int-typed window-function projections
             // so the rendered expression is wrapped server-side, letting GetInt32 succeed. See #274.
@@ -1481,14 +1516,19 @@ internal static class SqlAssembler
         }
         if (!hasActive) return false;
 
+        // Comparison renders must be marker-free (#303): with markers, two textually
+        // identical param-bearing expressions would compare unequal by index, changing
+        // wrap detection relative to today's bare-'?' comparison on MySQL.
+        var cmpConfig = config.EmitMySqlBindMarkers ? config with { EmitMySqlBindMarkers = false } : config;
+
         var projColumnSqls = new HashSet<string>();
         foreach (var c in plan.Projection.Columns)
-            projColumnSqls.Add(RenderProjectionColumnRef(c, config));
+            projColumnSqls.Add(RenderProjectionColumnRef(c, cmpConfig));
 
         foreach (var t in plan.OrderTerms)
         {
             if (t.BitIndex != null && (mask & (1 << t.BitIndex.Value)) == 0) continue;
-            var rendered = SqlExprRenderer.Render(t.Expression, config, parameterBaseIndex: 0);
+            var rendered = SqlExprRenderer.Render(t.Expression, cmpConfig, parameterBaseIndex: 0);
             if (!projColumnSqls.Contains(rendered)) return true;
         }
         return false;
@@ -1507,13 +1547,16 @@ internal static class SqlAssembler
         if (plan.Projection == null || plan.Projection.Columns.Count == 0) return false;
         if (plan.OrderTerms.Count == 0) return false;
 
+        // Marker-free comparison renders — see NeedsDistinctOrderByWrap (#303).
+        var cmpConfig = config.EmitMySqlBindMarkers ? config with { EmitMySqlBindMarkers = false } : config;
+
         var projColumnSqls = new HashSet<string>();
         foreach (var c in plan.Projection.Columns)
-            projColumnSqls.Add(RenderProjectionColumnRef(c, config));
+            projColumnSqls.Add(RenderProjectionColumnRef(c, cmpConfig));
 
         foreach (var t in plan.OrderTerms)
         {
-            var rendered = SqlExprRenderer.Render(t.Expression, config, parameterBaseIndex: 0);
+            var rendered = SqlExprRenderer.Render(t.Expression, cmpConfig, parameterBaseIndex: 0);
             if (!projColumnSqls.Contains(rendered)) return true;
         }
         return false;
@@ -1572,6 +1615,14 @@ internal static class SqlAssembler
         // body), so each non-projected ORDER BY expression must be pre-rendered at its
         // post-body global offset. Inactive and projected ORDER BY terms still reserve
         // their slots in the global numbering (mirroring the flat path).
+        //
+        // SQL-text order therefore diverges from slot order here. Named (@pN) and
+        // explicitly indexed ($N) placeholders carry identity, so three dialects absorb
+        // the divergence; MySQL's opaque '?' does not (#303). MySQL renders these
+        // placeholders as {__Q{n}__} markers; PipelineOrchestrator.RewriteMySqlBindMarkers
+        // extracts the text-order ranking from the assembled variants and CarrierEmitter
+        // binds in that order — no renderer-side ordering obligation exists beyond
+        // rendering each param at its correct global slot.
         var bodyParamCount = 0;
         foreach (var join in plan.Joins)
             if (join.OnCondition != null) bodyParamCount += CountParameters(join.OnCondition);
@@ -1584,9 +1635,13 @@ internal static class SqlAssembler
 
         // Walk plan.OrderTerms once: for each term decide active/inactive, projected/non-projected,
         // and record its pre-allocated global offset.
+        // Marker-free comparison renders — see NeedsDistinctOrderByWrap (#303). The
+        // emission renders below (AppendProjectionColumnSql / the perTermOffset render)
+        // keep the marker-flagged config.
+        var cmpConfig = config.EmitMySqlBindMarkers ? config with { EmitMySqlBindMarkers = false } : config;
         var projColIndexBySql = new Dictionary<string, int>();
         for (int i = 0; i < plan.Projection.Columns.Count; i++)
-            projColIndexBySql[RenderProjectionColumnRef(plan.Projection.Columns[i], config)] = i;
+            projColIndexBySql[RenderProjectionColumnRef(plan.Projection.Columns[i], cmpConfig)] = i;
 
         var extraOrderRendered = new List<(string Sql, string Alias)>();
         var outerOrderByEntries = new List<(string Alias, bool IsDescending)>();
@@ -1599,7 +1654,7 @@ internal static class SqlAssembler
             bool isActive = term.BitIndex == null || (mask & (1 << term.BitIndex.Value)) != 0;
             if (isActive)
             {
-                var renderedRef = SqlExprRenderer.Render(term.Expression, config, parameterBaseIndex: 0);
+                var renderedRef = SqlExprRenderer.Render(term.Expression, cmpConfig, parameterBaseIndex: 0);
                 if (projColIndexBySql.TryGetValue(renderedRef, out var projIdx))
                 {
                     outerOrderByEntries.Add((GetInnerProjectionAlias(plan.Projection.Columns[projIdx], projIdx), term.IsDescending));

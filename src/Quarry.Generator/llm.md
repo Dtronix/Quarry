@@ -127,6 +127,19 @@ Clauses inside `if/else` blocks deeper than the execution terminal's nesting dep
 
 **Code generation** (CarrierEmitter): Single variant → `static readonly string _sql`. Multiple variants → `static readonly string[] _sql` indexed by mask value (gaps filled with `null!`). Carrier accumulates a `byte` mask field via `Mask |= (1 << bitIndex)` as conditional clause interceptors execute. Terminal dispatches via direct array index: `_sql[__c.Mask]`.
 
+### MySQL Positional Bind Order
+
+MySqlConnector binds the Nth `?` in SQL text to the Nth `cmd.Parameters.Add()`; the other three dialects carry slot identity in the placeholder itself (`@pN` by name, `$N` by index). Renderers may emit placeholders out of chain order — e.g. the DISTINCT+ORDER BY wrap hoists ORDER BY exprs textually before WHERE — so MySQL needs the bind sequence to follow SQL-text order, not `GlobalIndex` order (#303).
+
+Mechanism (correct by construction for any renderer — no per-renderer ordering obligation):
+1. **Marker emission** — when `SqlDialectConfig.EmitMySqlBindMarkers` is set (only by `SqlAssembler.Assemble`, MySQL only), placeholders render as `{__Q{globalIndex}__}` (`MySqlBindMarkers`) instead of bare `?`. Render paths outside variant assembly (diagnostics fragments, runtime column arrays, wrap-detection comparison renders) stay marker-free. Pagination markers use the plan's true slots (`PaginationPlan.LimitParamIndex`/`OffsetParamIndex`, allocated last by ChainAnalyzer) — the running render index lags the slot when projection params exist.
+2. **Rewrite + extraction** — `PipelineOrchestrator.RewriteMySqlBindMarkers` runs inside `AnalyzeAndGroupTranslated`, before file grouping, so both output actions (interceptor emission and the manifest) consume final SQL and incremental equality compares post-processed plans. One pass per variant rewrites markers to `?` (or `{__COL_P{n}__}` for carrier-eligible collection params — this replaced the Nth-`?` substitution and its literal-`?` miscount hazard), records the text-order slot sequence, and validates it against the mask's expected active set (marker-free variants are not exempt — a variant with active params and zero markers means a render surface missed marker emission). Per-variant sequences merge into one chain ranking via topological sort over pairwise order constraints (`TryMergeTextOrders`), smallest-slot-first among unconstrained slots (GlobalIndex tiebreak for mutually exclusive branch groups); a cycle = contradictory orders across variants. Do NOT merge incrementally with placement guesses — mask enumeration feeds singleton variants (`[0]`, `[1]`) before the combined one (`[0,1]`), and an anchor-insertion merge falsely reports a contradiction on that family. Extraction/validation failure ⇒ **QRY048 warning** + identity fallback (pre-#303 behavior). Stored as `AssembledPlan.MySqlBindOrder` (null = identity; excluded from equality — derived from `SqlVariants`).
+
+   QRY048 is a *deferred* diagnostic (emitted as `DiagnosticInfo` from the orchestrator, reported later at emission). Every deferred diagnostic ID MUST also be registered in `QuarryGenerator.s_deferredDescriptors` — `GetDescriptorById` returns null for unregistered IDs and the report loop silently drops them. This shipped once: review pass 2 of #304 found QRY048 emitted but unregistered, making all five fallback paths invisible. `MySqlBindOrderGenerationTests.MarkerShapedStringLiteral_MySQL_SurfacesQRY048_AsWarning` guards the registration end-to-end.
+3. **Reordered binding** — `CarrierEmitter.EmitCarrierCommandBinding` iterates the ranking when present; identity emits byte-identical code to before. `ParameterName` needs no handling: on MySQL every name path emits the constant `"?"` — MySqlConnector binds purely by position and ignores names against bare `?` placeholders. Pagination slots are verified to rank last and keep their bind-after-loop position. Insert/batch-insert bind in column order by construction and never carry markers; Patch SET stays runtime-assembled and binds first (SET precedes WHERE textually).
+
+Parameter logging / `ToDiagnostics` lists remain in `GlobalIndex` order — a cosmetic divergence from text order on reordered MySQL chains.
+
 ### Error Propagation & QRY900
 
 Errors propagate through two channels due to the Bind/Translate return type asymmetry:
@@ -401,7 +414,7 @@ All pipeline models implement `IEquatable<T>` for incremental caching.
 | `QueryKind.cs` | `enum QueryKind` | Query routing: Select, Delete, Update, Insert, BatchInsert. |
 | `ClauseKind.cs` | `enum ClauseKind` | Clause types: Where, OrderBy, GroupBy, Having, Set. |
 | `RawSqlTypeInfo.cs` | `class RawSqlTypeInfo` | Resolved result type T for RawSqlAsync<T>/RawSqlScalarAsync<T>. |
-| `DiagnosticInfo.cs` | `class DiagnosticInfo` | Deferred diagnostic: ID, location, message args. Carried through pipeline for reporting in emission. |
+| `DiagnosticInfo.cs` | `class DiagnosticInfo` | Deferred diagnostic: ID, location, message args. Carried through pipeline for reporting in emission. The ID must be registered in `QuarryGenerator.s_deferredDescriptors` — unregistered IDs are silently dropped at report time. |
 | `DiagnosticLocation.cs` | `struct DiagnosticLocation` | Structural source location (file, line, column, span). Replaces Roslyn Location for IEquatable. |
 | `MigrationInfo.cs` | `class MigrationInfo` | Migration class metadata: version, name, flags (HasDestructiveSteps, HasBackup, etc). |
 | `SnapshotInfo.cs` | `class SnapshotInfo` | [MigrationSnapshot] metadata: version, name, schema hash. |
@@ -454,6 +467,7 @@ All pipeline models implement `IEquatable<T>` for incremental caching.
 | QRY045 | Error | Entity has more than 64 updatable columns; cannot generate `Patch` struct (single-`ulong` mask cap) |
 | QRY046 | Warning | `Set(...)` argument is not a recognized Patch construction shape (descriptor reserved; detection wiring is a future enhancement — see workflow.md) |
 | QRY047 | Warning | Entity has a column named `Patch`; nested struct auto-renamed to `_Patch` (or more underscores) to avoid CS0102 — reference as `Entity._Patch`. If all candidates collide, Patch struct emission is suppressed for the entity. |
+| QRY048 | Warning | MySQL bind-order extraction failed for a chain; parameter binding falls back to chain order, which may not match the SQL text's `?` positions (see "MySQL Positional Bind Order") |
 | QRY050-055 | Mixed | Migration diagnostics |
 | QRY060 | Error | No FK column for `One<T>` navigation |
 | QRY061 | Error | Ambiguous FK for `One<T>` navigation |

@@ -653,10 +653,10 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                     assembled.TraceLines = execTrace;
             }
 
-            // Post-process SQL to tokenize collection parameter placeholders for carrier expansion
-            var isCarrierEligible = i < group.CarrierPlans.Count && group.CarrierPlans[i].IsEligible;
-            if (isCarrierEligible && assembled.Plan.Parameters.Count > 0)
-                TokenizeCollectionParameters(assembled.SqlVariants, assembled.Plan.Parameters, assembled.Dialect);
+            // SQL post-processing (collection tokenization + MySQL bind-order extraction)
+            // happens in PipelineOrchestrator.AnalyzeAndGroupTranslated — before file
+            // grouping — so this output action and the manifest output both consume
+            // final SQL with no dependence on cross-output execution order.
         }
 
         // Merge sites and chain member sites
@@ -829,6 +829,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         DiagnosticDescriptors.IntersectAllNotSupported,
         DiagnosticDescriptors.ExceptAllNotSupported,
         DiagnosticDescriptors.SetOperationProjectionMismatch,
+        // MySQL bind-order fallback, also emitted by PipelineOrchestrator.
+        DiagnosticDescriptors.MySqlBindOrderFallback,
     }.ToDictionary(d => d.Id);
 
     private static DiagnosticDescriptor? GetDescriptorById(string id) =>
@@ -930,88 +932,6 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             customEntityReaderClass: entityRef.CustomEntityReaderClass);
     }
 
-
-    /// <summary>
-    /// Replaces collection parameter placeholders in pre-built SQL with expansion tokens.
-    /// For example, <c>IN (@p0)</c> becomes <c>IN ({__COL_P0__})</c> when P0 is a collection.
-    /// The carrier terminal expands these tokens at runtime based on the actual collection size.
-    /// </summary>
-    private static void TokenizeCollectionParameters(
-        Dictionary<int, IR.AssembledSqlVariant> sqlMap,
-        IReadOnlyList<IR.QueryParameter> chainParams,
-        SqlDialect dialect)
-    {
-        // Find collection parameter indices and their tokens
-        var collectionParams = new List<(int Index, string Token)>();
-        foreach (var param in chainParams)
-        {
-            if (!param.IsCollection) continue;
-            collectionParams.Add((param.GlobalIndex, $"{{__COL_P{param.GlobalIndex}__}}"));
-        }
-
-        if (collectionParams.Count == 0) return;
-
-        // Replace placeholders with tokens in all SQL variants.
-        // Collect updates and apply after iteration to avoid allocating a key list copy.
-        var pendingUpdates = new List<(int Key, string Sql, int ParamCount)>();
-        foreach (var kvp in sqlMap)
-        {
-            var sql = kvp.Value.Sql;
-
-            if (dialect == SqlDialect.MySQL)
-            {
-                // MySQL uses positional '?' — replace the Nth '?' by ordinal index.
-                // Walk through '?' occurrences and replace the one at the collection param's position.
-                foreach (var (paramIdx, token) in collectionParams)
-                {
-                    sql = ReplaceNthOccurrence(sql, '?', paramIdx, token);
-                }
-            }
-            else
-            {
-                var sbSql = new System.Text.StringBuilder(sql);
-                foreach (var (paramIdx, token) in collectionParams)
-                {
-                    var placeholder = dialect switch
-                    {
-                        SqlDialect.PostgreSQL => $"${paramIdx + 1}",
-                        _ => $"@p{paramIdx}"
-                    };
-                    sbSql.Replace(placeholder, token);
-                }
-                sql = sbSql.ToString();
-            }
-
-            if (sql != kvp.Value.Sql)
-            {
-                pendingUpdates.Add((kvp.Key, sql, kvp.Value.ParameterCount));
-            }
-        }
-        foreach (var (key, sql, paramCount) in pendingUpdates)
-        {
-            sqlMap[key] = new IR.AssembledSqlVariant(sql, paramCount);
-        }
-    }
-
-    /// <summary>
-    /// Replaces the Nth occurrence (0-based) of a character in a string with a replacement string.
-    /// </summary>
-    private static string ReplaceNthOccurrence(string input, char target, int n, string replacement)
-    {
-        var count = 0;
-        for (int i = 0; i < input.Length; i++)
-        {
-            if (input[i] == target)
-            {
-                if (count == n)
-                {
-                    return input.Substring(0, i) + replacement + input.Substring(i + 1);
-                }
-                count++;
-            }
-        }
-        return input; // Nth occurrence not found
-    }
 
 
     /// <summary>
