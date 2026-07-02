@@ -44,3 +44,34 @@ Please file an issue.
 Trace how clause-interceptor bodies map lambda captures to carrier `P{n}` fields for chains with a `CteInfo`/parameter offset: the outer clause's `LocalIndex`→`GlobalIndex` mapping most likely needs the CTE rebase offset applied (mirroring what `SqlAssembler` does with `paramBaseOffset` for rendering). Add a generation test asserting the outer param's assignment exists, then a cross-dialect execution test for inner+outer parameterized CTE chains.
 
 The fix must land together with a MySQL execution test for the inner+outer shape: it is the one parameterized-CTE case whose inner-before-outer bind ordering (#303 audit surface) currently cannot be execution-verified — #304 pins every CTE shape that builds (inner-only, two-inner, outer-only); this combination is the remaining gap.
+
+The required test is the exact shape that fails to build today — valid SQL on all four dialects. Add to `MySqlIntegrationTests` (companion to the three `ParameterizedCte*` pins from #304, same seed data):
+
+```csharp
+[Test]
+public async Task ParameterizedCteInnerAndOuterParams_OnMySQL_BindsInnerBeforeOuter()
+{
+    // The QRY037 shape: captured param in the CTE lambda AND a captured param in the
+    // outer Where. Inner params rebase to the leading slots and WITH renders first,
+    // so text order is [threshold(0), minId(1)] — identity. A slot swap executes
+    // WHERE Total > 2 ... OrderId >= 100 and returns empty instead of order 3.
+    await using var t = await QueryTestHarness.CreateAsync();
+    var (_, _, My, _) = t;
+
+    decimal threshold = 100.00m;
+    int minId = 2;
+
+    var rows = await My.With<My.Order>(orders => orders.Where(o => o.Total > threshold))
+        .FromCte<My.Order>()
+        .Where(o => o.OrderId >= minId)
+        .Select(o => (o.OrderId, o.Total))
+        .ExecuteFetchAllAsync();
+
+    // CTE keeps orders 1 (250.00) and 3 (150.00); OrderId >= 2 keeps order 3.
+    Assert.That(rows, Is.EqualTo(new[] { (3, 150.00m) }),
+        "Expected only order 3 — empty means the inner and outer params swapped slots; " +
+        "a build failure means QRY037 regressed.");
+}
+```
+
+Also add a generation-level guard (generator-driver, any dialect) asserting the chain produces no QRY037 and that the generated interceptor assigns both `P0` and `P1`, plus a cross-dialect SQL-output test for the rendered WITH statement.

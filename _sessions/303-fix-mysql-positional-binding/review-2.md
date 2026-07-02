@@ -23,6 +23,9 @@
 
 **User directive (2026-07-02, classification):** in addition to the A/B fixes, add integration tests for every pass-2 gap that is testable — at minimum the ≥2-independent-conditional × wrap MySQL execution shape (#4/#10) and the QRY048 diagnostic surfacing test (#9).
 
+## Issues Created
+- #305: QRY037: CTE chain with captured inner and outer parameters fails to build — outer carrier param field never assigned (valid SQL). Discovered while adding the parameterized-CTE execution pin; verified pre-existing on master; fix mandated to land with the inner+outer MySQL execution test (the last unexecutable #303 audit case).
+
 ## Fix Verification
 
 **Verdict: QUALIFIED YES.** The core mechanism is sound and end-to-end correct for the reproducer shape and for every surface it was execution-tested on (wrap, window-fn projection params, projection-params + parameterized pagination, single-bit conditional × wrap, collection expansion × wrap). Two defects qualify the verdict: (1) the QRY048 fallback warning — the remediation of pass-1 findings #1/#6 — is **inert**: the descriptor was never registered in `s_deferredDescriptors`, so every QRY048 the orchestrator emits is silently dropped at reporting time; (2) `TryMergeTextOrder`'s greedy anchor-insertion produces **false contradictions** for chains with ≥2 independent conditional parameterized clauses, so those chains fall back to identity binding — which, combined with (1), means a wrap chain with two if-gated parameterized `Where` clauses still ships the #303 misbind with **zero diagnostics**. Both are narrow, mechanical fixes; neither invalidates the architecture.
