@@ -5,10 +5,10 @@ platform: github
 base-branch: master
 
 ## State
-phase: REVIEW
+phase: REMEDIATE
 status: active
 issue: #305
-pr:
+pr: #306
 
 ## Problem Statement
 QRY037 build failure for CTE chains that combine a captured parameter inside the
@@ -106,3 +106,4 @@ Baseline test status: all green at 7bb0e35 — Quarry.Tests 3281 passed, Quarry.
 | Date | Phases | Summary |
 |------|--------|---------|
 | 2026-07-02 | INTAKE, DESIGN, PLAN | Loaded issue #305, created worktree + branch, baseline all green (3628 tests). Traced root cause to AssembledPlan offset walk. Design+plan provisionally approved (user AFK); wrote plan.md; entered IMPLEMENT. |
+| 2026-07-02 | IMPLEMENT, REVIEW, REMEDIATE | 3 plan steps committed, suite green each step. Review: 5 findings (0A/3B/1C/1D), B-items fixed and bite-verified, F5 issue deferred pending user confirm. PR #306 created; awaiting CI. |
