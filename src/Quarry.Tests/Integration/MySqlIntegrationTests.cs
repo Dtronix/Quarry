@@ -366,9 +366,8 @@ public class MySqlIntegrationTests
         // SQL-text order equals chain order (identity) by construction — this pins that
         // claim with a real MySqlConnector execution (the pre-existing CTE tests inline
         // literal filters, leaving parameterized CTE chains unexecuted on MySQL).
-        // The outer filter stays literal: combining a captured inner param with a
-        // captured outer param trips pre-existing generator defect QRY037 (the outer
-        // carrier param field is never assigned) — tracked as a separate issue.
+        // The outer filter stays literal here; the inner+outer combination is pinned
+        // by ParameterizedCteInnerAndOuterParams_OnMySQL_BindsInnerBeforeOuter (#305).
         await using var t = await QueryTestHarness.CreateAsync();
         var (_, _, My, _) = t;
 
@@ -389,8 +388,7 @@ public class MySqlIntegrationTests
     [Test]
     public async Task ParameterizedCteTwoInnerParams_OnMySQL_BindsBothInTextOrder()
     {
-        // Two captured params inside the CTE lambda — the maximal multi-param CTE shape
-        // that builds today (QRY037 blocks only the inner+outer combination). Both
+        // Two captured params inside the CTE lambda. Both
         // rebased slots must reach their `?`s in WITH-clause text order. Values are
         // range-disjoint so a slot swap (Total > 2 AND OrderId >= 100) returns empty
         // instead of a subtly different set.
@@ -432,6 +430,32 @@ public class MySqlIntegrationTests
         // CTE keeps orders 1 and 3; OrderId >= 2 keeps order 3.
         Assert.That(rows, Is.EqualTo(new[] { (3, 150.00m) }),
             "Expected only order 3 — a different set means minId missed the outer `?`.");
+    }
+
+    [Test]
+    public async Task ParameterizedCteInnerAndOuterParams_OnMySQL_BindsInnerBeforeOuter()
+    {
+        // The former QRY037 shape (#305): captured param in the CTE lambda AND a
+        // captured param in the outer Where. Inner params rebase to the leading slots
+        // and WITH renders first, so text order is [threshold(0), minId(1)] — identity.
+        // A slot swap executes WHERE Total > 2 ... OrderId >= 100 and returns empty
+        // instead of order 3.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (_, _, My, _) = t;
+
+        decimal threshold = 100.00m;
+        int minId = 2;
+
+        var rows = await My.With<My.Order>(orders => orders.Where(o => o.Total > threshold))
+            .FromCte<My.Order>()
+            .Where(o => o.OrderId >= minId)
+            .Select(o => (o.OrderId, o.Total))
+            .ExecuteFetchAllAsync();
+
+        // CTE keeps orders 1 (250.00) and 3 (150.00); OrderId >= 2 keeps order 3.
+        Assert.That(rows, Is.EqualTo(new[] { (3, 150.00m) }),
+            "Expected only order 3 — empty means the inner and outer params swapped slots; " +
+            "a build failure means QRY037 regressed.");
     }
 
     [Test]

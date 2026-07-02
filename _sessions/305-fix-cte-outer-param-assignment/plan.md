@@ -86,7 +86,7 @@ static and has no access to `Plan.CteDefinitions`.
   `(3, 150.00m)`). Run suite. Commit.
   Tests: the new cross-dialect test itself.
 
-- [ ] **Step 3 — MySQL bind-order execution pin.**
+- [x] **Step 3 — MySQL bind-order execution pin.**
   Add `ParameterizedCteInnerAndOuterParams_OnMySQL_BindsInnerBeforeOuter` to
   `src/Quarry.Tests/Integration/MySqlIntegrationTests.cs` exactly as specified in issue
   #305 (companion to the three #304 `ParameterizedCte*` pins; same seed data). Also update
