@@ -5328,6 +5328,19 @@ WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `Ord
 
 ---
 
+### With(...).FromCte(...).Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `Total` > ?) SELECT `OrderId`, `Total` FROM `Order` WHERE `OrderId` >= ?
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+| `@p1` | `int` |
+
+---
+
 ### With(...).With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql

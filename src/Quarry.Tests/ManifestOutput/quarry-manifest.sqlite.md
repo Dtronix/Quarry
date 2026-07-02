@@ -5830,6 +5830,19 @@ WITH "OrderSummaryDto" AS (SELECT "OrderId", "Total", "Status" FROM "orders" WHE
 
 ---
 
+### With(...).FromCte(...).Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > @p0) SELECT "OrderId", "Total" FROM "Order" WHERE "OrderId" >= @p1
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+| `@p1` | `int` |
+
+---
+
 ### With(...).With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql

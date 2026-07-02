@@ -77,7 +77,7 @@ static and has no access to `Plan.CteDefinitions`.
   Tests: new generation test; existing suite green (esp. `CrossDialectCteTests`,
   `MySqlBindOrderGenerationTests`, QRY037 self-check tests).
 
-- [ ] **Step 2 — Cross-dialect SQL + execution test.**
+- [x] **Step 2 — Cross-dialect SQL + execution test.**
   Add to `src/Quarry.Tests/SqlOutput/CrossDialectCteTests.cs`: inner+outer captured
   params (`With<Order>(orders => orders.Where(o => o.Total > threshold)).FromCte<Order>()
   .Where(o => o.OrderId >= minId).Select(...)`) built on all four dialects with
