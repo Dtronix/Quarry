@@ -5,7 +5,7 @@ platform: github
 base-branch: master
 
 ## State
-phase: REMEDIATE
+phase: FINALIZE
 status: active
 issue: #305
 pr: #306
