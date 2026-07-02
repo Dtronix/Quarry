@@ -36,7 +36,11 @@ Please file an issue.
 
 - Inner lambda params rebase onto the outer slot range (inner = slot 0..k, outer following), and the WITH clause renders first, so SQL-text order is chain order — bind ordering is not the problem; the outer clause's interceptor simply never assigns its carrier field.
 - Dialect-independent: the assignment gap is in shared emission, not a dialect branch (observed on MySQL; nothing dialect-specific in the path).
+- The defect is specific to the **combination**: outer-captured-param with a literal CTE builds and executes correctly, and two captured params both inside the CTE lambda build and execute correctly (both verified with QRY030 pre-built dispatch and real MySqlConnector execution tests in #304: `ParameterizedCteOuterParam_...`, `ParameterizedCteTwoInnerParams_...`). Only inner-captured + outer-captured together trips QRY037 — consistent with the outer clause's slot mapping missing the CTE rebase offset (with zero inner params the offset is zero, which is why outer-only works).
+- Because QRY037 is a build error, no user chain of this shape can exist at runtime — there is no silent-misbind exposure, only an unusable chain shape.
 
 ## Suggested Approach
 
 Trace how clause-interceptor bodies map lambda captures to carrier `P{n}` fields for chains with a `CteInfo`/parameter offset: the outer clause's `LocalIndex`→`GlobalIndex` mapping most likely needs the CTE rebase offset applied (mirroring what `SqlAssembler` does with `paramBaseOffset` for rendering). Add a generation test asserting the outer param's assignment exists, then a cross-dialect execution test for inner+outer parameterized CTE chains.
+
+The fix must land together with a MySQL execution test for the inner+outer shape: it is the one parameterized-CTE case whose inner-before-outer bind ordering (#303 audit surface) currently cannot be execution-verified — #304 pins every CTE shape that builds (inner-only, two-inner, outer-only); this combination is the remaining gap.

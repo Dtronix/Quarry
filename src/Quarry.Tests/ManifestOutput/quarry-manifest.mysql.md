@@ -5003,6 +5003,19 @@ WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `Ord
 ### With(...).FromCte(...).Select(...).ExecuteFetchAllAsync()
 
 ```sql
+WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `Total` > ? AND `OrderId` >= ?) SELECT `OrderId`, `Total` FROM `Order`
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+| `@p1` | `int` |
+
+---
+
+### With(...).FromCte(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
 WITH `Product` AS (SELECT * FROM `products` WHERE `ProductId` <= 3) SELECT `ProductId`, `ProductName`, `Price`, `Description`, `DiscountedPrice` FROM `Product`
 ```
 
@@ -5069,6 +5082,18 @@ WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `Ord
 | Parameter | Type |
 |-----------|------|
 | `@p0` | `decimal` |
+
+---
+
+### With(...).FromCte(...).Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `Total` > 100) SELECT `OrderId`, `Total` FROM `Order` WHERE `OrderId` >= ?
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
 
 ---
 
@@ -5203,7 +5228,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 571 |
+| Total discovered | 573 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 99 |
-| Rendered | 472 |
+| Rendered | 474 |

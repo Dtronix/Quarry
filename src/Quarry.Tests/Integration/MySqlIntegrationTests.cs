@@ -387,6 +387,54 @@ public class MySqlIntegrationTests
     }
 
     [Test]
+    public async Task ParameterizedCteTwoInnerParams_OnMySQL_BindsBothInTextOrder()
+    {
+        // Two captured params inside the CTE lambda — the maximal multi-param CTE shape
+        // that builds today (QRY037 blocks only the inner+outer combination). Both
+        // rebased slots must reach their `?`s in WITH-clause text order. Values are
+        // range-disjoint so a slot swap (Total > 2 AND OrderId >= 100) returns empty
+        // instead of a subtly different set.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (_, _, My, _) = t;
+
+        decimal threshold = 100.00m;
+        int minId = 2;
+
+        var rows = await My.With<My.Order>(orders => orders.Where(o => o.Total > threshold && o.OrderId >= minId))
+            .FromCte<My.Order>()
+            .Select(o => (o.OrderId, o.Total))
+            .ExecuteFetchAllAsync();
+
+        // Total > 100 keeps orders 1 and 3; OrderId >= 2 then keeps only order 3.
+        Assert.That(rows, Is.EqualTo(new[] { (3, 150.00m) }),
+            "Expected only order 3 — an empty set means threshold and minId swapped " +
+            "`?` slots inside the WITH clause.");
+    }
+
+    [Test]
+    public async Task ParameterizedCteOuterParam_OnMySQL_BindsOuterParamAfterLiteralCte()
+    {
+        // Outer captured param with a literal-filtered CTE — the other side of the
+        // QRY037 boundary (the outer clause-interceptor assignment works when the CTE
+        // contributes no params). Pins that the outer `?` receives its value on real
+        // MySqlConnector with a WITH clause present in the text.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (_, _, My, _) = t;
+
+        int minId = 2;
+
+        var rows = await My.With<My.Order>(orders => orders.Where(o => o.Total > 100))
+            .FromCte<My.Order>()
+            .Where(o => o.OrderId >= minId)
+            .Select(o => (o.OrderId, o.Total))
+            .ExecuteFetchAllAsync();
+
+        // CTE keeps orders 1 and 3; OrderId >= 2 keeps order 3.
+        Assert.That(rows, Is.EqualTo(new[] { (3, 150.00m) }),
+            "Expected only order 3 — a different set means minId missed the outer `?`.");
+    }
+
+    [Test]
     public async Task ParameterizedUnion_OnMySQL_BindsOperandParamsInChainOrder()
     {
         // Issue #303 audit surface: set operations. Operand params occupy sequential
