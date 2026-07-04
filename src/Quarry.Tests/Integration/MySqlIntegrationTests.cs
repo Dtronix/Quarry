@@ -412,10 +412,11 @@ public class MySqlIntegrationTests
     [Test]
     public async Task ParameterizedCteOuterParam_OnMySQL_BindsOuterParamAfterLiteralCte()
     {
-        // Outer captured param with a literal-filtered CTE — the other side of the
-        // QRY037 boundary (the outer clause-interceptor assignment works when the CTE
-        // contributes no params). Pins that the outer `?` receives its value on real
-        // MySqlConnector with a WITH clause present in the text.
+        // Outer captured param with a literal-filtered CTE — isolates the outer
+        // clause-interceptor assignment with a zero-param CTE (rebase offset 0).
+        // Pins that the outer `?` receives its value on real MySqlConnector with a
+        // WITH clause present in the text. The inner+outer combination is pinned by
+        // ParameterizedCteInnerAndOuterParams_OnMySQL_BindsInnerBeforeOuter (#305).
         await using var t = await QueryTestHarness.CreateAsync();
         var (_, _, My, _) = t;
 
