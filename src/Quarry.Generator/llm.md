@@ -117,15 +117,19 @@ Interceptors cast the builder to the carrier via `Unsafe.As<Chain_N>()`, extract
 
 ### Conditional Clause Masking
 
-Clauses inside `if/else` blocks deeper than the execution terminal's nesting depth get assigned bit indices. Constants: `MaxConditionalBits = 8`, `MaxIfNestingDepth = 2`. Beyond either → QRY032.
+Clauses inside `if`/`else`/ternary branches deeper than the execution terminal's nesting depth get assigned bit indices. Constants: `MaxConditionalBits = 8`, `MaxIfNestingDepth = 2`. Beyond either → QRY032.
 
-**Bit assignment** (ChainAnalyzer): For each clause site, compute `relativeDepth = clause.NestingDepth - terminal.NestingDepth`. If `relativeDepth <= 0`, the clause is unconditional (same scope as terminal). If `relativeDepth > MaxIfNestingDepth`, the chain is RuntimeBuild. Otherwise, assign a `BitIndex` (0-7). Clauses sharing the same `ConditionText` form mutually exclusive branch groups.
+**Cascade model** (#307): `UsageSiteDiscovery.DetectNestingContext` identifies each site's innermost *cascade* — one whole `if/else-if/else` statement chain or ternary — structurally via syntax ancestry, not condition text. `NestingContext` carries `GroupKey` (cascade head span position, `"if:N"`/`"t:N"`), `ArmIndex`, `ArmCount`, `HasFinalElse`. `NestingDepth` counts **cascades** crossed to the method body, so a flat `else if` chain of any arm count is depth 1; depth 2 means a cascade nested inside a cascade arm. Sites inside a condition expression pass through (they run during arm dispatch, before any arm is taken). A ternary is a 2-arm cascade with a final else — including the `q = flag ? q.Where(...) : q` reassignment shape.
 
-**Mask enumeration** (ChainAnalyzer.EnumerateMaskCombinations): Independent bits double the mask count (on/off). Mutually exclusive groups multiply by group size (exactly one bit set). Only reachable combinations are enumerated.
+**Bit assignment** (ChainAnalyzer): For each clause site, compute `relativeDepth = clause.NestingDepth - terminal.NestingDepth`. If `relativeDepth <= 0`, the clause is unconditional (same scope as terminal). If `relativeDepth > MaxIfNestingDepth`, the chain is RuntimeBuild. Otherwise, assign a `BitIndex` (0-7). Limit/Offset/Distinct sites get bits like any clause (their bits live on `PaginationPlan.LimitBitIndex`/`OffsetBitIndex`/`QueryPlan.DistinctBitIndex`); WithTimeout is explicitly skipped — the carrier `Timeout` field is `TimeSpan?` with a `DefaultTimeout` fallback, so it is conditional-correct without a bit. Each `ConditionalTerm` records the site's `SiteUniqueId`; all site→bit correlation downstream (`AssembledPlan.GetClauseEntries`, emitters) matches by ID, never positionally.
 
-**SQL rendering** (SqlAssembler): For each mask, evaluate which terms are active (`BitIndex == null` or bit set in mask), then render the full SQL statement. Parameter indices are globally stable — skipped conditional terms still occupy their parameter slots to keep `@p0, @p1, ...` aligned.
+**Mask enumeration** (ChainAnalyzer.EnumerateMaskCombinations): Per cascade, at runtime exactly one arm executes (or none). Options = each represented arm's OR-of-bits — all of an arm's bits set together — plus 0 when the cascade lacks a final else or has arms without chain sites. The 0 option enumerates first so the base variant leads diagnostics/manifest output. Masks are the cross-product of one option per cascade. A 1-arm `if` reproduces the classic independent bit ({0, b}); a single-clause `if/else` reproduces the classic exclusive pair ({b0, b1}). Nested cascades enumerate independently (a reachable superset).
 
-**Code generation** (CarrierEmitter): Single variant → `static readonly string _sql`. Multiple variants → `static readonly string[] _sql` indexed by mask value (gaps filled with `null!`). Carrier accumulates a `byte` mask field via `Mask |= (1 << bitIndex)` as conditional clause interceptors execute. Terminal dispatches via direct array index: `_sql[__c.Mask]`.
+**Reachability validator** (ChainAnalyzer.ValidateMaskEnumeration, defense in depth): after enumeration, brute-force all `2^totalBits` masks against per-cascade constraints (intersection with a cascade's bits must be empty — allowed only when the cascade can take no represented arm — or exactly one arm's complete bit set) and demote the chain to RuntimeBuild (QRY032) if any reachable mask has no variant. Deliberately a separate walk from EnumerateMaskCombinations so one bug cannot hide in both; it should never fire through the public pipeline.
+
+**SQL rendering** (SqlAssembler): For each mask, evaluate which terms are active (`BitIndex == null` or bit set in mask), then render the full SQL statement. Parameter indices are globally stable — skipped conditional terms still occupy their parameter slots to keep `@p0, @p1, ...` aligned. LIMIT/OFFSET/DISTINCT render only in variants whose mask includes their bit (`AppendPagination`, DISTINCT keyword sites, and `NeedsDistinctOrderByWrap` are all mask-gated); the batch prefix/middle/suffix decomposition is disabled (`canBatch = false`) when pagination or distinct is conditional.
+
+**Code generation** (CarrierEmitter): Single variant → `static readonly string _sql`. Multiple variants → `static readonly string[] _sql` indexed by mask value (gaps filled with `null!`). Carrier accumulates a `byte` mask field via `Mask |= (1 << bitIndex)` as conditional clause interceptors execute — including `EmitPagination`/`EmitDistinct` for conditional Limit/Offset/Distinct. Pagination carrier fields bind only when their bit is active. Terminal dispatches via direct array index guarded by `Quarry.Internal.ThrowHelper.UnenumeratedMask` (bounds + null check → actionable `InvalidOperationException` instead of an NRE/provider error if a mask ever escapes enumeration): `_sql[__c.Mask]`.
 
 ### MySQL Positional Bind Order
 
@@ -178,8 +182,9 @@ Chains that cannot be statically analyzed receive `OptimizationTier.RuntimeBuild
 | Chain variable passed to non-Quarry method | `var q = db.T(); SomeMethod(q);` |
 | Chain variable assigned from non-Quarry method | `var q = GetQuery();` |
 | Chain crosses loop boundary | Some clauses inside loop, terminal outside (or vice versa) |
-| Conditional nesting depth > 2 | Triple-nested `if/else` with conditional clauses |
-| Conditional bits > 8 | More than 8 independent conditional clause groups |
+| Conditional nesting depth > 2 | Conditional clause in a cascade nested 3 cascade levels below the terminal (flat `else if` chains are ONE level) |
+| Conditional bits > 8 | More than 8 conditional clause sites across all cascades |
+| Reachable mask without a variant | Validator backstop (`ValidateMaskEnumeration`) — should never fire; indicates an enumeration bug |
 
 ### Display Class Prediction
 
@@ -494,7 +499,7 @@ QRY073 was introduced then retired in v0.3.0 when cross-entity set operations be
 4. **Supplemental compilation**: DisplayClassEnricher builds a supplemental compilation containing generated entity/context source before creating semantic models. This eliminates TypeKind.Error for generated types; remaining error types fall back to "object".
 5. **IsUnresolvedTypeName strict/lenient split**: Strict treats "object" as unresolved (chain analysis). Lenient allows "object" (projection analysis where it is a valid placeholder via fallbackToObject).
 6. **Enum constant folding**: SqlExprAnnotator folds enum member accesses to LiteralExpr before parameter extraction. CapturedValueExpr reaching the translator are always genuine runtime captures.
-7. **Conditional mask limit**: Max 8 conditional bits (256 SQL variants) and max nesting depth 2. Beyond either limit → QRY032 compile error.
+7. **Conditional mask limit**: Max 8 conditional bits (256 SQL variants) and max nesting depth 2 (counted in cascades — a whole `if/else-if/else` chain or ternary is one level). Beyond either limit → QRY032 compile error.
 8. **RuntimeBuild is a compile-error path, not a runtime fallback**: There is no runtime query builder. When ChainAnalyzer classifies a chain as `OptimizationTier.RuntimeBuild` (forked chain, excessive conditional depth, unanalyzable projection, disqualified chain), no SQL is rendered, no carrier is generated, and QRY032 is reported as a compile error directing the user to restructure. `CarrierAnalyzer` immediately marks RuntimeBuild chains as `Ineligible`; `SqlAssembler` produces empty SQL variants.
 
 ## Project Boundaries

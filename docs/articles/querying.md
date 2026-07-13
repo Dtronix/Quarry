@@ -323,7 +323,9 @@ For example, with 2 conditional clauses (Where and OrderBy above), the generator
 | `0b10` | No | Yes | `SELECT ... FROM "users" ORDER BY "UserName" LIMIT 10` |
 | `0b11` | Yes | Yes | `SELECT ... FROM "users" WHERE "IsActive" = 1 ORDER BY "UserName" LIMIT 10` |
 
-The generator supports up to 8 conditional bits, producing a maximum of 256 SQL variants per chain. Chains that exceed this limit or that cannot be statically analyzed produce compile error QRY032. All dispatch is a constant-time switch -- no SQL is built or concatenated at runtime.
+`else if` cascades of any arm count, a final `else`, multiple clauses in one branch, and ternary reassignment (`query = flag ? query.Where(...) : query`) are all supported -- the generator groups each `if`/`else if`/`else` chain structurally and enumerates one variant per arm (clauses in the same arm always activate together; arms are mutually exclusive). Conditional `Limit`/`Offset`/`Distinct` are honored per-branch. `WithTimeout` is branch-safe without consuming a bit -- when the branch is not taken, the context's `DefaultTimeout` applies.
+
+The generator supports up to 8 conditional bits, producing a maximum of 256 SQL variants per chain, with conditional nesting up to 2 levels (a whole `if`/`else if`/`else` chain counts as one level). Chains that exceed these limits or that cannot be statically analyzed produce compile error QRY032. All dispatch is a constant-time lookup -- no SQL is built or concatenated at runtime.
 
 ## Execution Methods
 

@@ -195,15 +195,20 @@ can't hide in both.
 - Depends on step 5.
 
 ### Step 7: Documentation
-- [ ] Root `llm.md` (usage): conditional-clause section states exactly which chain
+- [x] Root `llm.md` (usage): conditional-clause section states exactly which chain
   methods participate in conditional masking (Where/OrderBy/ThenBy/GroupBy/Having/
   Select/Set/Join…, now incl. Limit/Offset/Distinct), that WithTimeout is conditional-
   safe without consuming a bit, and that else-if cascades and multi-clause branches
-  are supported (8-bit / depth-2 limits unchanged).
-- [ ] `src/Quarry.Generator/llm.md` (internals): cascade grouping model, per-arm
+  are supported (8-bit / depth-2 limits unchanged). (New conditional-clauses example
+  block in Querying + updated Constraints bullet.)
+- [x] `src/Quarry.Generator/llm.md` (internals): cascade grouping model, per-arm
   enumeration, SiteUniqueId bit matching, pagination/distinct mask gating, validator,
-  runtime guard. (Per repo convention: root = usage only, generator = internals.)
-- [ ] README QRY tables if diagnostics text changed (no new QRY id is added by this plan).
+  runtime guard. (Per repo convention: root = usage only, generator = internals.
+  Also updated disqualifier table + design-notes item 7 for cascade depth semantics.)
+- [x] README QRY tables if diagnostics text changed — no QRY id or description text
+  changed; tables untouched. (Deliberate small extension: docs/articles/querying.md
+  Conditional Branches section updated — it is the user-facing doc for this feature
+  and predated else-if/ternary/multi-clause support.)
 - Tests: n/a (docs). Suite green.
 - Depends on steps 1-6 (describes the final state).
 

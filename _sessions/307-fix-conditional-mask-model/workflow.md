@@ -216,6 +216,7 @@ and recorded in Working Notes)
 ## Session Log
 | Date | Phases | Summary |
 |------|--------|---------|
+| 2026-07-13 | IMPLEMENT (steps 5-7) | Step 5 structural cascade grouping (per-arm enumeration, ternary support, base-variant-first ordering fix after gap-pin failure); step 6 reachability validator + 13 unit tests; step 7 docs (root llm.md example block, generator llm.md cascade model, querying.md — deliberate small extension). Suite green: 3339+201+146. |
 | 2026-07-13 | INTAKE | Loaded issue #307, created worktree + branch from 7bb0e35, baseline suite started. #305 workflow suspended at FINALIZE in parallel worktree. |
 | 2026-07-13 | DESIGN, PLAN | Baseline green (3628 tests). Verified all issue claims in source; found WithTimeout already runtime-correct (bit is waste) and the fragile positional bit protocol. User approved: honor Limit/Offset/Distinct bits, structural cascade grouping, both defense layers. 7-step plan.md approved; entering IMPLEMENT. |
 | 2026-07-13 | IMPLEMENT (suspended) | Steps 1-4 committed, suite green after each (now 3307+201+146). Step 1 SiteUniqueId bit identity (+ latent-bug regression test); step 2 runtime dispatch guard + else-if pin; step 3 WithTimeout bit removal + IsKnownBuilderMethod fix; step 4 conditional Limit/Offset/Distinct fully honored (render gating, bit setting, binding gating, MySQL bind-order, diagnostics). Suspended by context check; next: step 5. |
