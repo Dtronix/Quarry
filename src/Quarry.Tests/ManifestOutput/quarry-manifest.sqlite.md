@@ -3273,6 +3273,14 @@ SELECT "UserName" FROM "users" WHERE "UserName" = @p0
 ### Users().Where(...).Select(...).ExecuteFetchFirstAsync()
 
 ```sql
+SELECT "CreatedAt" FROM "users" WHERE "UserId" = 99
+```
+
+---
+
+### Users().Where(...).Select(...).ExecuteFetchFirstAsync()
+
+```sql
 SELECT "UserName" FROM "users" WHERE "UserId" = 1
 ```
 
@@ -5646,7 +5654,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 710 |
+| Total discovered | 711 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 195 |
-| Rendered | 515 |
+| Rendered | 516 |

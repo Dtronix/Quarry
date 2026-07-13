@@ -5,15 +5,15 @@ Class: (A) valid, fix now | (B) gap, fix now | (C) separate issue | (D) not vali
 
 | ID | Class | Rec | Sev | Section | Finding | Action Taken |
 |----|-------|-----|-----|---------|---------|--------------|
-| F3 |  | B | M | Test Quality | Item 6e First reorder ships with no test of the failure-path (no spurious FetchCompleted) |  |
-| F8 |  | B | L | Integration | `src/Quarry/.editorconfig` `root = true` blocks future repo-root editorconfig inheritance |  |
-| F1 |  | D | L | Correctness | First masks materialization error with "no elements" — INVALID: `ReportReaderFailure` always throws `QuarryQueryException` wrapping the real ex; comment is accurate |  |
-| F2 |  | D | L | Correctness | RawSql file-scope `_mapper_*` field unused for struct-reader sites — one-time static (not per-row); clean fix needs disproportionate plumbing |  |
-| F4 |  | D | L | Test Quality | BatchInsert test can't distinguish fast-path from fallback — behavior-preserving, no clean observable |  |
-| F5 |  | D | L | Test Quality | 5 QuarryContext OpId-gating sites untested — runtime-neutral, opId not observable |  |
-| F6 |  | D | L | Consistency | `__target`-guard block triplicated in CarrierEmitter — plan pre-authorized as optional; matches verbose emit style |  |
-| F7 |  | D | L | Consistency | Disposal-handle naming divergence — new handles use consistent `__<var>Disp`; `_cmd` is pre-existing/out of scope |  |
-| F9 |  | D | L | Integration | `NavigationList.Unloaded()` reference-identity change — intended design of item 2; safe (sealed + immutable) |  |
+| F3 | B | B | M | Test Quality | Item 6e First reorder ships with no test of the failure-path (no spurious FetchCompleted) | Added `FetchFirst_MaterializationThrows_NoSpuriousCompletionLog` (malformed-datetime materialization throw); teeth-verified — pre-fix logs spurious `[1] Fetched 1 rows` |
+| F8 | B | B | L | Integration | `src/Quarry/.editorconfig` `root = true` blocks future repo-root editorconfig inheritance | Removed `root = true` (replaced with an explanatory comment); CA2007 `[*.cs]` rule still applies, build stays 0-error |
+| F1 | D | D | L | Correctness | First masks materialization error with "no elements" — INVALID: `ReportReaderFailure` always throws `QuarryQueryException` wrapping the real ex; comment is accurate | dismissed |
+| F2 | D | D | L | Correctness | RawSql file-scope `_mapper_*` field unused for struct-reader sites — one-time static (not per-row); clean fix needs disproportionate plumbing | dismissed |
+| F4 | D | D | L | Test Quality | BatchInsert test can't distinguish fast-path from fallback — behavior-preserving, no clean observable | dismissed |
+| F5 | D | D | L | Test Quality | 5 QuarryContext OpId-gating sites untested — runtime-neutral, opId not observable | dismissed |
+| F6 | D | D | L | Consistency | `__target`-guard block triplicated in CarrierEmitter — plan pre-authorized as optional; matches verbose emit style | dismissed |
+| F7 | D | D | L | Consistency | Disposal-handle naming divergence — new handles use consistent `__<var>Disp`; `_cmd` is pre-existing/out of scope | dismissed |
+| F9 | D | D | L | Integration | `NavigationList.Unloaded()` reference-identity change — intended design of item 2; safe (sealed + immutable) | dismissed |
 
 Scope reviewed: `git diff origin/master..HEAD -- . ':(exclude)_sessions'` (branch is directly ahead of `origin/master`; merge-base == `origin/master`, so two-dot == three-dot). 21 files, +775/-96. Cross-referenced against `plan.md` (11 steps) and `workflow.md` Decisions/Working Notes.
 
