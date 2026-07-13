@@ -167,6 +167,9 @@ public class CallSiteTests
             groupKey: "if:10", armIndex: 0, armCount: 2, hasFinalElse: true)), Is.False);
         Assert.That(a.Equals(new NestingContext("x > 0", 1, BranchKind.MutuallyExclusive,
             groupKey: "if:10", armIndex: 0, armCount: 3, hasFinalElse: false)), Is.False);
+        Assert.That(a.Equals(new NestingContext("x > 0", 1, BranchKind.MutuallyExclusive,
+            groupKey: "if:10", armIndex: 0, armCount: 3, hasFinalElse: true,
+            unanalyzablePositionKey: "cond:5")), Is.False);
     }
 
     #endregion

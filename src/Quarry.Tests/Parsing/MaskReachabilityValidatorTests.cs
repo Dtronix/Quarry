@@ -118,6 +118,17 @@ public class MaskReachabilityValidatorTests
     }
 
     [Test]
+    public void NestedFinalElseCascade_MissingZeroMask_Detected()
+    {
+        // Review F3: a fully-represented if/else nested inside an outer conditional arm
+        // can be skipped entirely — BuildCascadeShapes derives ZeroAllowed=true from the
+        // cascade's relative depth, and an enumeration without mask 0 must be flagged.
+        var cascades = new[] { Cascade(zeroAllowed: true, 0b01, 0b10) };
+        Assert.That(ChainAnalyzer.ValidateMaskEnumeration(cascades, 2, new[] { 0, 1, 2 }), Is.True);
+        Assert.That(ChainAnalyzer.ValidateMaskEnumeration(cascades, 2, new[] { 1, 2 }), Is.False);
+    }
+
+    [Test]
     public void TwoCascades_MissingCombination_Detected()
     {
         var cascades = new[]

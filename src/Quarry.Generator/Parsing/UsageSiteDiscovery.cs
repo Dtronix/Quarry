@@ -1993,6 +1993,7 @@ internal static class UsageSiteDiscovery
         string? groupKey = null;
         int armIndex = 0, armCount = 1;
         bool hasFinalElse = false;
+        string? unanalyzablePositionKey = null;
 
         SyntaxNode prev = node;
         var current = node.Parent;
@@ -2016,6 +2017,17 @@ internal static class UsageSiteDiscovery
             }
             else if (current is IfStatementSyntax ifStatement)
             {
+                // A site inside a NON-head if's condition (an `else if (...)` condition)
+                // is evaluated only when every earlier arm's condition was false —
+                // conditionally executed, but bound to no arm. Record the position so
+                // ChainAnalyzer can demote unless the whole chain shares it. Head-if
+                // conditions evaluate whenever the statement is reached — plain
+                // pass-through.
+                if (prev == ifStatement.Condition && ifStatement.Parent is ElseClauseSyntax)
+                {
+                    unanalyzablePositionKey ??= "cond:" + ifStatement.SpanStart;
+                }
+
                 // Entered through the then-statement, or through a final else clause.
                 // (An else clause whose statement is another if means the site sat in
                 // that else-if's condition — cascade dispatch machinery, pass through.)
@@ -2052,14 +2064,18 @@ internal static class UsageSiteDiscovery
             current = current.Parent;
         }
 
-        if (innermostCondition == null)
+        if (innermostCondition == null && unanalyzablePositionKey == null)
             return null;
+
+        // A site in an else-if condition with no arm-entered cascade above still needs
+        // a context so ChainAnalyzer sees the unanalyzable position.
+        innermostCondition ??= string.Empty;
 
         // BranchKind is retained for ToDiagnostics reporting: arms of a multi-arm
         // cascade are mutually exclusive; a lone if-arm is independent.
         var branchKind = armCount >= 2 ? BranchKind.MutuallyExclusive : BranchKind.Independent;
         return new NestingContext(innermostCondition, cascadeDepth, branchKind,
-            groupKey, armIndex, armCount, hasFinalElse);
+            groupKey, armIndex, armCount, hasFinalElse, unanalyzablePositionKey);
     }
 
     /// <summary>

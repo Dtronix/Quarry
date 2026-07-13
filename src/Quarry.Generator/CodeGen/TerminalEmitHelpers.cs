@@ -412,26 +412,28 @@ internal static class TerminalEmitHelpers
             }
             else if (carrier != null && clause.Role == ClauseRole.Limit && hasLimitField)
             {
+                var limitMeta = FormatPaginationMeta(chain, isLimit: true);
                 if (hasChainCollections)
                 {
                     var shiftExpr = ComputeShiftExprForIndex(chain, paginationBaseIdx);
                     var nameExpr = EmitDiagParamNameExprWithVar(chain.Dialect, paginationBaseIdx, shiftExpr);
-                    paramsArg = $", parameters: new DiagnosticParameter[] {{ new({nameExpr}, __pValL, typeName: \"Int32\") }}";
+                    paramsArg = $", parameters: new DiagnosticParameter[] {{ new({nameExpr}, __pValL, typeName: \"Int32\"{limitMeta}) }}";
                 }
                 else
-                    paramsArg = $", parameters: new DiagnosticParameter[] {{ new(\"@p{paginationBaseIdx}\", __pValL, typeName: \"Int32\") }}";
+                    paramsArg = $", parameters: new DiagnosticParameter[] {{ new(\"@p{paginationBaseIdx}\", __pValL, typeName: \"Int32\"{limitMeta}) }}";
             }
             else if (carrier != null && clause.Role == ClauseRole.Offset && hasOffsetField)
             {
+                var offsetMeta = FormatPaginationMeta(chain, isLimit: false);
                 var offsetIdx = paginationBaseIdx + (hasLimitField ? 1 : 0);
                 if (hasChainCollections)
                 {
                     var shiftExpr = ComputeShiftExprForIndex(chain, offsetIdx);
                     var nameExpr = EmitDiagParamNameExprWithVar(chain.Dialect, offsetIdx, shiftExpr);
-                    paramsArg = $", parameters: new DiagnosticParameter[] {{ new({nameExpr}, __pValO, typeName: \"Int32\") }}";
+                    paramsArg = $", parameters: new DiagnosticParameter[] {{ new({nameExpr}, __pValO, typeName: \"Int32\"{offsetMeta}) }}";
                 }
                 else
-                    paramsArg = $", parameters: new DiagnosticParameter[] {{ new(\"@p{offsetIdx}\", __pValO, typeName: \"Int32\") }}";
+                    paramsArg = $", parameters: new DiagnosticParameter[] {{ new(\"@p{offsetIdx}\", __pValO, typeName: \"Int32\"{offsetMeta}) }}";
             }
             else if (carrier != null && clauseParamCount > 0)
             {

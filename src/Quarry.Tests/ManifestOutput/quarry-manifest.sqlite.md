@@ -2082,6 +2082,18 @@ SELECT DISTINCT "IsActive" FROM "users"
 
 ---
 
+### Users().Select(...).Distinct(...).ToDiagnostics() — 2 variants
+
+```sql
+-- base
+SELECT "IsActive" FROM "users"
+
+-- +dedupe
+SELECT DISTINCT "IsActive" FROM "users"
+```
+
+---
+
 ### Users().Select(...).Except(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -2243,6 +2255,38 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 ---
 
+### Users().Select(...).OrderBy(...).Limit(...).Offset(...).ToDiagnostics() — 2 variants
+
+```sql
+-- base
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" ORDER BY "UserId" ASC LIMIT 10
+
+-- +skipFirst
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" ORDER BY "UserId" ASC LIMIT 10 OFFSET 1
+```
+
+---
+
+### Users().Select(...).OrderBy(...).Offset(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" ORDER BY "UserId" ASC LIMIT -1 OFFSET 1
+```
+
+---
+
+### Users().Select(...).OrderBy(...).Offset(...).Limit(...).ExecuteFetchAllAsync() — 2 variants
+
+```sql
+-- base
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" ORDER BY "UserId" ASC LIMIT -1 OFFSET 1
+
+-- +capped
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" ORDER BY "UserId" ASC LIMIT 1 OFFSET 1
+```
+
+---
+
 ### Users().Select(...).OrderBy(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -2285,6 +2329,23 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 ---
 
+### Users().Select(...).OrderBy(...).Where(...).Limit(...).ExecuteFetchAllAsync() — 2 variants
+
+```sql
+-- base
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserId" >= @p0 ORDER BY "UserId" ASC
+
+-- +limitOn
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserId" >= @p0 ORDER BY "UserId" ASC LIMIT @p1
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `int` |
+
+---
+
 ### Users().Select(...).OrderBy(...).Where(...).Where(...).ExecuteFetchAllAsync() — 3 variants
 
 ```sql
@@ -2309,7 +2370,7 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 -- +b
 SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserId" >= 2 ORDER BY "UserId" ASC
 
--- +b
+-- +else(b)
 SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserId" >= 3 ORDER BY "UserId" ASC
 ```
 
@@ -2318,10 +2379,10 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 ### Users().Select(...).OrderBy(...).Where(...).Where(...).Where(...).ExecuteFetchAllAsync() — 2 variants
 
 ```sql
--- +strict, +strict
+-- +strict
 SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE ("UserId" >= 2) AND ("IsActive" = 1) ORDER BY "UserId" ASC
 
--- +strict
+-- +else(strict)
 SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserId" >= 1 ORDER BY "UserId" ASC
 ```
 
@@ -2611,6 +2672,21 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 ---
 
+### Users().Select(...).Where(...).Where(...).ToDiagnostics() — 3 variants
+
+```sql
+-- base
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users"
+
+-- +a
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserId" >= 2
+
+-- +b
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserId" >= 3
+```
+
+---
+
 ### Users().Select(...).Where(...).Where(...).Where(...).ToDiagnostics() — 3 variants
 
 ```sql
@@ -2620,8 +2696,20 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 -- +b
 SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserId" >= 2
 
--- +b
+-- +else(b)
 SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserId" >= 3
+```
+
+---
+
+### Users().Select(...).Where(...).Where(...).Where(...).ToDiagnostics() — 2 variants
+
+```sql
+-- +strict
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE ("UserId" >= 2) AND ("IsActive" = 1)
+
+-- +else(strict)
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserId" >= 1
 ```
 
 ---
@@ -2660,7 +2748,7 @@ UPDATE "users" SET "IsActive" = @p0
 -- +activate
 UPDATE "users" SET "UserName" = 'Flipped', "IsActive" = 1 WHERE "UserId" = 3
 
--- +activate
+-- +else(activate)
 UPDATE "users" SET "UserName" = 'Flipped', "IsActive" = 0 WHERE "UserId" = 3
 ```
 
@@ -3126,7 +3214,7 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 ### Users().Where(...).Offset(...).ToDiagnostics()
 
 ```sql
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = 1 OFFSET 5
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = 1 LIMIT -1 OFFSET 5
 ```
 
 ---
@@ -3169,7 +3257,7 @@ SELECT "UserName", "Email" FROM "users" WHERE "Email" IS NOT NULL AND "UserName"
 -- +sortByName
 SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" ORDER BY "UserName" ASC
 
--- +sortByName
+-- +else(sortByName)
 SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" ORDER BY "UserId" ASC
 ```
 
@@ -3181,7 +3269,7 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 -- +false
 SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = 1 ORDER BY "UserName" ASC
 
--- +false
+-- +else(false)
 SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = 1 ORDER BY "UserId" ASC
 ```
 
@@ -5750,7 +5838,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 717 |
+| Total discovered | 725 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 194 |
-| Rendered | 523 |
+| Consolidated (deduped) | 195 |
+| Rendered | 530 |

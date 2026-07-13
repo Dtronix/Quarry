@@ -6,7 +6,7 @@ base-branch: master
 
 ## State
 phase: REVIEW
-status: suspended
+status: active
 issue: #307
 pr:
 
@@ -170,6 +170,16 @@ rebase later if #306 merges first.
   MySQL likewise requires LIMIT before OFFSET; PG is fine. Independent of #307
   (unconditional offset-only fails identically). Candidate separate issue at REVIEW.
   Step-4 tests use unconditional Limit + conditional Offset to avoid the gap.
+  → RESOLVED in REMEDIATE (review F5, classed A by user): FormatLimitOffset and
+  FormatMixedPagination now emit the dialect no-limit idiom (SQLite `LIMIT -1`,
+  MySQL `LIMIT 18446744073709551615`); covers both chain-level offset-only and
+  the limit-inactive variants manufactured by conditional Limit. Four DialectTests
+  pins of the old bare-OFFSET output updated accordingly.
+- **REMEDIATE manifest-label lesson:** deduping variant labels by TEXT collapsed
+  distinct cascades sharing condition text (the 8× `if (true)` boundary chains all
+  label "+true"). Dedupe must key on arm identity (GroupKey#ArmIndex) —
+  BuildBitIndexToArmLabel carries it; same-arm multi-clause bits collapse, distinct
+  cascades keep their repeated labels.
 - Sample-schema gotcha: `Order.UserId` in Quarry.Tests Samples is an `EntityRef<User,int>`
   navigation — `Select(o => o.UserId)` projects an EntityRef, not int (CS9144/CS0029 in
   generated interceptors). Use `Users().Select(u => u.IsActive)` for a cheap
@@ -189,10 +199,18 @@ rebase later if #306 merges first.
     IfStatementSyntax: site depths 1,2,3,3 → guard trip at 3), NOT mis-enumerated. Only 2-3-arm
     chains hit defect 2's null dispatch. Cascade depth makes any flat arm count depth 1 —
     pinned by ElseIfChain_FourArms_NotDemotedAndPerArmMasks.
-  - **Sites inside a condition expression now pass through** (old code counted the if and took
-    its condition text; new code treats condition-position sites as arm-dispatch machinery,
-    not arm members — they evaluate before any arm is chosen). Includes the else-if-condition
-    edge (entered via `.Else` whose statement is another if).
+  - **Sites inside a condition expression:** head-if conditions pass through (they evaluate
+    whenever the statement is reached — genuinely unconditional). REVIEW F2/F4 corrected the
+    original blanket rationale: a NON-head (else-if) condition evaluates only when earlier
+    arms' conditions failed, so a chain site there IS conditionally executed but belongs to
+    no arm — not representable in the mask model. REMEDIATE: such sites now demote to QRY032
+    via NestingContext.UnanalyzablePositionKey, unless the terminal shares the exact position
+    (whole chain inside one condition expression stays analyzable).
+  - REVIEW F1 (plan-wording deviation, benign): step 4's MySQL handling was implemented via
+    per-variant marker validation + trailing-slot drop in RewriteMySqlBindMarkers, NOT by
+    extending BuildParamConditionalMap (pagination virtual slots never enter the conditional
+    map). Intent achieved; F8 added the missing test shape (conditional runtime Limit +
+    parameterized Where, cross-dialect).
   - CarrierGeneration_DeeplyNestedBranches_NoQRY032OrCrash (absolute depth 3, relative 0)
     stays green — baseline-depth subtraction is orthogonal to the cascade-vs-if counting change.
   - BranchKind kept and derived structurally: MutuallyExclusive iff cascade ArmCount ≥ 2 —

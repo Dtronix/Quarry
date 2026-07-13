@@ -286,8 +286,8 @@ public class Svc
     [Test]
     public void ConditionalOffset_Literal_GatedPerVariant()
     {
-        // Unconditional Limit + conditional Offset (Offset without Limit is a
-        // pre-existing FormatLimitOffset gap on SQLite/MySQL, unrelated to gating).
+        // Unconditional Limit + conditional Offset. (Offset without Limit is covered
+        // by OffsetOnly_EmitsNoLimitIdiom — the dialect idiom fix from review F5.)
         var code = GenerateInterceptors(@"
 public class Svc
 {
@@ -725,6 +725,222 @@ public class Svc
         var diagnostics = result.Results.SelectMany(r => r.Diagnostics).ToList();
         Assert.That(diagnostics.Any(d => d.Id == "QRY032"),
             "depth-3 conditional nesting must demote the chain to RuntimeBuild (QRY032)");
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    //  Nested cascades and unanalyzable positions (#307 review remediation)
+    // ─────────────────────────────────────────────────────────────────
+
+    [Test]
+    public void NestedIfElse_InsideConditionalArm_IncludesMaskZero()
+    {
+        // Review F3: a fully-represented if/else nested inside an outer conditional arm
+        // can be skipped entirely when the outer branch is not taken — mask 0 is
+        // reachable despite the final else, and must dispatch a real variant.
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public async Task Run(bool outer, bool b)
+    {
+        var q = _db.Users().Select(u => u);
+        if (outer)
+        {
+            if (b)
+                q = q.Where(u => u.UserId >= 1);
+            else
+                q = q.Where(u => u.UserId >= 2);
+        }
+        await q.ExecuteFetchAllAsync();
+    }
+}
+");
+        AssertPrebuiltDispatchWithMask(code, "SELECT");
+        AssertMaskVariantCount(code, 3);
+
+        var entries = ExtractSqlArrayEntries(code);
+        Assert.That(entries, Has.Count.EqualTo(3));
+        Assert.That(entries[0], Is.Not.Null.And.Not.Contain(">= 1").And.Not.Contain(">= 2"),
+            "outer branch not taken → no bits set → base variant must exist");
+        Assert.That(entries[1], Does.Contain("\"\"UserId\"\" >= 1"));
+        Assert.That(entries[2], Does.Contain("\"\"UserId\"\" >= 2"));
+    }
+
+    [Test]
+    public void DanglingElse_InsideConditionalIf_IncludesMaskZero()
+    {
+        // Brace-less variant of the F3 shape: the else binds to the INNER if.
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public async Task Run(bool outer, bool b)
+    {
+        var q = _db.Users().Select(u => u);
+        if (outer)
+            if (b)
+                q = q.Where(u => u.UserId >= 1);
+            else
+                q = q.Where(u => u.UserId >= 2);
+        await q.ExecuteFetchAllAsync();
+    }
+}
+");
+        AssertPrebuiltDispatchWithMask(code, "SELECT");
+        AssertMaskVariantCount(code, 3);
+
+        var entries = ExtractSqlArrayEntries(code);
+        Assert.That(entries, Has.Count.EqualTo(3));
+        Assert.That(entries[0], Is.Not.Null, "mask 0 reachable when the outer if is skipped");
+    }
+
+    [Test]
+    public void ElseIfConditionSite_DemotedToRuntimeBuild()
+    {
+        // Review F4: a chain site inside an else-if CONDITION executes only when the
+        // earlier arm's condition failed, but belongs to no arm — not representable.
+        // Must demote (QRY032), not silently bake the clause into every variant.
+        var source = SharedSchema + ContextDecl + @"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public int Hits;
+    public async Task Run(bool a)
+    {
+        var q = _db.Users().Select(u => u);
+        if (a)
+            Hits++;
+        else if ((q = q.Where(u => u.IsActive)) != null)
+            Hits++;
+        await q.ExecuteFetchAllAsync();
+    }
+}
+";
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+        var diagnostics = result.Results.SelectMany(r => r.Diagnostics).ToList();
+        Assert.That(diagnostics.Any(d => d.Id == "QRY032"),
+            "chain site inside an else-if condition expression must demote to QRY032");
+    }
+
+    [Test]
+    public void SiblingArmClause_TerminalInOtherArm_DemotedToRuntimeBuild()
+    {
+        // Review F6: a clause in a DIFFERENT arm than the terminal (same cascade, same
+        // depth) never executes on any path reaching the terminal; depth comparison
+        // alone would bake it in unconditionally. Must demote (QRY032).
+        var source = SharedSchema + ContextDecl + @"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public async Task Run(bool a)
+    {
+        var q = _db.Users().Select(u => u);
+        if (a)
+        {
+            q = q.Where(u => u.IsActive);
+            await q.ExecuteFetchAllAsync();
+        }
+        else
+        {
+            q = q.Where(u => u.UserId >= 1);
+        }
+    }
+}
+";
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+        var diagnostics = result.Results.SelectMany(r => r.Diagnostics).ToList();
+        Assert.That(diagnostics.Any(d => d.Id == "QRY032"),
+            "clause in a sibling arm of the terminal's cascade must demote to QRY032");
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    //  Offset-without-LIMIT idiom (#307 review F5)
+    // ─────────────────────────────────────────────────────────────────
+
+    [Test]
+    public void OffsetOnly_EmitsNoLimitIdiom()
+    {
+        // SQLite rejects bare OFFSET; the no-limit idiom is LIMIT -1.
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public async Task Run()
+    {
+        await _db.Users().Select(u => u).OrderBy(u => u.UserId).Offset(1).ExecuteFetchAllAsync();
+    }
+}
+");
+        Assert.That(code, Does.Contain("LIMIT -1 OFFSET 1"),
+            "offset-only pagination must emit the dialect's no-limit idiom");
+    }
+
+    [Test]
+    public void ConditionalLimit_UnconditionalOffset_InactiveVariantUsesNoLimitIdiom()
+    {
+        // Mask gating manufactures offset-only VARIANTS from chains that always
+        // specify a limit — the limit-inactive variant needs the idiom too.
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public async Task Run(bool capped)
+    {
+        var q = _db.Users().Select(u => u).OrderBy(u => u.UserId).Offset(1);
+        if (capped)
+            q = q.Limit(10);
+        await q.ExecuteFetchAllAsync();
+    }
+}
+");
+        AssertPrebuiltDispatchWithMask(code, "SELECT");
+        AssertMaskVariantCount(code, 2);
+
+        var variants = ExtractSqlVariants(code);
+        Assert.That(variants[0], Does.Contain("LIMIT -1 OFFSET 1"),
+            "limit-inactive variant must not render bare OFFSET");
+        Assert.That(variants[1], Does.Contain("LIMIT 10 OFFSET 1"));
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    //  Collection-path dispatch guard (#307 review F9)
+    // ─────────────────────────────────────────────────────────────────
+
+    [Test]
+    public void MultiVariant_CollectionDispatch_EmitsUnenumeratedMaskGuard()
+    {
+        // Chains with collection params dispatch via _sqlCache + a mask switch; both
+        // the bounds guard and the switch default must throw the actionable guard.
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public async Task Run(bool filter)
+    {
+        var ids = new System.Collections.Generic.List<int> { 1, 2 };
+        var q = _db.Users().Where(u => ids.Contains(u.UserId)).Select(u => u);
+        if (filter)
+            q = q.Where(u => u.IsActive);
+        await q.ExecuteFetchAllAsync();
+    }
+}
+");
+        Assert.That(code, Does.Contain("_sqlCache"),
+            "collection chain should use the cache dispatch path");
+        Assert.That(code, Does.Contain("default: Quarry.Internal.ThrowHelper.UnenumeratedMask(__c.Mask)"),
+            "mask switch default must throw the actionable guard");
+        var guardCount = code.Split("Quarry.Internal.ThrowHelper.UnenumeratedMask").Length - 1;
+        Assert.That(guardCount, Is.GreaterThanOrEqualTo(2),
+            "both the bounds guard and the switch default must be present");
     }
 
     /// <summary>

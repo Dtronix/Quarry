@@ -619,7 +619,8 @@ internal static class ChainAnalyzer
 
         // Baseline nesting depth: clauses at or below the execution terminal's depth
         // are not conditionally included — the entire chain is simply inside nested control flow.
-        var baselineDepth = executionSite.Bound.Raw.NestingContext?.NestingDepth ?? 0;
+        var terminalNesting = executionSite.Bound.Raw.NestingContext;
+        var baselineDepth = terminalNesting?.NestingDepth ?? 0;
 
         foreach (var site in clauseSites)
         {
@@ -627,10 +628,34 @@ internal static class ChainAnalyzer
             if (condInfo == null)
                 continue;
 
+            // A clause in an else-if condition expression executes only when earlier
+            // arms' conditions failed, but belongs to no arm — not representable in the
+            // mask model. Analyzable only when the terminal shares the exact position
+            // (whole chain inside one condition); otherwise fail loud (#307 review F4).
+            if (condInfo.UnanalyzablePositionKey != null
+                && condInfo.UnanalyzablePositionKey != terminalNesting?.UnanalyzablePositionKey)
+            {
+                return MakeRuntimeBuildChain(executionSite, clauseSites,
+                    "Conditional clause inside an else-if condition expression", registry, isTraced);
+            }
+
             // Only clauses deeper than the execution terminal are genuinely conditional.
             var relativeDepth = condInfo.NestingDepth - baselineDepth;
             if (relativeDepth <= 0)
+            {
+                // Same depth but a DIFFERENT arm of the terminal's own cascade: the
+                // clause never executes on any path that reaches this terminal, yet
+                // depth comparison alone would bake it in unconditionally. Fail loud
+                // (#307 review F6).
+                if (relativeDepth == 0 && terminalNesting != null
+                    && condInfo.GroupKey == terminalNesting.GroupKey
+                    && condInfo.ArmIndex != terminalNesting.ArmIndex)
+                {
+                    return MakeRuntimeBuildChain(executionSite, clauseSites,
+                        "Clause and execution terminal sit in different arms of the same conditional", registry, isTraced);
+                }
                 continue;
+            }
 
             // Check relative nesting depth
             if (relativeDepth > MaxIfNestingDepth)
@@ -674,14 +699,14 @@ internal static class ChainAnalyzer
 
         // Compute possible masks
         var possibleMasks = tier == OptimizationTier.PrebuiltDispatch
-            ? EnumerateMaskCombinations(conditionalTerms, branchGroups)
+            ? EnumerateMaskCombinations(conditionalTerms, branchGroups, baselineDepth)
             : Array.Empty<int>();
 
         // Defense in depth (#307): every structurally reachable mask must have an
         // enumerated variant — otherwise the generated dispatch would hit a null SQL
         // entry at runtime. Fail loud at generation time instead of emitting broken code.
         if (tier == OptimizationTier.PrebuiltDispatch && conditionalTerms.Count > 0
-            && !ValidateMaskEnumeration(BuildCascadeShapes(branchGroups), totalBits, possibleMasks))
+            && !ValidateMaskEnumeration(BuildCascadeShapes(branchGroups, baselineDepth), totalBits, possibleMasks))
         {
             return MakeRuntimeBuildChain(executionSite, clauseSites,
                 "Conditional mask enumeration incomplete — a reachable clause combination has no SQL variant",
@@ -2693,7 +2718,8 @@ internal static class ChainAnalyzer
     /// </summary>
     private static IReadOnlyList<int> EnumerateMaskCombinations(
         List<ConditionalTerm> conditionalTerms,
-        Dictionary<string, List<(TranslatedCallSite Site, int BitIndex)>> branchGroups)
+        Dictionary<string, List<(TranslatedCallSite Site, int BitIndex)>> branchGroups,
+        int baselineDepth)
     {
         if (conditionalTerms.Count == 0)
             return new[] { 0 };
@@ -2704,10 +2730,13 @@ internal static class ChainAnalyzer
         {
             var group = kvp.Value;
 
-            // OR the bits of each represented arm together.
+            // OR the bits of each represented arm together. All sites sharing an
+            // innermost cascade share the same NestingDepth, so any site's depth
+            // stands for the cascade's.
             var armBits = new SortedDictionary<int, int>();
             var armCount = 1;
             var hasFinalElse = false;
+            var cascadeDepth = 0;
             foreach (var (site, bit) in group)
             {
                 var nc = site.Bound.Raw.NestingContext!;
@@ -2715,14 +2744,18 @@ internal static class ChainAnalyzer
                 armBits[nc.ArmIndex] = bits | (1 << bit);
                 armCount = nc.ArmCount;
                 hasFinalElse = nc.HasFinalElse;
+                cascadeDepth = nc.NestingDepth;
             }
 
             // The no-bits path is reachable when the cascade can take no arm at all,
-            // or can take an arm that contains no chain sites. It enumerates FIRST so
-            // the base (no conditional clauses) variant keeps its position as the
-            // first-listed variant — diagnostics and manifest output lead with it.
+            // when it can take an arm that contains no chain sites, or when the
+            // cascade itself sits inside another conditional arm (relative depth > 1)
+            // and may be skipped entirely — a final else does not help then (#307
+            // review F3). It enumerates FIRST so the base (no conditional clauses)
+            // variant keeps its position as the first-listed variant — diagnostics
+            // and manifest output lead with it.
             var options = new List<int>(armBits.Count + 1);
-            if (!hasFinalElse || armBits.Count < armCount)
+            if (!hasFinalElse || armBits.Count < armCount || cascadeDepth - baselineDepth > 1)
                 options.Add(0);
             options.AddRange(armBits.Values);
 
@@ -2739,9 +2772,13 @@ internal static class ChainAnalyzer
     /// <summary>
     /// Extracts each cascade's shape — the OR-ed bit set per represented arm, and
     /// whether the no-bits path is reachable — for reachability validation.
+    /// The no-bits path is reachable when the cascade has no final else, has arms
+    /// without chain sites, or is itself conditionally entered (its sites sit more
+    /// than one cascade level below the terminal, so the whole cascade can be skipped).
     /// </summary>
     private static List<(IReadOnlyList<int> ArmBitSets, bool ZeroAllowed)> BuildCascadeShapes(
-        Dictionary<string, List<(TranslatedCallSite Site, int BitIndex)>> branchGroups)
+        Dictionary<string, List<(TranslatedCallSite Site, int BitIndex)>> branchGroups,
+        int baselineDepth)
     {
         var cascades = new List<(IReadOnlyList<int>, bool)>(branchGroups.Count);
         foreach (var kvp in branchGroups)
@@ -2749,6 +2786,7 @@ internal static class ChainAnalyzer
             var armBits = new SortedDictionary<int, int>();
             var armCount = 1;
             var hasFinalElse = false;
+            var cascadeDepth = 0;
             foreach (var (site, bit) in kvp.Value)
             {
                 var nc = site.Bound.Raw.NestingContext!;
@@ -2756,8 +2794,11 @@ internal static class ChainAnalyzer
                 armBits[nc.ArmIndex] = bits | (1 << bit);
                 armCount = nc.ArmCount;
                 hasFinalElse = nc.HasFinalElse;
+                cascadeDepth = nc.NestingDepth;
             }
-            cascades.Add((armBits.Values.ToList(), !hasFinalElse || armBits.Count < armCount));
+            var zeroAllowed = !hasFinalElse || armBits.Count < armCount
+                || cascadeDepth - baselineDepth > 1;
+            cascades.Add((armBits.Values.ToList(), zeroAllowed));
         }
         return cascades;
     }

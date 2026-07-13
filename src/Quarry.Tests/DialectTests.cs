@@ -200,9 +200,10 @@ public class DialectTests
         Assert.That(result, Is.EqualTo(expected));
     }
 
-    [TestCase(SqlDialect.SQLite, null, 20, "OFFSET 20")]
+    // SQLite/MySQL reject bare OFFSET — the no-limit idiom is required (#307 review F5).
+    [TestCase(SqlDialect.SQLite, null, 20, "LIMIT -1 OFFSET 20")]
     [TestCase(SqlDialect.PostgreSQL, null, 20, "OFFSET 20")]
-    [TestCase(SqlDialect.MySQL, null, 20, "OFFSET 20")]
+    [TestCase(SqlDialect.MySQL, null, 20, "LIMIT 18446744073709551615 OFFSET 20")]
     [TestCase(SqlDialect.SqlServer, null, 20, "OFFSET 20 ROWS")]
     public void FormatPagination_OffsetOnly_ReturnsCorrectSyntax(SqlDialect dialectType, int? limit, int offset, string expected)
     {
@@ -292,9 +293,10 @@ public class DialectTests
         Assert.That(result, Is.EqualTo(string.Empty));
     }
 
-    [TestCase(SqlDialect.SQLite, 0, "OFFSET @p0")]
+    // SQLite/MySQL reject bare OFFSET — the no-limit idiom is required (#307 review F5).
+    [TestCase(SqlDialect.SQLite, 0, "LIMIT -1 OFFSET @p0")]
     [TestCase(SqlDialect.PostgreSQL, 0, "OFFSET $1")]
-    [TestCase(SqlDialect.MySQL, 0, "OFFSET ?")]
+    [TestCase(SqlDialect.MySQL, 0, "LIMIT 18446744073709551615 OFFSET ?")]
     [TestCase(SqlDialect.SqlServer, 0, "OFFSET @p0 ROWS")]
     public void FormatMixedPagination_ParamOffsetOnly(SqlDialect dialectType, int offsetIdx, string expected)
     {

@@ -565,7 +565,8 @@ internal enum CaptureKind
 internal sealed class NestingContext : IEquatable<NestingContext>
 {
     public NestingContext(string conditionText, int nestingDepth, BranchKind branchKind = BranchKind.Independent,
-        string? groupKey = null, int armIndex = 0, int armCount = 1, bool hasFinalElse = false)
+        string? groupKey = null, int armIndex = 0, int armCount = 1, bool hasFinalElse = false,
+        string? unanalyzablePositionKey = null)
     {
         ConditionText = conditionText;
         NestingDepth = nestingDepth;
@@ -574,6 +575,7 @@ internal sealed class NestingContext : IEquatable<NestingContext>
         ArmIndex = armIndex;
         ArmCount = armCount;
         HasFinalElse = hasFinalElse;
+        UnanalyzablePositionKey = unanalyzablePositionKey;
     }
 
     public string ConditionText { get; }
@@ -599,6 +601,13 @@ internal sealed class NestingContext : IEquatable<NestingContext>
     /// meaning exactly one arm always executes.</summary>
     public bool HasFinalElse { get; }
 
+    /// <summary>Non-null when the site sits inside a NON-head arm's condition expression
+    /// (an <c>else if (...)</c> condition) — evaluated only when every earlier arm's
+    /// condition was false, so it is conditionally executed yet bound to no arm. The key
+    /// identifies the condition's if-statement; a chain is analyzable only if all its
+    /// sites and the terminal share the same key (usually all null).</summary>
+    public string? UnanalyzablePositionKey { get; }
+
     public bool Equals(NestingContext? other)
     {
         if (other is null) return false;
@@ -609,10 +618,12 @@ internal sealed class NestingContext : IEquatable<NestingContext>
             && GroupKey == other.GroupKey
             && ArmIndex == other.ArmIndex
             && ArmCount == other.ArmCount
-            && HasFinalElse == other.HasFinalElse;
+            && HasFinalElse == other.HasFinalElse
+            && UnanalyzablePositionKey == other.UnanalyzablePositionKey;
     }
 
     public override bool Equals(object? obj) => Equals(obj as NestingContext);
     public override int GetHashCode() => HashCode.Combine(
-        ConditionText, NestingDepth, BranchKind, GroupKey, ArmIndex, ArmCount, HasFinalElse);
+        ConditionText, NestingDepth, BranchKind, GroupKey, ArmIndex, ArmCount, HasFinalElse,
+        UnanalyzablePositionKey);
 }
