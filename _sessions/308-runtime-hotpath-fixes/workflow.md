@@ -3,7 +3,7 @@
 platform: github
 base-branch: master
 ## State
-phase: REMEDIATE
+phase: FINALIZE
 status: active
 issue: #308
 pr: #321
