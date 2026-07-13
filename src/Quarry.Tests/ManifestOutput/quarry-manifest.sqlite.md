@@ -292,6 +292,19 @@ UPDATE "order_items" SET "LineTotal" = (("LineTotal" - "UnitPrice") + @p0) WHERE
 
 ---
 
+### OrderItems().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT "OrderItemId" FROM "order_items" WHERE "OrderItemId" IN ({__COL_P0__}) AND "Quantity" IN ({__COL_P1__})
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int[]` |
+| `@p1` | `int[]` |
+
+---
+
 ### OrderItems().Where(...).Select(...).ExecuteFetchFirstAsync()
 
 ```sql
@@ -1406,6 +1419,20 @@ INSERT INTO "users" ("UserName", "IsActive") VALUES (@p0, @p1), ...
 |-----------|------|
 | `@p0` | `string` |
 | `@p1` | `bool` |
+
+---
+
+### Users().InsertBatch(...).Values(...).ExecuteNonQueryAsync()
+
+```sql
+INSERT INTO "users" ("UserName", "IsActive", "CreatedAt") VALUES (@p0, @p1, @p2), ...
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `bool` |
+| `@p2` | `DateTime` |
 
 ---
 
@@ -3459,6 +3486,14 @@ SELECT "UserName" FROM "users" WHERE "UserName" = @p0
 | Parameter | Type |
 |-----------|------|
 | `@p0` | `string` |
+
+---
+
+### Users().Where(...).Select(...).ExecuteFetchFirstAsync()
+
+```sql
+SELECT "CreatedAt" FROM "users" WHERE "UserId" = 99
+```
 
 ---
 
@@ -5838,7 +5873,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 725 |
+| Total discovered | 730 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 195 |
-| Rendered | 530 |
+| Consolidated (deduped) | 197 |
+| Rendered | 533 |
