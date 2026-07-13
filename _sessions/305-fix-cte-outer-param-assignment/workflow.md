@@ -6,7 +6,7 @@ base-branch: master
 
 ## State
 phase: FINALIZE
-status: active
+status: suspended
 issue: #305
 pr: #306
 
@@ -101,9 +101,18 @@ Baseline test status: all green at 7bb0e35 — Quarry.Tests 3281 passed, Quarry.
   also touches CarrierEmitter.
 
 ## Suspend State
+- Phase: FINALIZE, step 1 (merge-option prompt not yet asked).
+- PR #306 open, CI green (build SUCCESS), mergeStateStatus CLEAN as of 2026-07-13.
+- In progress: nothing — awaiting user's FINALIZE choice (squash merge / rebase / back to REVIEW).
+- Immediate next step: ask FINALIZE step-1 question, then pre-merge cleanup (delete `_sessions/305-fix-cte-outer-param-assignment/`, commit, push) before squash merge.
+- No WIP commit; working tree clean.
+- Test status: all passing as of last REMEDIATE run.
+- Unrecorded context: F5 (class C) issue creation was deferred pending user confirmation — still outstanding; confirm before or during FINALIZE.
+- Suspended 2026-07-13 because user chose to start issue #307 in parallel first.
 
 ## Session Log
 | Date | Phases | Summary |
 |------|--------|---------|
+| 2026-07-13 | FINALIZE (suspended) | PR #306 CI green, ready to merge. User chose to start issue #307 in parallel; workflow suspended at FINALIZE step 1. |
 | 2026-07-02 | INTAKE, DESIGN, PLAN | Loaded issue #305, created worktree + branch, baseline all green (3628 tests). Traced root cause to AssembledPlan offset walk. Design+plan provisionally approved (user AFK); wrote plan.md; entered IMPLEMENT. |
 | 2026-07-02 | IMPLEMENT, REVIEW, REMEDIATE | 3 plan steps committed, suite green each step. Review: 5 findings (0A/3B/1C/1D), B-items fixed and bite-verified, F5 issue deferred pending user confirm. PR #306 created; awaiting CI. |
