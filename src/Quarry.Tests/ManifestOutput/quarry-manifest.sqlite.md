@@ -292,6 +292,19 @@ UPDATE "order_items" SET "LineTotal" = (("LineTotal" - "UnitPrice") + @p0) WHERE
 
 ---
 
+### OrderItems().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT "OrderItemId" FROM "order_items" WHERE "OrderItemId" IN ({__COL_P0__}) AND "Quantity" IN ({__COL_P1__})
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int[]` |
+| `@p1` | `int[]` |
+
+---
+
 ### OrderItems().Where(...).Select(...).ExecuteFetchFirstAsync()
 
 ```sql
@@ -5619,7 +5632,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 706 |
+| Total discovered | 707 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 193 |
-| Rendered | 513 |
+| Rendered | 514 |
