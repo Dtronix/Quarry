@@ -59,7 +59,12 @@ internal static class MigrateCommands
                 };
             }
 
-            var steps = SchemaDiffer.Diff(previousSnapshot, currentSnapshot, acceptRename);
+            // Against a live database the two snapshots come from different readers, so diff on
+            // the normalized (comparable) projection to avoid spurious per-column AlterColumns.
+            var (diffFrom, diffTo) = fromDatabase != null
+                ? (DatabaseSchemaReader.NormalizeForDiff(previousSnapshot!), DatabaseSchemaReader.NormalizeForDiff(currentSnapshot))
+                : (previousSnapshot, currentSnapshot);
+            var steps = SchemaDiffer.Diff(diffFrom, diffTo, acceptRename);
 
             if (steps.Count == 0)
             {
@@ -238,6 +243,135 @@ internal static class MigrateCommands
 
         Console.WriteLine();
         Console.WriteLine($"Baseline migration {newVersion}: {name} ({steps.Count} step(s)).");
+    }
+
+    /// <summary>
+    /// quarry migrate adopt — Adopts an existing database into Quarry. Introspects the live
+    /// database, records its current state as an already-applied baseline (no DDL executed),
+    /// then generates a pending "alignment" migration that transforms the database to match the
+    /// project schemas. Renames are detected automatically (canonical name match) and via
+    /// <c>--rename-map</c>; a drop against populated data is blocked unless <c>--allow-data-loss</c>.
+    /// Apply the alignment migration with <c>MigrateAsync</c>.
+    /// </summary>
+    /// <param name="name">Name for the alignment migration (e.g. AlignSchema).</param>
+    /// <param name="project">-p, Path to .csproj.</param>
+    /// <param name="output">-o, Output directory for migration files.</param>
+    /// <param name="nonInteractive">--ni, Non-interactive mode for CI.</param>
+    /// <param name="connection">-c, connection string of the existing database (required).</param>
+    /// <param name="dialect">-d, SQL dialect (falls back to the context's declared dialect).</param>
+    /// <param name="renameMapSpec">--rename-map, explicit renames (inline or @file).</param>
+    /// <param name="allowDataLoss">--allow-data-loss, permit destructive drops of populated objects.</param>
+    public static async Task MigrateAdopt(
+        string name,
+        string project = ".",
+        string output = "Migrations",
+        bool nonInteractive = false,
+        string? connection = null,
+        string? dialect = null,
+        string? renameMapSpec = null,
+        bool allowDataLoss = false)
+    {
+        if (connection == null)
+        {
+            Console.Error.WriteLine("--connection / -c is required for migrate adopt.");
+            return;
+        }
+
+        var csprojPath = CommandHelpers.ResolveCsproj(project);
+        Console.WriteLine($"Loading project: {csprojPath}");
+        var compilation = await ProjectSchemaReader.OpenProjectAsync(csprojPath);
+        if (compilation == null)
+        {
+            Console.Error.WriteLine("Failed to load project compilation.");
+            return;
+        }
+
+        var resolvedDialect = DialectResolver.ResolveDialect(compilation, dialect);
+        if (resolvedDialect == null)
+        {
+            Console.Error.WriteLine("Could not determine SQL dialect. Use --dialect / -d.");
+            return;
+        }
+        var sqlDialect = ParseDialect(resolvedDialect);
+
+        var baseOutputDir = Path.Combine(Path.GetDirectoryName(csprojPath)!, output);
+        Directory.CreateDirectory(baseOutputDir);
+        var ns = GuessNamespace(csprojPath, output);
+
+        var latestVersion = FindLatestSnapshotVersion(compilation);
+        var baselineVersion = latestVersion + 1;
+        var renameVersion = latestVersion + 2;
+        var priorSnapshot = latestVersion > 0 ? FindAndBuildSnapshot(compilation, latestVersion) : null;
+
+        // 1. Introspect the live database.
+        var dbTables = await DatabaseSchemaReader.ReadTablesAsync(resolvedDialect, connection, null, null);
+        if (dbTables.Count == 0)
+        {
+            Console.Error.WriteLine("No tables found in the database — nothing to adopt.");
+            return;
+        }
+        var dbSnapshot = DatabaseSchemaReader.ToSnapshot(dbTables, resolvedDialect, baselineVersion, "InitialCreate",
+            latestVersion > 0 ? latestVersion : null);
+
+        // 2. Baseline: generate a migration for the current DB state and record it applied (no DDL run).
+        var baselineSteps = SchemaDiffer.Diff(priorSnapshot, dbSnapshot);
+        await WriteMigrationFilesAsync(baseOutputDir, output, ns, baselineVersion, "InitialCreate", baselineSteps, priorSnapshot, dbSnapshot);
+
+        await using (var conn = CreateConnection(resolvedDialect, connection))
+        {
+            await conn.OpenAsync();
+            await MigrationHistoryWriter.EnsureHistoryTableAsync(conn, sqlDialect);
+            await MigrationHistoryWriter.MarkAppliedAsync(conn, sqlDialect, baselineVersion, "InitialCreate", "baseline");
+        }
+        Console.WriteLine($"Baseline {baselineVersion} 'InitialCreate' recorded as applied (existing DB state).");
+
+        // 3. Alignment: diff the (rename-map-adjusted) DB state against the project schemas. Explicit
+        //    rename-map pairs are pre-applied to the DB snapshot and emitted as explicit renames;
+        //    remaining convention renames are detected by the differ. Normalize both sides so only
+        //    real structural changes surface.
+        var renameMap = RenameMap.Parse(renameMapSpec);
+        var (patchedFrom, forced) = renameMap.ApplyForcedRenames(dbSnapshot);
+        var currentSnapshot = ProjectSchemaReader.ExtractSchemaSnapshot(compilation, renameVersion, name, baselineVersion);
+
+        var steps = new List<MigrationStep>();
+        foreach (var fr in forced)
+            steps.Add(new MigrationStep(MigrationStepType.RenameColumn, StepClassification.Cautious,
+                fr.Table, fr.Schema, fr.OldName, fr.OldName, fr.NewName,
+                $"Rename column '{fr.OldName}' to '{fr.NewName}' in '{fr.Table}'"));
+
+        steps.AddRange(SchemaDiffer.Diff(
+            DatabaseSchemaReader.NormalizeForDiff(patchedFrom),
+            DatabaseSchemaReader.NormalizeForDiff(currentSnapshot)));
+
+        if (steps.Count == 0)
+        {
+            Console.WriteLine("The database already matches the project schemas — no alignment migration needed.");
+            return;
+        }
+
+        // 4. Data-loss guard against the live database.
+        if (!allowDataLoss)
+        {
+            await using var guardConn = CreateConnection(resolvedDialect, connection);
+            await guardConn.OpenAsync();
+            var violations = await DropGuard.FindViolationsAsync(guardConn, sqlDialect, steps);
+            if (violations.Count > 0)
+            {
+                Console.Error.WriteLine("Refusing to generate the alignment migration — these operations would lose data:");
+                foreach (var v in violations)
+                    Console.Error.WriteLine($"  ! {v.Describe()}");
+                Console.Error.WriteLine("Declare intended renames with --rename-map, or pass --allow-data-loss to proceed.");
+                return;
+            }
+        }
+
+        // 5. Generate the alignment migration (pending — apply with MigrateAsync).
+        await WriteMigrationFilesAsync(baseOutputDir, output, ns, renameVersion, name, steps, dbSnapshot, currentSnapshot);
+
+        Console.WriteLine();
+        Console.WriteLine("Adopt complete:");
+        Console.WriteLine($"  {baselineVersion} InitialCreate — recorded as applied (existing DB state)");
+        Console.WriteLine($"  {renameVersion} {name} — {steps.Count} step(s), pending (apply with MigrateAsync)");
     }
 
     /// <summary>
@@ -521,7 +655,11 @@ internal static class MigrateCommands
             };
         }
 
-        var steps = SchemaDiffer.Diff(previousSnapshot, currentSnapshot, acceptRename);
+        // Against a live database, diff on the normalized (comparable) projection (see MigrateAdd).
+        var (diffFrom, diffTo) = fromDatabase != null
+            ? (DatabaseSchemaReader.NormalizeForDiff(previousSnapshot!), DatabaseSchemaReader.NormalizeForDiff(currentSnapshot))
+            : (previousSnapshot, currentSnapshot);
+        var steps = SchemaDiffer.Diff(diffFrom, diffTo, acceptRename);
 
         if (steps.Count == 0)
         {
@@ -957,6 +1095,31 @@ internal static class MigrateCommands
             GeneratedFileName: $"{migrationClass}.g.cs",
             UserFileName: $"{migrationClass}.cs"
         );
+    }
+
+    /// <summary>
+    /// Writes the generated migration+snapshot file and (if absent) the user partial hook file
+    /// for a migration, mirroring the layout produced by <c>migrate add</c>.
+    /// </summary>
+    private static async Task WriteMigrationFilesAsync(
+        string baseOutputDir, string output, string ns,
+        int version, string name, IReadOnlyList<MigrationStep> steps,
+        SchemaSnapshot? previousSnapshot, SchemaSnapshot currentSnapshot)
+    {
+        var names = ComputeMigrationNames(version, name);
+        var migrationDir = Path.Combine(baseOutputDir, names.SubdirName);
+        Directory.CreateDirectory(migrationDir);
+
+        var combined = GenerateCombinedMigrationFile(version, name, steps, previousSnapshot, currentSnapshot, ns);
+        await File.WriteAllTextAsync(Path.Combine(migrationDir, names.GeneratedFileName), combined);
+        Console.WriteLine($"Created: {Path.Combine(output, names.SubdirName, names.GeneratedFileName)}");
+
+        var userFile = Path.Combine(migrationDir, names.UserFileName);
+        if (!File.Exists(userFile))
+        {
+            await File.WriteAllTextAsync(userFile, GenerateUserPartialFile(version, name, ns));
+            Console.WriteLine($"Created: {Path.Combine(output, names.SubdirName, names.UserFileName)}");
+        }
     }
 
     private static string GenerateUserPartialFile(int version, string name, string namespaceName)

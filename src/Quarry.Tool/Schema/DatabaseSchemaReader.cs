@@ -192,6 +192,40 @@ internal static class DatabaseSchemaReader
     }
 
     /// <summary>
+    /// Projects a snapshot onto the subset of attributes that BOTH the database introspector
+    /// and the project-schema reader populate reliably: column name, CLR type, nullability,
+    /// and kind. Identity/length/precision/default/computed/collation/mapped-name/referenced-
+    /// entity, foreign keys, indexes, composite keys, naming style, and schema are cleared.
+    /// <para>
+    /// This is necessary because <c>ProjectSchemaReader</c> leaves identity/length/default at
+    /// their defaults (identity is inferred from the primary-key kind, not stored on the
+    /// column), whereas the introspection adapter fills them in from the live database. Diffing
+    /// the raw snapshots would therefore emit a spurious <c>AlterColumn</c> for nearly every
+    /// column. Diffing two normalized snapshots surfaces only real structural changes — renames
+    /// and genuine type/nullability changes.
+    /// </para>
+    /// Use this only to compute the diff; generate migration files from the original rich
+    /// snapshots. FK/index changes are intentionally ignored by a normalized diff — declare
+    /// genuinely new ones with a follow-up <c>migrate add</c>.
+    /// </summary>
+    public static SchemaSnapshot NormalizeForDiff(SchemaSnapshot snapshot)
+    {
+        var tables = new List<TableDef>(snapshot.Tables.Count);
+        foreach (var t in snapshot.Tables)
+        {
+            var columns = new List<ColumnDef>(t.Columns.Count);
+            foreach (var c in t.Columns)
+                columns.Add(new ColumnDef(c.Name, c.ClrType, c.IsNullable, c.Kind));
+
+            tables.Add(new TableDef(
+                t.TableName, schemaName: null, NamingStyleKind.Exact,
+                columns, Array.Empty<ForeignKeyDef>(), Array.Empty<IndexDef>(),
+                compositeKeyColumns: null, characterSet: null));
+        }
+        return new SchemaSnapshot(snapshot.Version, snapshot.Name, snapshot.Timestamp, snapshot.ParentVersion, tables);
+    }
+
+    /// <summary>
     /// Converts an introspected foreign-key action string (e.g. "SET NULL") into a
     /// <see cref="ForeignKeyAction"/>. Unknown values default to
     /// <see cref="ForeignKeyAction.NoAction"/>.

@@ -54,7 +54,7 @@ Full "adopt existing database" bundle (6 features) in one PR. Steps are ordered 
   Add `HasFlag(opts, null, "allow-data-loss")` to the `add`/`diff`/`adopt` cases. After the diff, when a live connection exists, for each `DropColumn`/`DropTable` step run `SELECT COUNT(*)` on the target; if >0 and flag unset, abort with an explicit message listing the offending objects. Put the check in a shared `DropGuard.CheckAsync(conn, dialect, steps, allowDataLoss)`.
   *Tests:* `DropGuardTests.cs` (SQLite) — populated column drop aborts; empty table proceeds; `--allow-data-loss` overrides; non-destructive steps unaffected.
 
-- [ ] **8. `migrate adopt` command (orchestration).**
+- [x] **8. `migrate adopt` command (orchestration).** (Also fixed a critical snapshot field-asymmetry bug via NormalizeForDiff — see workflow.md; retrofitted step-6 --from-database diffs to use it.)
   New `src/Quarry.Tool/Commands/AdoptCommand.cs`. Flow: (1) introspect DB → snapshot v1; write baseline files + mark applied (step 5 path). (2) diff v1 vs project schemas with convention-match (step 2), `--rename-map` forced renames (step 3), producing migration v2; (3) run drop guard (step 7). Requires `-c/--connection` + `-d/--dialect` (guard like `migrate status`). Options also: `-p`, `-o`, `--ni`, `--rename-map`, `--allow-data-loss`. `Program.cs` case + `PrintUsage`.
   *Tests:* `AdoptCommandTests.cs` — end-to-end against seeded SQLite (legacy snake_case + data): after adopt, v1 is applied, v2 rename migration exists, applying v2 via `MigrateAsync` renames columns and **preserves row data** (assert row counts + values before/after). Add a case where an unmapped column would drop → aborts without `--allow-data-loss`.
 

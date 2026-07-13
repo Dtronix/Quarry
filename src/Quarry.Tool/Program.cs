@@ -51,6 +51,24 @@ async Task<int> DispatchAsync(string command, string[] args)
                 GetOptOrNull(opts, "c", "connection"));
             return 0;
 
+        case "migrate adopt":
+            var adoptConnection = GetOptOrNull(opts, "c", "connection");
+            if (adoptConnection == null)
+            {
+                Console.Error.WriteLine("--connection / -c is required for migrate adopt.");
+                return 1;
+            }
+            await MigrateCommands.MigrateAdopt(
+                GetPositional(opts, "name", args, 2),
+                GetOpt(opts, "p", "project", "."),
+                GetOpt(opts, "o", "output", "Migrations"),
+                HasFlag(opts, "ni", "non-interactive"),
+                adoptConnection,
+                GetOptOrNull(opts, "d", "dialect"),
+                GetOptOrNull(opts, null, "rename-map"),
+                HasFlag(opts, null, "allow-data-loss"));
+            return 0;
+
         case "migrate add-empty":
             await MigrateCommands.MigrateAddEmpty(
                 GetPositional(opts, "name", args, 2),
@@ -226,6 +244,7 @@ void PrintUsage()
     Console.WriteLine("Commands:");
     Console.WriteLine("  migrate add <name>       Scaffold a new migration from schema changes");
     Console.WriteLine("  migrate baseline <name>  Snapshot the current/live-DB schema and record it applied (adopt an existing DB)");
+    Console.WriteLine("  migrate adopt <name>     Adopt an existing DB: baseline it applied + generate a pending alignment migration (--connection)");
     Console.WriteLine("  migrate add-empty <name> Create an empty migration for manual operations");
     Console.WriteLine("  migrate list             List all migrations");
     Console.WriteLine("  migrate validate         Validate migration integrity");
