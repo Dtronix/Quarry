@@ -47,13 +47,13 @@ public static class MigrationRunner
         var log = options.Logger ?? (_ => { });
 
         if (connection.State != System.Data.ConnectionState.Open)
-            await connection.OpenAsync();
+            await connection.OpenAsync().ConfigureAwait(false);
 
         MigrationLog.EnsureHistoryTable();
-        await EnsureHistoryTableAsync(connection, dialect, options);
+        await EnsureHistoryTableAsync(connection, dialect, options).ConfigureAwait(false);
 
         // Check for incomplete migrations from previous crashes
-        var incomplete = await GetIncompleteMigrationsAsync(connection, dialect);
+        var incomplete = await GetIncompleteMigrationsAsync(connection, dialect).ConfigureAwait(false);
         if (incomplete.Count > 0)
         {
             foreach (var version in incomplete)
@@ -68,7 +68,7 @@ public static class MigrationRunner
             }
         }
 
-        var appliedMap = await GetAppliedVersionsWithChecksumsAsync(connection, dialect, options);
+        var appliedMap = await GetAppliedVersionsWithChecksumsAsync(connection, dialect, options).ConfigureAwait(false);
 
         // When ignoring incomplete migrations, add them to appliedMap so they get skipped
         if (options.IgnoreIncomplete)
@@ -123,7 +123,7 @@ public static class MigrationRunner
 
                 MigrationLog.Applying(m.Version, m.Name);
                 log($"Applying migration {m.Version}: {m.Name}...");
-                await ApplyMigrationExtendedAsync(connection, dialect, m, options, log);
+                await ApplyMigrationExtendedAsync(connection, dialect, m, options, log).ConfigureAwait(false);
                 log($"Migration {m.Version} applied.");
             }
         }
@@ -138,7 +138,7 @@ public static class MigrationRunner
 
                 MigrationLog.RollingBack(m.Version, m.Name);
                 log($"Rolling back migration {m.Version}: {m.Name}...");
-                await RollbackMigrationExtendedAsync(connection, dialect, m, options, log);
+                await RollbackMigrationExtendedAsync(connection, dialect, m, options, log).ConfigureAwait(false);
                 log($"Migration {m.Version} rolled back.");
             }
         }
@@ -241,7 +241,7 @@ public static class MigrationRunner
             MigrationLog.NonTransactionalSqlGenerated(migration.Version, nonTxSql);
         }
 
-        await WarnLargeTablesAsync(connection, dialect, builder.GetOperations(), options, log);
+        await WarnLargeTablesAsync(connection, dialect, builder.GetOperations(), options, log).ConfigureAwait(false);
 
         if (options.DryRun)
         {
@@ -251,18 +251,18 @@ public static class MigrationRunner
         }
 
         if (options.BeforeEach != null)
-            await options.BeforeEach(migration.Version, migration.Name, connection);
+            await options.BeforeEach(migration.Version, migration.Name, connection).ConfigureAwait(false);
 
         // Insert 'running' status before executing DDL
         // Checksum always computed from non-idempotent SQL for stability across mode changes
         var checksum = ComputeChecksum(builder.BuildSql(dialect));
-        await InsertHistoryRowAsync(connection, null, dialect, migration.Version, migration.Name, checksum, 0, "running", options);
+        await InsertHistoryRowAsync(connection, null, dialect, migration.Version, migration.Name, checksum, 0, "running", options).ConfigureAwait(false);
         MigrationLog.StatusUpdated(migration.Version, "running");
 
         var sw = Stopwatch.StartNew();
 
         // Phase 1: Transactional operations (including backups and history row)
-        using var tx = await connection.BeginTransactionAsync();
+        using var tx = await connection.BeginTransactionAsync().ConfigureAwait(false);
         try
         {
             if (options.RunBackups)
@@ -277,11 +277,11 @@ public static class MigrationRunner
                     backupCmd.Transaction = tx;
                     backupCmd.CommandText = backupSql;
                     ApplyCommandTimeout(backupCmd, options);
-                    await backupCmd.ExecuteNonQueryAsync();
+                    await backupCmd.ExecuteNonQueryAsync().ConfigureAwait(false);
                 }
             }
 
-            await EmitLockTimeoutAsync(connection, tx, dialect, options);
+            await EmitLockTimeoutAsync(connection, tx, dialect, options).ConfigureAwait(false);
 
             if (!string.IsNullOrEmpty(txSql))
             {
@@ -289,17 +289,17 @@ public static class MigrationRunner
                 cmd.Transaction = tx;
                 cmd.CommandText = txSql;
                 ApplyCommandTimeout(cmd, options);
-                await cmd.ExecuteNonQueryAsync();
+                await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
             }
 
             // Update status to 'applied'
-            await UpdateHistoryStatusAsync(connection, tx, dialect, migration.Version, "applied", (int)sw.ElapsedMilliseconds, options);
+            await UpdateHistoryStatusAsync(connection, tx, dialect, migration.Version, "applied", (int)sw.ElapsedMilliseconds, options).ConfigureAwait(false);
             MigrationLog.StatusUpdated(migration.Version, "applied");
 
-            await tx.CommitAsync();
+            await tx.CommitAsync().ConfigureAwait(false);
 
             if (options.AfterEach != null)
-                await options.AfterEach(migration.Version, migration.Name, sw.Elapsed, connection);
+                await options.AfterEach(migration.Version, migration.Name, sw.Elapsed, connection).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -307,16 +307,16 @@ public static class MigrationRunner
 
             if (options.OnError != null)
             {
-                try { await options.OnError(migration.Version, migration.Name, ex, connection); }
+                try { await options.OnError(migration.Version, migration.Name, ex, connection).ConfigureAwait(false); }
                 catch (Exception hookEx)
                 {
                     MigrationLog.Failed(migration.Version, migration.Name, "OnError hook", hookEx);
                 }
             }
 
-            await tx.RollbackAsync();
+            await tx.RollbackAsync().ConfigureAwait(false);
             // Clean up the 'running' row since the transaction failed
-            try { await DeleteHistoryRowAsync(connection, null, dialect, migration.Version, options); }
+            try { await DeleteHistoryRowAsync(connection, null, dialect, migration.Version, options).ConfigureAwait(false); }
             catch (Exception cleanupEx)
             {
                 MigrationLog.Failed(migration.Version, migration.Name, "cleanup", cleanupEx);
@@ -333,7 +333,7 @@ public static class MigrationRunner
                 using var cmd = connection.CreateCommand();
                 cmd.CommandText = nonTxSql;
                 ApplyCommandTimeout(cmd, options);
-                await cmd.ExecuteNonQueryAsync();
+                await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -373,7 +373,7 @@ public static class MigrationRunner
         }
 
         if (options.BeforeEach != null)
-            await options.BeforeEach(migration.Version, migration.Name, connection);
+            await options.BeforeEach(migration.Version, migration.Name, connection).ConfigureAwait(false);
 
         var sw = Stopwatch.StartNew();
 
@@ -386,7 +386,7 @@ public static class MigrationRunner
                 using var cmd = connection.CreateCommand();
                 cmd.CommandText = nonTxSql;
                 ApplyCommandTimeout(cmd, options);
-                await cmd.ExecuteNonQueryAsync();
+                await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -397,10 +397,10 @@ public static class MigrationRunner
         }
 
         // Phase 2: Transactional operations + history row removal
-        using var tx = await connection.BeginTransactionAsync();
+        using var tx = await connection.BeginTransactionAsync().ConfigureAwait(false);
         try
         {
-            await EmitLockTimeoutAsync(connection, tx, dialect, options);
+            await EmitLockTimeoutAsync(connection, tx, dialect, options).ConfigureAwait(false);
 
             if (!string.IsNullOrEmpty(txSql))
             {
@@ -408,17 +408,17 @@ public static class MigrationRunner
                 cmd.Transaction = tx;
                 cmd.CommandText = txSql;
                 ApplyCommandTimeout(cmd, options);
-                await cmd.ExecuteNonQueryAsync();
+                await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
             }
 
-            await DeleteHistoryRowAsync(connection, tx, dialect, migration.Version, options);
+            await DeleteHistoryRowAsync(connection, tx, dialect, migration.Version, options).ConfigureAwait(false);
 
             sw.Stop();
             MigrationLog.RolledBack(migration.Version);
-            await tx.CommitAsync();
+            await tx.CommitAsync().ConfigureAwait(false);
 
             if (options.AfterEach != null)
-                await options.AfterEach(migration.Version, migration.Name, sw.Elapsed, connection);
+                await options.AfterEach(migration.Version, migration.Name, sw.Elapsed, connection).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -426,14 +426,14 @@ public static class MigrationRunner
 
             if (options.OnError != null)
             {
-                try { await options.OnError(migration.Version, migration.Name, ex, connection); }
+                try { await options.OnError(migration.Version, migration.Name, ex, connection).ConfigureAwait(false); }
                 catch (Exception hookEx)
                 {
                     MigrationLog.Failed(migration.Version, migration.Name, "OnError hook", hookEx);
                 }
             }
 
-            await tx.RollbackAsync();
+            await tx.RollbackAsync().ConfigureAwait(false);
             throw new InvalidOperationException(
                 $"Migration {migration.Version} ({migration.Name}) failed during rollback. SQL: {txSql}", ex);
         }
@@ -482,7 +482,7 @@ public static class MigrationRunner
         using var cmd = connection.CreateCommand();
         cmd.CommandText = sql;
         ApplyCommandTimeout(cmd, options);
-        await cmd.ExecuteNonQueryAsync();
+        await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
     }
 
     private static async Task<List<int>> GetIncompleteMigrationsAsync(DbConnection connection, SqlDialect dialect)
@@ -490,8 +490,8 @@ public static class MigrationRunner
         var versions = new List<int>();
         using var cmd = connection.CreateCommand();
         cmd.CommandText = $"SELECT version FROM {HistoryTable} WHERE status = 'running' ORDER BY version;";
-        using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
+        using var reader = await cmd.ExecuteReaderAsync().ConfigureAwait(false);
+        while (await reader.ReadAsync().ConfigureAwait(false))
         {
             versions.Add(reader.GetInt32(0));
         }
@@ -504,8 +504,8 @@ public static class MigrationRunner
         using var cmd = connection.CreateCommand();
         cmd.CommandText = $"SELECT version, checksum FROM {HistoryTable} WHERE status = 'applied' ORDER BY version;";
         ApplyCommandTimeout(cmd, options);
-        using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
+        using var reader = await cmd.ExecuteReaderAsync().ConfigureAwait(false);
+        while (await reader.ReadAsync().ConfigureAwait(false))
         {
             map[reader.GetInt32(0)] = reader.IsDBNull(1) ? "" : reader.GetString(1);
         }
@@ -537,7 +537,7 @@ public static class MigrationRunner
         AddParameter(cmd, dialect, 7, status);
 
         ApplyCommandTimeout(cmd, options);
-        await cmd.ExecuteNonQueryAsync();
+        await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
     }
 
     private static async Task UpdateHistoryStatusAsync(
@@ -556,7 +556,7 @@ public static class MigrationRunner
         AddParameter(cmd, dialect, 2, version);
 
         ApplyCommandTimeout(cmd, options);
-        await cmd.ExecuteNonQueryAsync();
+        await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
     }
 
     private static async Task DeleteHistoryRowAsync(
@@ -567,7 +567,7 @@ public static class MigrationRunner
         cmd.CommandText = $"DELETE FROM {HistoryTable} WHERE version = {SqlFormatting.FormatParameter(dialect, 0)};";
         AddParameter(cmd, dialect, 0, version);
         ApplyCommandTimeout(cmd, options);
-        await cmd.ExecuteNonQueryAsync();
+        await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
     }
 
     private static void AddParameter(DbCommand cmd, SqlDialect dialect, int index, object value)
@@ -596,7 +596,7 @@ public static class MigrationRunner
         cmd.Transaction = tx;
         cmd.CommandText = sql;
         ApplyCommandTimeout(cmd, options);
-        await cmd.ExecuteNonQueryAsync();
+        await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
     }
 
     /// <summary>
@@ -698,7 +698,7 @@ public static class MigrationRunner
                 AddParameter(cmd, dialect, 0, table);
                 ApplyCommandTimeout(cmd, options);
 
-                var result = await cmd.ExecuteScalarAsync();
+                var result = await cmd.ExecuteScalarAsync().ConfigureAwait(false);
                 if (result is null or DBNull)
                     continue;
 

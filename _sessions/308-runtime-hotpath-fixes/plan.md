@@ -15,7 +15,7 @@ Each step is independently committable. All commits stage `_sessions/` (`git add
 - [x] Step 8 — Item 6d: cached empty enumerator
 - [x] Step 9 — Item 6e: materialize before log in First
 - [x] Step 10 — Item 6f: PreparedQuery invariant comment
-- [ ] Step 11 — Item 4: ConfigureAwait sweep + CA2007 guard
+- [x] Step 11 — Item 4: ConfigureAwait sweep + CA2007 guard
 
 ---
 
