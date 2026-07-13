@@ -139,6 +139,19 @@ rebase later if #306 merges first.
 - `NeedsDistinctOrderByWrap(plan, mask, config)` already takes mask — conditional DISTINCT
   slots into it; batch path: simplest correct approach is `canBatch = false` when pagination
   or distinct is conditional (per-mask fallback already exists for the distinct wrap).
+- **Step 1 confirmed the latent positional bug is real and observable:** the new
+  `Select_ChainInsideIf_BitAssignedToDeeperClauseOnly` test shape (chain wholly inside an
+  `if`, one deeper conditional Where) previously mis-generated: baseline-depth sites stole
+  the bit, producing swapped predicates in SQL variants. Fixed by ID matching. Also note:
+  in generation tests, `Select(u => u)` projects ALL columns — assert on predicate text
+  (`""Age"" > 18`), not bare column names, when checking variant SQL.
+- Pagination binding in terminal: `CarrierEmitter.EmitCarrierCommandBinding:783-807`
+  ("Pagination parameters — always unconditional", `__pL`/`__pO` at slot `paramCount`(+1),
+  uses `whereShiftExpr`/`__bindShift`). This is the exact block step 4 must mask-gate.
+  `MaskAwareTerminalBindingTests.Terminal_ConditionalWhereWithPagination_...` (:341)
+  pins the old behavior — update in step 4 (its Limit/Offset there are UNconditional
+  though; only the assertion comment text is stale, the shape keeps pagination
+  unconditional and stays valid).
 - Runtime guard must cover BOTH failure modes: unenumerated mask ≤ maxMask → `null!` entry;
   unenumerated mask > maxMask → IndexOutOfRange. Emit bounds check + null check → actionable
   InvalidOperationException.

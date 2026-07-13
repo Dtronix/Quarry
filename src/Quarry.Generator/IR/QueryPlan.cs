@@ -323,24 +323,33 @@ internal sealed class PaginationPlan : IEquatable<PaginationPlan>
 /// </summary>
 internal sealed class ConditionalTerm : IEquatable<ConditionalTerm>
 {
-    public ConditionalTerm(int bitIndex, ClauseRole role)
+    public ConditionalTerm(int bitIndex, ClauseRole role, string siteUniqueId)
     {
         BitIndex = bitIndex;
         Role = role;
+        SiteUniqueId = siteUniqueId;
     }
 
     public int BitIndex { get; }
     public ClauseRole Role { get; }
 
+    /// <summary>
+    /// UniqueId of the clause site this bit belongs to. Consumers resolve site→bit by
+    /// this identity; positional correlation against ClauseSites is not sound because
+    /// bit assignment skips sites (baseline-depth, role-less, non-bit-consuming kinds).
+    /// </summary>
+    public string SiteUniqueId { get; }
+
     public bool Equals(ConditionalTerm? other)
     {
         if (other is null) return false;
         if (ReferenceEquals(this, other)) return true;
-        return BitIndex == other.BitIndex && Role == other.Role;
+        return BitIndex == other.BitIndex && Role == other.Role
+            && SiteUniqueId == other.SiteUniqueId;
     }
 
     public override bool Equals(object? obj) => Equals(obj as ConditionalTerm);
-    public override int GetHashCode() => HashCode.Combine(BitIndex, Role);
+    public override int GetHashCode() => HashCode.Combine(BitIndex, Role, SiteUniqueId);
 }
 
 /// <summary>

@@ -640,7 +640,7 @@ internal static class ChainAnalyzer
             if (role == null)
                 continue;
 
-            conditionalTerms.Add(new ConditionalTerm(bitIndex, role.Value));
+            conditionalTerms.Add(new ConditionalTerm(bitIndex, role.Value, site.Bound.Raw.UniqueId));
 
             // Group by condition text for mutual exclusivity detection
             if (!branchGroups.TryGetValue(condInfo.ConditionText, out var group))
@@ -944,7 +944,6 @@ internal static class ChainAnalyzer
         var queryKind = DetermineQueryKind(executionSite.Bound.Raw.Kind, effectiveBuilderKind);
 
         // Process clause sites to build terms
-        var consumedConditionalTerms = new HashSet<int>();
         for (int i = 0; i < clauseSites.Count; i++)
         {
             var site = clauseSites[i];
@@ -953,18 +952,13 @@ internal static class ChainAnalyzer
             var role = MapInterceptorKindToClauseRole(kind);
             int? clauseBitIndex = null;
 
-            // Check if this clause is conditional
-            if (raw.NestingContext != null)
+            // Check if this clause is conditional — match its bit by site identity
+            for (int ci = 0; ci < conditionalTerms.Count; ci++)
             {
-                // Find its bit index — match by role and consume each term only once
-                for (int ci = 0; ci < conditionalTerms.Count; ci++)
+                if (conditionalTerms[ci].SiteUniqueId == raw.UniqueId)
                 {
-                    if (conditionalTerms[ci].Role == role && !consumedConditionalTerms.Contains(ci))
-                    {
-                        clauseBitIndex = conditionalTerms[ci].BitIndex;
-                        consumedConditionalTerms.Add(ci);
-                        break;
-                    }
+                    clauseBitIndex = conditionalTerms[ci].BitIndex;
+                    break;
                 }
             }
 

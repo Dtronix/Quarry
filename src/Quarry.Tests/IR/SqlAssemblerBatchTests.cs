@@ -30,7 +30,7 @@ public class SqlAssemblerBatchTests
                 new WhereTerm(MakeComparison("age", SqlBinaryOperator.GreaterThan, paramLocalIndex: 0), bitIndex: 0),
                 new WhereTerm(MakeComparison("name", SqlBinaryOperator.Equal, paramLocalIndex: 0), bitIndex: 1),
             },
-            conditionalTerms: new[] { new ConditionalTerm(0, ClauseRole.Where), new ConditionalTerm(1, ClauseRole.Where) },
+            conditionalTerms: new[] { new ConditionalTerm(0, ClauseRole.Where, "s0"), new ConditionalTerm(1, ClauseRole.Where, "s1") },
             possibleMasks: new[] { 0, 1, 2, 3 },
             parameters: new[]
             {
@@ -52,7 +52,7 @@ public class SqlAssemblerBatchTests
                 new WhereTerm(MakeComparison("active", SqlBinaryOperator.Equal, literalValue: "1")),
                 new WhereTerm(MakeComparison("age", SqlBinaryOperator.GreaterThan, paramLocalIndex: 0), bitIndex: 0),
             },
-            conditionalTerms: new[] { new ConditionalTerm(0, ClauseRole.Where) },
+            conditionalTerms: new[] { new ConditionalTerm(0, ClauseRole.Where, "s0") },
             possibleMasks: new[] { 0, 1 },
             parameters: new[] { new QueryParameter(0, "int", "age") });
 
@@ -72,7 +72,7 @@ public class SqlAssemblerBatchTests
             {
                 new OrderTerm(new ResolvedColumnExpr("\"name\""), isDescending: false, bitIndex: 0),
             },
-            conditionalTerms: new[] { new ConditionalTerm(0, ClauseRole.OrderBy) },
+            conditionalTerms: new[] { new ConditionalTerm(0, ClauseRole.OrderBy, "s0") },
             possibleMasks: new[] { 0, 1 });
 
         AssertBatchMatchesPerMask(plan, GenSqlDialect.SQLite, plan.PossibleMasks);
@@ -91,8 +91,8 @@ public class SqlAssemblerBatchTests
             },
             conditionalTerms: new[]
             {
-                new ConditionalTerm(0, ClauseRole.OrderBy),
-                new ConditionalTerm(1, ClauseRole.OrderBy),
+                new ConditionalTerm(0, ClauseRole.OrderBy, "s0"),
+                new ConditionalTerm(1, ClauseRole.OrderBy, "s1"),
             },
             possibleMasks: new[] { 0, 1, 2, 3 });
 
@@ -119,8 +119,8 @@ public class SqlAssemblerBatchTests
             },
             conditionalTerms: new[]
             {
-                new ConditionalTerm(0, ClauseRole.Where),
-                new ConditionalTerm(1, ClauseRole.OrderBy),
+                new ConditionalTerm(0, ClauseRole.Where, "s0"),
+                new ConditionalTerm(1, ClauseRole.OrderBy, "s1"),
             },
             possibleMasks: new[] { 0, 1, 2, 3 },
             parameters: new[] { new QueryParameter(0, "int", "age") });
@@ -143,7 +143,7 @@ public class SqlAssemblerBatchTests
                 {
                     new WhereTerm(MakeComparison("age", SqlBinaryOperator.GreaterThan, paramLocalIndex: 0), bitIndex: 0),
                 },
-                conditionalTerms: new[] { new ConditionalTerm(0, ClauseRole.Where) },
+                conditionalTerms: new[] { new ConditionalTerm(0, ClauseRole.Where, "s0") },
                 possibleMasks: new[] { 0, 1 },
                 parameters: new[] { new QueryParameter(0, "int", "age") });
 
@@ -173,8 +173,8 @@ public class SqlAssemblerBatchTests
             },
             conditionalTerms: new[]
             {
-                new ConditionalTerm(0, ClauseRole.OrderBy),
-                new ConditionalTerm(1, ClauseRole.OrderBy),
+                new ConditionalTerm(0, ClauseRole.OrderBy, "s0"),
+                new ConditionalTerm(1, ClauseRole.OrderBy, "s1"),
             },
             possibleMasks: new[] { 0, 1, 2, 3 },
             parameters: new[]
@@ -208,7 +208,7 @@ public class SqlAssemblerBatchTests
             {
                 new OrderTerm(new ResolvedColumnExpr("\"name\""), isDescending: false, bitIndex: 0),
             },
-            conditionalTerms: new[] { new ConditionalTerm(0, ClauseRole.OrderBy) },
+            conditionalTerms: new[] { new ConditionalTerm(0, ClauseRole.OrderBy, "s0") },
             possibleMasks: new[] { 0, 1 },
             pagination: new PaginationPlan(literalLimit: 10));
 
@@ -270,7 +270,7 @@ public class SqlAssemblerBatchTests
             isDistinct: false,
             setTerms: Array.Empty<SetTerm>(),
             insertColumns: Array.Empty<InsertColumn>(),
-            conditionalTerms: new[] { new ConditionalTerm(0, ClauseRole.Where) },
+            conditionalTerms: new[] { new ConditionalTerm(0, ClauseRole.Where, "s0") },
             possibleMasks: new[] { 0, 1 },
             parameters: new[] { new QueryParameter(0, "int", "role") },
             tier: OptimizationTier.PrebuiltDispatch,
@@ -298,8 +298,8 @@ public class SqlAssemblerBatchTests
             },
             conditionalTerms: new[]
             {
-                new ConditionalTerm(0, ClauseRole.Where),
-                new ConditionalTerm(1, ClauseRole.Where),
+                new ConditionalTerm(0, ClauseRole.Where, "s0"),
+                new ConditionalTerm(1, ClauseRole.Where, "s1"),
             },
             possibleMasks: new[] { 0, 1, 2, 3 },
             parameters: new[] { new QueryParameter(0, "int", "id") });

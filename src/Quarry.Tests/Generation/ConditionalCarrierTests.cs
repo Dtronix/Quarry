@@ -170,6 +170,64 @@ public class Svc
     }
 
     // ─────────────────────────────────────────────────────────────────
+    //  SELECT — chain wholly inside an if: bit binds to the DEEPER clause (#307)
+    // ─────────────────────────────────────────────────────────────────
+
+    [Test]
+    public void Select_ChainInsideIf_BitAssignedToDeeperClauseOnly()
+    {
+        // The whole chain sits at nesting depth 1 (inside `if (outer)`); only the
+        // Where(Age) at depth 2 is genuinely conditional. Before #307, site→bit was
+        // correlated positionally against "any site with a NestingContext", so the
+        // baseline-depth sites stole the bit: SQL variants carried swapped predicates
+        // and the mask was set by an unconditional clause.
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public async Task Run(bool outer, bool extra)
+    {
+        if (outer)
+        {
+            var q = _db.Users().Where(u => u.IsActive).Select(u => u);
+            if (extra)
+                q = q.Where(u => u.Age > 18);
+            await q.ExecuteFetchAllAsync();
+        }
+    }
+}
+");
+        AssertPrebuiltDispatchWithMask(code, "SELECT");
+        AssertMaskVariantCount(code, 2);
+
+        var maskSets = code.Split("Mask |=").Length - 1;
+        Assert.That(maskSets, Is.EqualTo(1), "Only the deeper Where should set a mask bit");
+
+        // Note: ""Age"" also appears as a projected column in every variant, so assert
+        // on the predicate text, not the bare column name.
+        var variants = ExtractSqlVariants(code);
+        Assert.That(variants, Has.Count.EqualTo(2));
+        Assert.That(variants[0], Does.Contain("\"\"IsActive\"\" = 1"),
+            "mask 0 must keep the unconditional predicate");
+        Assert.That(variants[0], Does.Not.Contain("\"\"Age\"\" > 18"),
+            "mask 0 must not apply the conditional predicate");
+        Assert.That(variants[1], Does.Contain("\"\"IsActive\"\" = 1"));
+        Assert.That(variants[1], Does.Contain("\"\"Age\"\" > 18"));
+    }
+
+    /// <summary>
+    /// Extracts the _sql array entries (verbatim string lines) in mask order.
+    /// </summary>
+    private static List<string> ExtractSqlVariants(string code)
+    {
+        return code.Split('\n')
+            .Select(l => l.Trim())
+            .Where(l => l.StartsWith("@\"") && l.EndsWith("\","))
+            .ToList();
+    }
+
+    // ─────────────────────────────────────────────────────────────────
     //  SELECT — conditional OrderBy
     // ─────────────────────────────────────────────────────────────────
 

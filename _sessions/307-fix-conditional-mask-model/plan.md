@@ -65,12 +65,12 @@ can't hide in both.
 ## Steps
 
 ### Step 1: ConditionalTerm carries SiteUniqueId; match bits by identity
-- [ ] `ConditionalTerm` gains `SiteUniqueId` (string; from `site.Bound.Raw.UniqueId`);
+- [x] `ConditionalTerm` gains `SiteUniqueId` (string; from `site.Bound.Raw.UniqueId`);
   update ctor, `Equals`, `GetHashCode` (QueryPlan equality feeds incremental caching).
-- [ ] ChainAnalyzer bit loop passes the site's UniqueId.
-- [ ] `AssembledPlan.GetClauseEntries` matches site→term by UniqueId (dictionary lookup)
+- [x] ChainAnalyzer bit loop passes the site's UniqueId.
+- [x] `AssembledPlan.GetClauseEntries` matches site→term by UniqueId (dictionary lookup)
   instead of the positional `condIdx` walk.
-- [ ] Audit other ConditionalTerms consumers (`TerminalEmitHelpers`, `ManifestEmitter`,
+- [x] Audit other ConditionalTerms consumers (`TerminalEmitHelpers`, `ManifestEmitter`,
   `CarrierAnalyzer`, orchestrator) for positional assumptions; adapt if any.
 - Tests: full suite green (pure refactor for all currently-supported shapes). Add
   `Generation/` regression test for the latent bug: chain wholly inside an `if` with one

@@ -430,28 +430,20 @@ internal static class ManifestEmitter
         if (conditionalTerms.Count == 0)
             return result;
 
-        // Determine baseline nesting depth from the execution terminal
-        var baselineDepth = plan.ExecutionSite.Bound.Raw.NestingContext?.NestingDepth ?? 0;
-
-        // Walk clause sites in order (same order ChainAnalyzer uses to assign bit indices)
-        int termIndex = 0;
-        foreach (var site in plan.ClauseSites)
+        // Resolve each term's site by identity (SiteUniqueId) — positional correlation
+        // against ClauseSites is not sound because bit assignment skips sites.
+        foreach (var term in conditionalTerms)
         {
-            if (termIndex >= conditionalTerms.Count)
+            foreach (var site in plan.ClauseSites)
+            {
+                if (site.UniqueId != term.SiteUniqueId)
+                    continue;
+
+                var nestingCtx = site.Bound.Raw.NestingContext;
+                if (nestingCtx != null)
+                    result[term.BitIndex] = TruncateConditionText(nestingCtx.ConditionText);
                 break;
-
-            var nestingCtx = site.Bound.Raw.NestingContext;
-            if (nestingCtx == null)
-                continue;
-
-            var relativeDepth = nestingCtx.NestingDepth - baselineDepth;
-            if (relativeDepth <= 0)
-                continue;
-
-            // This clause is conditional — it corresponds to the next ConditionalTerm
-            var term = conditionalTerms[termIndex];
-            result[term.BitIndex] = TruncateConditionText(nestingCtx.ConditionText);
-            termIndex++;
+            }
         }
 
         return result;
@@ -468,8 +460,6 @@ internal static class ManifestEmitter
         if (bitToCondition.Count == 0)
             return result;
 
-        var baselineDepth = plan.ExecutionSite.Bound.Raw.NestingContext?.NestingDepth ?? 0;
-
         // Walk clause sites, accumulate parameter indices, and mark conditional ones
         // ChainAnalyzer collects parameters from clauses in order with sequential global indices.
         // We need to find which global index range each clause owns.
@@ -477,21 +467,17 @@ internal static class ManifestEmitter
         if (planParams.Count == 0)
             return result;
 
-        // Build a clause-site to condition-text mapping
-        int termIndex = 0;
         var conditionalTerms = plan.ConditionalTerms;
         foreach (var site in plan.ClauseSites)
         {
-            var nestingCtx = site.Bound.Raw.NestingContext;
+            // A site is conditional iff a ConditionalTerm carries its UniqueId
             string? conditionText = null;
-
-            if (nestingCtx != null)
+            foreach (var term in conditionalTerms)
             {
-                var relativeDepth = nestingCtx.NestingDepth - baselineDepth;
-                if (relativeDepth > 0 && termIndex < conditionalTerms.Count)
+                if (term.SiteUniqueId == site.UniqueId)
                 {
-                    conditionText = TruncateConditionText(nestingCtx.ConditionText);
-                    termIndex++;
+                    bitToCondition.TryGetValue(term.BitIndex, out conditionText);
+                    break;
                 }
             }
 
