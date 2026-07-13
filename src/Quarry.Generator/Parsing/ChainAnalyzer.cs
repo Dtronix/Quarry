@@ -677,6 +677,17 @@ internal static class ChainAnalyzer
             ? EnumerateMaskCombinations(conditionalTerms, branchGroups)
             : Array.Empty<int>();
 
+        // Defense in depth (#307): every structurally reachable mask must have an
+        // enumerated variant — otherwise the generated dispatch would hit a null SQL
+        // entry at runtime. Fail loud at generation time instead of emitting broken code.
+        if (tier == OptimizationTier.PrebuiltDispatch && conditionalTerms.Count > 0
+            && !ValidateMaskEnumeration(BuildCascadeShapes(branchGroups), totalBits, possibleMasks))
+        {
+            return MakeRuntimeBuildChain(executionSite, clauseSites,
+                "Conditional mask enumeration incomplete — a reachable clause combination has no SQL variant",
+                registry, isTraced);
+        }
+
         // Collect unmatched method names (sites not in the chain that are tracked but not intercepted)
         // In the new pipeline, all sites in the chain are matched by ChainId — unmatched is N/A.
         // But we track Limit/Offset/Distinct/WithTimeout which have no clause translation.
@@ -2723,6 +2734,80 @@ internal static class ChainAnalyzer
         }
 
         return masks;
+    }
+
+    /// <summary>
+    /// Extracts each cascade's shape — the OR-ed bit set per represented arm, and
+    /// whether the no-bits path is reachable — for reachability validation.
+    /// </summary>
+    private static List<(IReadOnlyList<int> ArmBitSets, bool ZeroAllowed)> BuildCascadeShapes(
+        Dictionary<string, List<(TranslatedCallSite Site, int BitIndex)>> branchGroups)
+    {
+        var cascades = new List<(IReadOnlyList<int>, bool)>(branchGroups.Count);
+        foreach (var kvp in branchGroups)
+        {
+            var armBits = new SortedDictionary<int, int>();
+            var armCount = 1;
+            var hasFinalElse = false;
+            foreach (var (site, bit) in kvp.Value)
+            {
+                var nc = site.Bound.Raw.NestingContext!;
+                armBits.TryGetValue(nc.ArmIndex, out var bits);
+                armBits[nc.ArmIndex] = bits | (1 << bit);
+                armCount = nc.ArmCount;
+                hasFinalElse = nc.HasFinalElse;
+            }
+            cascades.Add((armBits.Values.ToList(), !hasFinalElse || armBits.Count < armCount));
+        }
+        return cascades;
+    }
+
+    /// <summary>
+    /// Defense in depth (#307): verifies reachable ⊆ enumerated. Deliberately a separate
+    /// walk from <see cref="EnumerateMaskCombinations"/> — brute force over all
+    /// 2^totalBits masks checked against per-cascade constraints, instead of a
+    /// cross-product construction — so one bug cannot hide in both.
+    /// A mask is structurally reachable iff for every cascade its intersection with the
+    /// cascade's bits is either empty (allowed only when the cascade can take no
+    /// represented arm) or exactly one arm's complete bit set. Extra enumerated masks
+    /// (an unreachable superset) are harmless and accepted.
+    /// Internal for direct unit testing with synthetic cascade shapes; it should never
+    /// fail through the public pipeline.
+    /// </summary>
+    internal static bool ValidateMaskEnumeration(
+        IReadOnlyList<(IReadOnlyList<int> ArmBitSets, bool ZeroAllowed)> cascades,
+        int totalBits,
+        IReadOnlyList<int> enumeratedMasks)
+    {
+        var enumerated = new HashSet<int>(enumeratedMasks);
+        var totalMasks = 1 << totalBits;
+        for (var mask = 0; mask < totalMasks; mask++)
+        {
+            var reachable = true;
+            foreach (var (armBitSets, zeroAllowed) in cascades)
+            {
+                var cascadeBits = 0;
+                foreach (var armBitSet in armBitSets)
+                    cascadeBits |= armBitSet;
+
+                var overlap = mask & cascadeBits;
+                if (overlap == 0)
+                {
+                    if (!zeroAllowed) { reachable = false; break; }
+                    continue;
+                }
+                var isExactlyOneArm = false;
+                foreach (var armBitSet in armBitSets)
+                {
+                    if (overlap == armBitSet) { isExactlyOneArm = true; break; }
+                }
+                if (!isExactlyOneArm) { reachable = false; break; }
+            }
+
+            if (reachable && !enumerated.Contains(mask))
+                return false;
+        }
+        return true;
     }
 
     /// <summary>

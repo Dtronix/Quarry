@@ -182,11 +182,13 @@ can't hide in both.
   conflicts), but not semantically dependent on it.
 
 ### Step 6: Generation-time reachability validator (defense in depth, gen layer)
-- [ ] Implement the brute-force validator (algorithm section) in ChainAnalyzer after
+- [x] Implement the brute-force validator (algorithm section) in ChainAnalyzer after
   enumeration; on violation `MakeRuntimeBuildChain("conditional mask enumeration
   incomplete…")` → QRY032.
-- [ ] Make the validator's core pure/internal so it is unit-testable with synthetic
+- [x] Make the validator's core pure/internal so it is unit-testable with synthetic
   cascade/bit inputs (it should never fire through the public pipeline once step 5 is in).
+  (ChainAnalyzer.ValidateMaskEnumeration, 13 unit tests in
+  Parsing/MaskReachabilityValidatorTests incl. both historical defect-2 enumerations.)
 - Tests: unit tests on the validator core — passing case (per-arm enumeration output),
   failing case (feed a deliberately-pruned mask list → violation detected). Full suite
   green (validator silent on all real chains).
