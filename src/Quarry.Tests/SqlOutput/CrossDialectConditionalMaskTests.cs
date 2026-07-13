@@ -52,6 +52,221 @@ internal class CrossDialectConditionalMaskTests
 
     #endregion
 
+    #region Conditional Limit/Offset/Distinct (#307 — mask-gated)
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task Mask_ConditionalLimitLiteral_Sql(bool limitOn)
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Select(u => u);
+        var pg = Pg.Users().Select(u => u);
+        var my = My.Users().Select(u => u);
+        var ss = Ss.Users().Select(u => u);
+
+        if (limitOn)
+        {
+            lt = lt.Limit(2);
+            pg = pg.Limit(2);
+            my = my.Limit(2);
+            ss = ss.Limit(2);
+        }
+
+        var cols = "\"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\"";
+        var colsMy = "`UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin`";
+        var colsSs = "[UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin]";
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: $"SELECT {cols} FROM \"users\"" + (limitOn ? " LIMIT 2" : ""),
+            pg:     $"SELECT {cols} FROM \"users\"" + (limitOn ? " LIMIT 2" : ""),
+            mysql:  $"SELECT {colsMy} FROM `users`" + (limitOn ? " LIMIT 2" : ""),
+            ss:     $"SELECT {colsSs} FROM [users]" + (limitOn ? " ORDER BY (SELECT NULL) OFFSET 0 ROWS FETCH NEXT 2 ROWS ONLY" : ""));
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task Mask_ConditionalLimitLiteral_Executes(bool limitOn)
+    {
+        // The issue's silent-truncation repro: with the branch NOT taken, the full
+        // row set must come back (previously LIMIT 25 was baked into every variant).
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Select(u => u);
+        var pg = Pg.Users().Select(u => u);
+        var my = My.Users().Select(u => u);
+        var ss = Ss.Users().Select(u => u);
+
+        if (limitOn)
+        {
+            lt = lt.Limit(2);
+            pg = pg.Limit(2);
+            my = my.Limit(2);
+            ss = ss.Limit(2);
+        }
+
+        var expected = limitOn ? 2 : 3;
+        Assert.That((await lt.ExecuteFetchAllAsync()).Count, Is.EqualTo(expected));
+        Assert.That((await pg.ExecuteFetchAllAsync()).Count, Is.EqualTo(expected));
+        Assert.That((await my.ExecuteFetchAllAsync()).Count, Is.EqualTo(expected));
+        Assert.That((await ss.ExecuteFetchAllAsync()).Count, Is.EqualTo(expected));
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task Mask_ConditionalLimitRuntime_Executes(bool limitOn)
+    {
+        // Runtime-valued limit: with the branch NOT taken the carrier field stays at
+        // its 0 default — the variant must omit LIMIT entirely, not emit LIMIT 0
+        // (which would silently return zero rows).
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        int n = 2;
+        var lt = Lite.Users().Select(u => u);
+        var pg = Pg.Users().Select(u => u);
+        var my = My.Users().Select(u => u);
+        var ss = Ss.Users().Select(u => u);
+
+        if (limitOn)
+        {
+            lt = lt.Limit(n);
+            pg = pg.Limit(n);
+            my = my.Limit(n);
+            ss = ss.Limit(n);
+        }
+
+        var expected = limitOn ? 2 : 3;
+        Assert.That((await lt.ExecuteFetchAllAsync()).Count, Is.EqualTo(expected));
+        Assert.That((await pg.ExecuteFetchAllAsync()).Count, Is.EqualTo(expected));
+        Assert.That((await my.ExecuteFetchAllAsync()).Count, Is.EqualTo(expected));
+        Assert.That((await ss.ExecuteFetchAllAsync()).Count, Is.EqualTo(expected));
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task Mask_ConditionalOffset_Executes(bool skipFirst)
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // Unconditional Limit + conditional Offset. (Offset WITHOUT Limit renders bare
+        // "OFFSET n", which SQLite/MySQL reject — a pre-existing FormatLimitOffset gap
+        // independent of conditional gating; tracked in workflow notes.)
+        var lt = Lite.Users().Select(u => u).OrderBy(u => u.UserId).Limit(10);
+        var pg = Pg.Users().Select(u => u).OrderBy(u => u.UserId).Limit(10);
+        var my = My.Users().Select(u => u).OrderBy(u => u.UserId).Limit(10);
+        var ss = Ss.Users().Select(u => u).OrderBy(u => u.UserId).Limit(10);
+
+        if (skipFirst)
+        {
+            lt = lt.Offset(1);
+            pg = pg.Offset(1);
+            my = my.Offset(1);
+            ss = ss.Offset(1);
+        }
+
+        var expected = skipFirst ? 2 : 3;
+        var firstId = skipFirst ? 2 : 1;
+        var ltRows = await lt.ExecuteFetchAllAsync();
+        var pgRows = await pg.ExecuteFetchAllAsync();
+        var myRows = await my.ExecuteFetchAllAsync();
+        var ssRows = await ss.ExecuteFetchAllAsync();
+        Assert.That(ltRows.Count, Is.EqualTo(expected));
+        Assert.That(ltRows[0].UserId, Is.EqualTo(firstId));
+        Assert.That(pgRows.Count, Is.EqualTo(expected));
+        Assert.That(pgRows[0].UserId, Is.EqualTo(firstId));
+        Assert.That(myRows.Count, Is.EqualTo(expected));
+        Assert.That(myRows[0].UserId, Is.EqualTo(firstId));
+        Assert.That(ssRows.Count, Is.EqualTo(expected));
+        Assert.That(ssRows[0].UserId, Is.EqualTo(firstId));
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task Mask_ConditionalDistinct_Executes(bool dedupe)
+    {
+        // users has 3 rows with 2 distinct IsActive values — DISTINCT collapses to 2.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Select(u => u.IsActive);
+        var pg = Pg.Users().Select(u => u.IsActive);
+        var my = My.Users().Select(u => u.IsActive);
+        var ss = Ss.Users().Select(u => u.IsActive);
+
+        if (dedupe)
+        {
+            lt = lt.Distinct();
+            pg = pg.Distinct();
+            my = my.Distinct();
+            ss = ss.Distinct();
+        }
+
+        var expected = dedupe ? 2 : 3;
+        Assert.That((await lt.ExecuteFetchAllAsync()).Count, Is.EqualTo(expected));
+        Assert.That((await pg.ExecuteFetchAllAsync()).Count, Is.EqualTo(expected));
+        Assert.That((await my.ExecuteFetchAllAsync()).Count, Is.EqualTo(expected));
+        Assert.That((await ss.ExecuteFetchAllAsync()).Count, Is.EqualTo(expected));
+    }
+
+    [TestCase(false, false)]
+    [TestCase(true, false)]
+    [TestCase(false, true)]
+    [TestCase(true, true)]
+    public async Task Mask_ConditionalWhereAndLimit_Executes(bool filter, bool limitOn)
+    {
+        // Two bits, four variants — every combination executed with row-content asserts.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Select(u => u).OrderBy(u => u.UserId);
+        var pg = Pg.Users().Select(u => u).OrderBy(u => u.UserId);
+        var my = My.Users().Select(u => u).OrderBy(u => u.UserId);
+        var ss = Ss.Users().Select(u => u).OrderBy(u => u.UserId);
+
+        if (filter)
+        {
+            lt = lt.Where(u => u.UserId >= 2);
+            pg = pg.Where(u => u.UserId >= 2);
+            my = my.Where(u => u.UserId >= 2);
+            ss = ss.Where(u => u.UserId >= 2);
+        }
+        if (limitOn)
+        {
+            lt = lt.Limit(1);
+            pg = pg.Limit(1);
+            my = my.Limit(1);
+            ss = ss.Limit(1);
+        }
+
+        var expectedCount = (filter, limitOn) switch
+        {
+            (false, false) => 3,
+            (true, false) => 2,
+            _ => 1
+        };
+        var expectedFirstId = filter ? 2 : 1;
+
+        var ltRows = await lt.ExecuteFetchAllAsync();
+        var pgRows = await pg.ExecuteFetchAllAsync();
+        var myRows = await my.ExecuteFetchAllAsync();
+        var ssRows = await ss.ExecuteFetchAllAsync();
+        Assert.That(ltRows.Count, Is.EqualTo(expectedCount));
+        Assert.That(ltRows[0].UserId, Is.EqualTo(expectedFirstId));
+        Assert.That(pgRows.Count, Is.EqualTo(expectedCount));
+        Assert.That(pgRows[0].UserId, Is.EqualTo(expectedFirstId));
+        Assert.That(myRows.Count, Is.EqualTo(expectedCount));
+        Assert.That(myRows[0].UserId, Is.EqualTo(expectedFirstId));
+        Assert.That(ssRows.Count, Is.EqualTo(expectedCount));
+        Assert.That(ssRows[0].UserId, Is.EqualTo(expectedFirstId));
+    }
+
+    #endregion
+
     #region Conditional WithTimeout (#307 — no bit consumed)
 
     [TestCase(true)]

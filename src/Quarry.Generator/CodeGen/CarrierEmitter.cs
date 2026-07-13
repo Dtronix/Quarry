@@ -789,30 +789,53 @@ internal static class CarrierEmitter
         if (inConditionalBlock)
             sb.AppendLine("        }");
 
-        // Pagination parameters — always unconditional.
+        // Pagination parameters — mask-gated when the Limit/Offset site is conditional
+        // (the SQL variant then omits the placeholder, so the DbParameter must be
+        // omitted too), unconditional otherwise.
         // __bindShift == __colShift here: both accumulate (colLen-1) per collection
         // in GlobalIndex order. Using __bindShift keeps the binding self-contained.
+        var pagination = chain.Plan.Pagination;
         var nextIdx = paramCount;
         if (hasLimitField)
         {
-            sb.AppendLine($"        var __pL = __cmd.CreateParameter();");
+            var limitBit = pagination?.LimitBitIndex;
+            var indent = "        ";
+            if (limitBit.HasValue)
+            {
+                sb.AppendLine($"        if ((__c.Mask & unchecked(({maskType})(1 << {limitBit.Value}))) != 0)");
+                sb.AppendLine("        {");
+                indent = "            ";
+            }
+            sb.AppendLine($"{indent}var __pL = __cmd.CreateParameter();");
             if (whereShiftExpr != null)
-                sb.AppendLine($"        __pL.ParameterName = {EmitParamNameExpr(chain.Dialect, nextIdx, whereShiftExpr)};");
+                sb.AppendLine($"{indent}__pL.ParameterName = {EmitParamNameExpr(chain.Dialect, nextIdx, whereShiftExpr)};");
             else
-                sb.AppendLine($"        __pL.ParameterName = \"{FormatParamName(chain.Dialect, nextIdx)}\";");
-            sb.AppendLine($"        __pL.Value = (object)__c.Limit;");
-            sb.AppendLine($"        __cmd.Parameters.Add(__pL);");
+                sb.AppendLine($"{indent}__pL.ParameterName = \"{FormatParamName(chain.Dialect, nextIdx)}\";");
+            sb.AppendLine($"{indent}__pL.Value = (object)__c.Limit;");
+            sb.AppendLine($"{indent}__cmd.Parameters.Add(__pL);");
+            if (limitBit.HasValue)
+                sb.AppendLine("        }");
             nextIdx++;
         }
         if (hasOffsetField)
         {
-            sb.AppendLine($"        var __pO = __cmd.CreateParameter();");
+            var offsetBit = pagination?.OffsetBitIndex;
+            var indent = "        ";
+            if (offsetBit.HasValue)
+            {
+                sb.AppendLine($"        if ((__c.Mask & unchecked(({maskType})(1 << {offsetBit.Value}))) != 0)");
+                sb.AppendLine("        {");
+                indent = "            ";
+            }
+            sb.AppendLine($"{indent}var __pO = __cmd.CreateParameter();");
             if (whereShiftExpr != null)
-                sb.AppendLine($"        __pO.ParameterName = {EmitParamNameExpr(chain.Dialect, nextIdx, whereShiftExpr)};");
+                sb.AppendLine($"{indent}__pO.ParameterName = {EmitParamNameExpr(chain.Dialect, nextIdx, whereShiftExpr)};");
             else
-                sb.AppendLine($"        __pO.ParameterName = \"{FormatParamName(chain.Dialect, nextIdx)}\";");
-            sb.AppendLine($"        __pO.Value = (object)__c.Offset;");
-            sb.AppendLine($"        __cmd.Parameters.Add(__pO);");
+                sb.AppendLine($"{indent}__pO.ParameterName = \"{FormatParamName(chain.Dialect, nextIdx)}\";");
+            sb.AppendLine($"{indent}__pO.Value = (object)__c.Offset;");
+            sb.AppendLine($"{indent}__cmd.Parameters.Add(__pO);");
+            if (offsetBit.HasValue)
+                sb.AppendLine("        }");
         }
     }
 

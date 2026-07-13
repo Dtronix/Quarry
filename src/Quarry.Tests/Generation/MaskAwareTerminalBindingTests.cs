@@ -359,10 +359,10 @@ public class Svc
         var terminalBody = ExtractSection(code, "var __cmd = __ctx.Connection.CreateCommand()", "return QueryExecutor.");
         Assert.That(terminalBody, Is.Not.Empty, "Should have terminal execution body");
 
-        // Pagination parameters (Limit/Offset) should be bound unconditionally.
-        // Conditional WHERE param (@p0) should be mask-gated.
-        // The terminal body should have a mask check for the WHERE param
-        // but NOT wrap the pagination binding in a mask check.
+        // The Limit/Offset sites in THIS chain are unconditional, so their parameters
+        // bind unconditionally; the conditional WHERE param (@p0) is mask-gated.
+        // (Conditional Limit/Offset sites DO mask-gate their binding since #307 —
+        // see ConditionalCarrierTests.ConditionalLimit_RuntimeValued_GatedVariantAndBinding.)
         Assert.That(terminalBody, Does.Contain("__c.Mask &"),
             "Terminal should mask-gate the conditional WHERE parameter binding. " +
             "Currently all params including conditional ones are bound unconditionally.");

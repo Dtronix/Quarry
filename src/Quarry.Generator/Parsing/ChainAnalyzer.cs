@@ -700,7 +700,10 @@ internal static class ChainAnalyzer
         var hasOffset = false;
         int? limitLiteral = null;
         int? offsetLiteral = null;
+        int? limitBitIndex = null;
+        int? offsetBitIndex = null;
         bool isDistinct = false;
+        int? distinctBitIndex = null;
         SelectProjection? projection = null;
         var setOperationPlans = new List<SetOperationPlan>();
         var primaryTable = new TableRef(
@@ -1190,15 +1193,18 @@ internal static class ChainAnalyzer
             {
                 hasLimit = true;
                 limitLiteral = raw.ConstantIntValue;
+                limitBitIndex = clauseBitIndex;
             }
             else if (kind == InterceptorKind.Offset)
             {
                 hasOffset = true;
                 offsetLiteral = raw.ConstantIntValue;
+                offsetBitIndex = clauseBitIndex;
             }
             else if (kind == InterceptorKind.Distinct)
             {
                 isDistinct = true;
+                distinctBitIndex = clauseBitIndex;
             }
             else if (IsSetOperationKind(kind))
             {
@@ -1292,7 +1298,9 @@ internal static class ChainAnalyzer
                 literalLimit: limitLiteral,
                 literalOffset: offsetLiteral,
                 limitParamIndex: hasLimit && limitLiteral == null ? paramGlobalIndex++ : (int?)null,
-                offsetParamIndex: hasOffset && offsetLiteral == null ? paramGlobalIndex++ : (int?)null);
+                offsetParamIndex: hasOffset && offsetLiteral == null ? paramGlobalIndex++ : (int?)null,
+                limitBitIndex: limitBitIndex,
+                offsetBitIndex: offsetBitIndex);
         }
 
         // Default projection if none specified
@@ -1394,7 +1402,8 @@ internal static class ChainAnalyzer
             postUnionWhereTerms: postUnionWhereTerms.Count > 0 ? postUnionWhereTerms : null,
             postUnionGroupByExprs: postUnionGroupByExprs.Count > 0 ? postUnionGroupByExprs : null,
             postUnionHavingExprs: postUnionHavingExprs.Count > 0 ? postUnionHavingExprs : null,
-            cteDefinitions: cteDefinitions.Count > 0 ? cteDefinitions : null);
+            cteDefinitions: cteDefinitions.Count > 0 ? cteDefinitions : null,
+            distinctBitIndex: distinctBitIndex);
 
         // Trace logging: only for traced chains. Reconstruct per-site discovery/binding/
         // translation traces from the TranslatedCallSite data, then log chain-level analysis.

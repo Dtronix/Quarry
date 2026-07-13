@@ -164,6 +164,16 @@ rebase later if #306 merges first.
   use fluent `.Prepare()` for ToDiagnostics+execute; `var p = q.Prepare()` into a NEW
   variable is NOT analyzable (QRY032 "assigned from non-Quarry method" walks ALL
   references of the root var in the method body).
+- **Step 4 discovery — offset-only pagination is broken pre-existing:**
+  `SqlFormatting.FormatLimitOffset` (Quarry.Shared/Sql/SqlFormatting.cs:167) renders
+  `Offset(n)` without `Limit()` as bare `OFFSET n` — SQLite errors ("near OFFSET"),
+  MySQL likewise requires LIMIT before OFFSET; PG is fine. Independent of #307
+  (unconditional offset-only fails identically). Candidate separate issue at REVIEW.
+  Step-4 tests use unconditional Limit + conditional Offset to avoid the gap.
+- Sample-schema gotcha: `Order.UserId` in Quarry.Tests Samples is an `EntityRef<User,int>`
+  navigation — `Select(o => o.UserId)` projects an EntityRef, not int (CS9144/CS0029 in
+  generated interceptors). Use `Users().Select(u => u.IsActive)` for a cheap
+  distinct-collapsible projection.
 - Runtime guard must cover BOTH failure modes: unenumerated mask ≤ maxMask → `null!` entry;
   unenumerated mask > maxMask → IndexOutOfRange. Emit bounds check + null check → actionable
   InvalidOperationException.

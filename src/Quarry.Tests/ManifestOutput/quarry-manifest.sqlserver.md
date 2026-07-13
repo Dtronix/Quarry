@@ -1818,6 +1818,18 @@ SELECT [t0].[UserName], [t1].[Total] FROM [users] AS [t0] RIGHT JOIN [orders] AS
 
 ---
 
+### Users().Select(...).Distinct(...).ExecuteFetchAllAsync() — 2 variants
+
+```sql
+-- base
+SELECT [IsActive] FROM [users]
+
+-- +dedupe
+SELECT DISTINCT [IsActive] FROM [users]
+```
+
+---
+
 ### Users().Select(...).Except(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -1870,6 +1882,18 @@ SELECT COUNT(*) FROM [users]
 
 ```sql
 SELECT [UserId], [UserName] FROM [users] INTERSECT SELECT [ProductId], [ProductName] FROM [products]
+```
+
+---
+
+### Users().Select(...).Limit(...).ExecuteFetchAllAsync() — 2 variants
+
+```sql
+-- base
+SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users]
+
+-- +limitOn
+SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] ORDER BY (SELECT NULL) OFFSET 0 ROWS FETCH NEXT 2 ROWS ONLY
 ```
 
 ---
@@ -1927,6 +1951,30 @@ SELECT [UserId], [UserName] FROM [users] ORDER BY (SELECT NULL) OFFSET 0 ROWS FE
 
 ---
 
+### Users().Select(...).Limit(...).ToDiagnostics() — 2 variants
+
+```sql
+-- base
+SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users]
+
+-- +limitOn
+SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] ORDER BY (SELECT NULL) OFFSET 0 ROWS FETCH NEXT 2 ROWS ONLY
+```
+
+---
+
+### Users().Select(...).OrderBy(...).Limit(...).Offset(...).ExecuteFetchAllAsync() — 2 variants
+
+```sql
+-- base
+SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] ORDER BY [UserId] ASC OFFSET 0 ROWS FETCH NEXT 10 ROWS ONLY
+
+-- +skipFirst
+SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] ORDER BY [UserId] ASC OFFSET 1 ROWS FETCH NEXT 10 ROWS ONLY
+```
+
+---
+
 ### Users().Select(...).OrderBy(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -1947,6 +1995,24 @@ SELECT [UserId], [UserName] FROM [users] ORDER BY [UserName] ASC
 
 ```sql
 SELECT [UserId], [UserName] FROM [users] ORDER BY [UserName] ASC, [CreatedAt] ASC
+```
+
+---
+
+### Users().Select(...).OrderBy(...).Where(...).Limit(...).ExecuteFetchAllAsync() — 4 variants
+
+```sql
+-- base
+SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] ORDER BY [UserId] ASC
+
+-- +filter
+SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [UserId] >= 2 ORDER BY [UserId] ASC
+
+-- +limitOn
+SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] ORDER BY [UserId] ASC OFFSET 0 ROWS FETCH NEXT 1 ROWS ONLY
+
+-- +filter, +limitOn
+SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [UserId] >= 2 ORDER BY [UserId] ASC OFFSET 0 ROWS FETCH NEXT 1 ROWS ONLY
 ```
 
 ---
@@ -5100,7 +5166,7 @@ WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 567 |
+| Total discovered | 573 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 101 |
-| Rendered | 466 |
+| Consolidated (deduped) | 102 |
+| Rendered | 471 |

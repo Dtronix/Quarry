@@ -108,11 +108,11 @@ can't hide in both.
 - Depends on step 1 (ID matching prevents positional misalignment).
 
 ### Step 4: Honor conditional Limit/Offset/Distinct (defect 1)
-- [ ] Plan model: `PaginationPlan` gains `LimitBitIndex`/`OffsetBitIndex` (int?);
+- [x] Plan model: `PaginationPlan` gains `LimitBitIndex`/`OffsetBitIndex` (int?);
   `QueryPlan` gains `DistinctBitIndex` (int?) alongside `IsDistinct`. Equality updated.
-- [ ] ChainAnalyzer: when the Limit/Offset/Distinct site is conditional, record its bit
+- [x] ChainAnalyzer: when the Limit/Offset/Distinct site is conditional, record its bit
   in the plan (site→bit now resolvable by UniqueId). `hasLimit`/`isDistinct` still set.
-- [ ] SqlAssembler rendering, gated per mask (follow the WHERE `GetActiveTerms` pattern):
+- [x] SqlAssembler rendering, gated per mask (follow the WHERE `GetActiveTerms` pattern):
   - `AppendPagination`: skip LIMIT (resp. OFFSET) when its bit is set and absent from
     the mask; paramIndex advances only for rendered parts (per-variant ParameterCount
     then reflects gating automatically — MySQL bind-order extraction is per-variant).
@@ -123,16 +123,16 @@ can't hide in both.
     (shared prefix/suffix decomposition can't express per-mask pagination).
   - SQL Server `ORDER BY (SELECT NULL)` injection only in variants where pagination
     is active.
-- [ ] Emitters: `TransitionBodyEmitter.EmitPagination`/`EmitDistinct` set
+- [x] Emitters: `TransitionBodyEmitter.EmitPagination`/`EmitDistinct` set
   `__c.Mask |= (1 << bit)` when the site is conditional (thread the bit through
   `FileEmitter`/`InterceptorRouter` the same way clause emitters get `clauseBit`).
-- [ ] Terminal binding: bind Limit/Offset carrier fields only when the bit is active
+- [x] Terminal binding: bind Limit/Offset carrier fields only when the bit is active
   (mask-gated, like conditional collection materialization at `CarrierEmitter.cs:1191`).
   Update `MaskAwareTerminalBindingTests` (the ":362 — pagination bound unconditionally"
   design intent is superseded).
-- [ ] MySQL: extend `BuildParamConditionalMap`/bind-order handling to the pagination
+- [x] MySQL: extend `BuildParamConditionalMap`/bind-order handling to the pagination
   virtual slots so positional `?` binding skips inactive pagination params per variant.
-- [ ] Consistency: `ToDiagnostics` active-clause reporting and `ManifestEmitter` variant
+- [x] Consistency: `ToDiagnostics` active-clause reporting and `ManifestEmitter` variant
   labels correct for the new bits (verify `TerminalEmitHelpers.cs:381-389`, `:490`).
 - Tests:
   - `Generation/`: conditional `Limit(25)` → 2 variants, mask-0 SQL has NO `LIMIT`,

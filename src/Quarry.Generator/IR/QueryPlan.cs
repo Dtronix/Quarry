@@ -40,8 +40,10 @@ internal sealed class QueryPlan : IEquatable<QueryPlan>
         IReadOnlyList<WhereTerm>? postUnionWhereTerms = null,
         IReadOnlyList<SqlExpr>? postUnionGroupByExprs = null,
         IReadOnlyList<SqlExpr>? postUnionHavingExprs = null,
-        IReadOnlyList<CteDef>? cteDefinitions = null)
+        IReadOnlyList<CteDef>? cteDefinitions = null,
+        int? distinctBitIndex = null)
     {
+        DistinctBitIndex = distinctBitIndex;
         Kind = kind;
         PrimaryTable = primaryTable;
         Joins = joins;
@@ -84,6 +86,12 @@ internal sealed class QueryPlan : IEquatable<QueryPlan>
     public SelectProjection Projection { get; }
     public PaginationPlan? Pagination { get; }
     public bool IsDistinct { get; }
+
+    /// <summary>
+    /// Conditional bit gating DISTINCT emission, or null when Distinct is unconditional
+    /// (or absent). When set, variants whose mask lacks the bit render without DISTINCT.
+    /// </summary>
+    public int? DistinctBitIndex { get; }
     public IReadOnlyList<SetTerm> SetTerms { get; }
     public IReadOnlyList<InsertColumn> InsertColumns { get; }
     public IReadOnlyList<ConditionalTerm> ConditionalTerms { get; }
@@ -102,6 +110,7 @@ internal sealed class QueryPlan : IEquatable<QueryPlan>
         return Kind == other.Kind
             && Tier == other.Tier
             && IsDistinct == other.IsDistinct
+            && DistinctBitIndex == other.DistinctBitIndex
             && PrimaryTable.Equals(other.PrimaryTable)
             && Projection.Equals(other.Projection)
             && Equals(Pagination, other.Pagination)
@@ -291,12 +300,16 @@ internal sealed class PaginationPlan : IEquatable<PaginationPlan>
         int? literalLimit = null,
         int? literalOffset = null,
         int? limitParamIndex = null,
-        int? offsetParamIndex = null)
+        int? offsetParamIndex = null,
+        int? limitBitIndex = null,
+        int? offsetBitIndex = null)
     {
         LiteralLimit = literalLimit;
         LiteralOffset = literalOffset;
         LimitParamIndex = limitParamIndex;
         OffsetParamIndex = offsetParamIndex;
+        LimitBitIndex = limitBitIndex;
+        OffsetBitIndex = offsetBitIndex;
     }
 
     public int? LiteralLimit { get; }
@@ -304,12 +317,26 @@ internal sealed class PaginationPlan : IEquatable<PaginationPlan>
     public int? LimitParamIndex { get; }
     public int? OffsetParamIndex { get; }
 
+    /// <summary>
+    /// Conditional bit gating LIMIT emission and Limit parameter binding, or null when
+    /// the Limit site is unconditional (or absent).
+    /// </summary>
+    public int? LimitBitIndex { get; }
+
+    /// <summary>
+    /// Conditional bit gating OFFSET emission and Offset parameter binding, or null when
+    /// the Offset site is unconditional (or absent).
+    /// </summary>
+    public int? OffsetBitIndex { get; }
+
     public bool Equals(PaginationPlan? other)
     {
         if (other is null) return false;
         if (ReferenceEquals(this, other)) return true;
         return LiteralLimit == other.LiteralLimit
             && LiteralOffset == other.LiteralOffset
+            && LimitBitIndex == other.LimitBitIndex
+            && OffsetBitIndex == other.OffsetBitIndex
             && LimitParamIndex == other.LimitParamIndex
             && OffsetParamIndex == other.OffsetParamIndex;
     }

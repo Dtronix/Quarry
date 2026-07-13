@@ -217,6 +217,161 @@ public class Svc
     }
 
     // ─────────────────────────────────────────────────────────────────
+    //  Conditional Limit/Offset/Distinct — mask-gated per variant (#307)
+    // ─────────────────────────────────────────────────────────────────
+
+    [Test]
+    public void ConditionalLimit_Literal_GatedPerVariant()
+    {
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public async Task Run(bool limitOn)
+    {
+        var q = _db.Users().Select(u => u);
+        if (limitOn)
+            q = q.Limit(25);
+        await q.ExecuteFetchAllAsync();
+    }
+}
+");
+        AssertPrebuiltDispatchWithMask(code, "SELECT");
+        AssertMaskVariantCount(code, 2);
+
+        var variants = ExtractSqlVariants(code);
+        Assert.That(variants[0], Does.Not.Contain("LIMIT"),
+            "mask 0 (branch not taken) must not paginate");
+        Assert.That(variants[1], Does.Contain("LIMIT 25"),
+            "mask 1 (branch taken) must paginate");
+    }
+
+    [Test]
+    public void ConditionalLimit_RuntimeValued_GatedVariantAndBinding()
+    {
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public async Task Run(bool limitOn, int n)
+    {
+        var q = _db.Users().Select(u => u);
+        if (limitOn)
+            q = q.Limit(n);
+        await q.ExecuteFetchAllAsync();
+    }
+}
+");
+        AssertPrebuiltDispatchWithMask(code, "SELECT");
+        AssertMaskVariantCount(code, 2);
+
+        var variants = ExtractSqlVariants(code);
+        Assert.That(variants[0], Does.Not.Contain("LIMIT"),
+            "mask 0 must not paginate — a 0-default carrier field must never produce LIMIT 0");
+        Assert.That(variants[1], Does.Contain("LIMIT @p0"),
+            "mask 1 must paginate with the runtime parameter");
+
+        // The Limit DbParameter must only be bound when the bit is active — the mask-0
+        // SQL has no placeholder for it.
+        Assert.That(code, Does.Contain("var __pL"), "Limit parameter binding should exist");
+        var idx = code.IndexOf("var __pL", StringComparison.Ordinal);
+        var windowStart = Math.Max(0, idx - 160);
+        var before = code.Substring(windowStart, idx - windowStart);
+        Assert.That(before, Does.Contain("__c.Mask &"),
+            "Limit parameter binding must be mask-gated");
+    }
+
+    [Test]
+    public void ConditionalOffset_Literal_GatedPerVariant()
+    {
+        // Unconditional Limit + conditional Offset (Offset without Limit is a
+        // pre-existing FormatLimitOffset gap on SQLite/MySQL, unrelated to gating).
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public async Task Run(bool skipFirst)
+    {
+        var q = _db.Users().Select(u => u).Limit(10);
+        if (skipFirst)
+            q = q.Offset(1);
+        await q.ExecuteFetchAllAsync();
+    }
+}
+");
+        AssertPrebuiltDispatchWithMask(code, "SELECT");
+        AssertMaskVariantCount(code, 2);
+
+        var variants = ExtractSqlVariants(code);
+        Assert.That(variants[0], Does.Contain("LIMIT 10"));
+        Assert.That(variants[0], Does.Not.Contain("OFFSET"),
+            "mask 0 (branch not taken) must not skip rows");
+        Assert.That(variants[1], Does.Contain("LIMIT 10 OFFSET 1"),
+            "mask 1 (branch taken) must skip rows");
+    }
+
+    [Test]
+    public void ConditionalDistinct_GatedPerVariant()
+    {
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public async Task Run(bool dedupe)
+    {
+        var q = _db.Orders().Select(o => o.UserId);
+        if (dedupe)
+            q = q.Distinct();
+        await q.ExecuteFetchAllAsync();
+    }
+}
+");
+        AssertPrebuiltDispatchWithMask(code, "SELECT");
+        AssertMaskVariantCount(code, 2);
+
+        var variants = ExtractSqlVariants(code);
+        Assert.That(variants[0], Does.Not.Contain("DISTINCT"),
+            "mask 0 (branch not taken) must not deduplicate");
+        Assert.That(variants[1], Does.Contain("SELECT DISTINCT"),
+            "mask 1 (branch taken) must deduplicate");
+    }
+
+    [Test]
+    public void ConditionalDistinct_OrderByNonProjected_WrapOnlyWhenActive()
+    {
+        // DISTINCT + ORDER BY on a non-projected column requires the derived-table wrap
+        // (#267) — but only in variants where the conditional DISTINCT is active.
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public async Task Run(bool dedupe)
+    {
+        var q = _db.Orders().Select(o => o.UserId).OrderBy(o => o.Total);
+        if (dedupe)
+            q = q.Distinct();
+        await q.ExecuteFetchAllAsync();
+    }
+}
+");
+        AssertPrebuiltDispatchWithMask(code, "SELECT");
+        AssertMaskVariantCount(code, 2);
+
+        var variants = ExtractSqlVariants(code);
+        Assert.That(variants[0], Does.Not.Contain("DISTINCT"));
+        Assert.That(variants[0], Does.Not.Contain("FROM (SELECT"),
+            "mask 0 renders flat — no derived-table wrap without DISTINCT");
+        Assert.That(variants[1], Does.Contain("DISTINCT"));
+        Assert.That(variants[1], Does.Contain("FROM (SELECT"),
+            "mask 1 must use the derived-table wrap for DISTINCT + non-projected ORDER BY");
+    }
+
+    // ─────────────────────────────────────────────────────────────────
     //  Conditional WithTimeout — no bit consumed (#307)
     // ─────────────────────────────────────────────────────────────────
 

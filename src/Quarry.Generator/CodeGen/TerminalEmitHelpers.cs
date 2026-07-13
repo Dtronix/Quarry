@@ -143,11 +143,11 @@ internal static class TerminalEmitHelpers
                 entries.Add($"new(\"@p{p.GlobalIndex}\", __pVal{p.GlobalIndex}{meta})");
             }
             if (hasLimitField)
-                entries.Add($"new(\"@p{paginationBaseIdx}\", __pValL, typeName: \"Int32\")");
+                entries.Add($"new(\"@p{paginationBaseIdx}\", __pValL, typeName: \"Int32\"{FormatPaginationMeta(chain, isLimit: true)})");
             if (hasOffsetField)
             {
                 var offsetIdx = paginationBaseIdx + (hasLimitField ? 1 : 0);
-                entries.Add($"new(\"@p{offsetIdx}\", __pValO, typeName: \"Int32\")");
+                entries.Add($"new(\"@p{offsetIdx}\", __pValO, typeName: \"Int32\"{FormatPaginationMeta(chain, isLimit: false)})");
             }
             sb.Append("        var __params = new DiagnosticParameter[] { ");
             sb.Append(string.Join(", ", entries));
@@ -190,16 +190,26 @@ internal static class TerminalEmitHelpers
         {
             // __diagShift == __colShift here: all collections processed, same accumulation.
             var limitNameExpr = EmitDiagParamNameExprWithVar(chain.Dialect, paginationBaseIdx, "__diagShift");
-            sb.AppendLine($"        __paramList.Add(new DiagnosticParameter({limitNameExpr}, __pValL, typeName: \"Int32\"));");
+            sb.AppendLine($"        __paramList.Add(new DiagnosticParameter({limitNameExpr}, __pValL, typeName: \"Int32\"{FormatPaginationMeta(chain, isLimit: true)}));");
         }
         if (hasOffsetField)
         {
             var offsetIdx = paginationBaseIdx + (hasLimitField ? 1 : 0);
             var offsetNameExpr = EmitDiagParamNameExprWithVar(chain.Dialect, offsetIdx, "__diagShift");
-            sb.AppendLine($"        __paramList.Add(new DiagnosticParameter({offsetNameExpr}, __pValO, typeName: \"Int32\"));");
+            sb.AppendLine($"        __paramList.Add(new DiagnosticParameter({offsetNameExpr}, __pValO, typeName: \"Int32\"{FormatPaginationMeta(chain, isLimit: false)}));");
         }
 
         sb.AppendLine("        var __params = __paramList.ToArray();");
+    }
+
+    /// <summary>
+    /// Conditional metadata suffix for a pagination DiagnosticParameter: marks the
+    /// Limit/Offset parameter conditional when its site carries a mask bit.
+    /// </summary>
+    private static string FormatPaginationMeta(AssembledPlan chain, bool isLimit)
+    {
+        var bit = isLimit ? chain.Plan.Pagination?.LimitBitIndex : chain.Plan.Pagination?.OffsetBitIndex;
+        return bit.HasValue ? $", isConditional: true, conditionalBitIndex: {bit.Value}" : "";
     }
 
     /// <summary>
