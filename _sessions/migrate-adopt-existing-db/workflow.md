@@ -3,7 +3,7 @@
 platform: github
 base-branch: master
 ## State
-phase: REMEDIATE
+phase: FINALIZE
 status: active
 issue: discussion
 pr: 323
@@ -116,3 +116,4 @@ Shared refactor: extract introspection (connstring build + introspector factory 
 | 2026-07-13 | REVIEW (resume) | Resumed from suspend. origin/master advanced by 1 commit (4fe287f runtime hot-path fixes). Rebased branch (HEAD e61d05f), full suite green (3696), force-pushed. Analysis pass (agent) → review.md: 15 findings (0H/5M/10L), Security clean. |
 | 2026-07-13 | REVIEW→REMEDIATE | Classified 3A/6B/2C/4D; user override F10→A, F11→A + "implement all A,B,C now". Final 5A/6B/0C/4D. Remediating F1,F5,F10,F11,F12 (A) + F2,F6,F7,F8,F9,F13 (B); dismiss F3,F4,F14,F15 (D). |
 | 2026-07-13 | REMEDIATE | Fixed all 11 A/B findings: F5 schema-aware DropGuard (+PG multi-schema integration test), F6/F7 RenameMap.Validate (adopt reordered so validation precedes baseline write), F8 canonical table-rename schema transfer, F2 non-fresh adopt warning, F9 adopt guard E2E test, F10 PG multi-schema + FormatTable unit tests, F11 history-table DDL parity test, F12 dead helper removed, F1/F13 docs. Dismissed 4 D. Full suite GREEN 3714 (+18 tests: Analyzers 146, Migration 201, Quarry 3367). |
+| 2026-07-13 | REMEDIATE→FINALIZE | Rebased on origin/master again (62510f5); suite green 3796. Committed remediation, force-pushed, opened PR #323. CI GREEN on HEAD 23300c7. Awaiting merge decision. |
