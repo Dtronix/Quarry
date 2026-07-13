@@ -283,7 +283,10 @@ internal static class CarrierEmitter
             var extractionPlan = carrier.GetExtractionPlan(site.UniqueId);
             if (extractionPlan != null && extractionPlan.Extractors.Count > 0)
             {
-                sb.AppendLine($"        var __target = {delegateParamName}.Target!;");
+                // __target (the func.Target display-class read) is only needed for instance
+                // captures; when every extractor is a static field it would be dead.
+                if (extractionPlan.Extractors.Any(e => !e.IsStaticField))
+                    sb.AppendLine($"        var __target = {delegateParamName}.Target!;");
                 foreach (var extractor in extractionPlan.Extractors)
                 {
                     var targetExpr = extractor.IsStaticField ? "null!" : "__target";
@@ -501,7 +504,10 @@ internal static class CarrierEmitter
         var extractionPlan = carrier.GetExtractionPlan(site.UniqueId);
         if (extractionPlan != null && extractionPlan.Extractors.Count > 0)
         {
-            sb.AppendLine($"        var __target = {extractionPlan.DelegateParamName}.Target!;");
+            // __target (the func.Target display-class read) is only needed for instance
+            // captures; when every extractor is a static field it would be dead.
+            if (extractionPlan.Extractors.Any(e => !e.IsStaticField))
+                sb.AppendLine($"        var __target = {extractionPlan.DelegateParamName}.Target!;");
             foreach (var extractor in extractionPlan.Extractors)
             {
                 var targetExpr = extractor.IsStaticField ? "null!" : "__target";
@@ -526,7 +532,10 @@ internal static class CarrierEmitter
         var extractionPlan = carrier.GetExtractionPlan(site.UniqueId);
         if (extractionPlan != null && extractionPlan.Extractors.Count > 0)
         {
-            sb.AppendLine($"        var __target = {extractionPlan.DelegateParamName}.Target!;");
+            // __target (the func.Target display-class read) is only needed for instance
+            // captures; when every extractor is a static field it would be dead.
+            if (extractionPlan.Extractors.Any(e => !e.IsStaticField))
+                sb.AppendLine($"        var __target = {extractionPlan.DelegateParamName}.Target!;");
             foreach (var extractor in extractionPlan.Extractors)
             {
                 var targetExpr = extractor.IsStaticField ? "null!" : "__target";
