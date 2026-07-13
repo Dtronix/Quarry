@@ -5,10 +5,10 @@ platform: github
 base-branch: master
 
 ## State
-phase: REVIEW
+phase: REMEDIATE
 status: active
 issue: #307
-pr:
+pr: #322
 
 ## Problem Statement
 Issue #307 — Conditional clause mask model: unconditional Limit/Offset/Distinct +
@@ -248,9 +248,10 @@ rebase later if #306 merges first.
 ## Session Log
 | Date | Phases | Summary |
 |------|--------|---------|
-| 2026-07-13 | IMPLEMENT (steps 5-7) | Step 5 structural cascade grouping (per-arm enumeration, ternary support, base-variant-first ordering fix after gap-pin failure); step 6 reachability validator + 13 unit tests; step 7 docs (root llm.md example block, generator llm.md cascade model, querying.md — deliberate small extension). Suite green: 3339+201+146. |
-| 2026-07-13 | IMPLEMENT→REVIEW (suspended) | All 7 plan steps complete. Suspended by context check (3 steps this session) at the REVIEW boundary; branch pushed. Next session: rebase, re-test, delegate analysis pass. |
 | 2026-07-13 | INTAKE | Loaded issue #307, created worktree + branch from 7bb0e35, baseline suite started. #305 workflow suspended at FINALIZE in parallel worktree. |
 | 2026-07-13 | DESIGN, PLAN | Baseline green (3628 tests). Verified all issue claims in source; found WithTimeout already runtime-correct (bit is waste) and the fragile positional bit protocol. User approved: honor Limit/Offset/Distinct bits, structural cascade grouping, both defense layers. 7-step plan.md approved; entering IMPLEMENT. |
 | 2026-07-13 | IMPLEMENT (suspended) | Steps 1-4 committed, suite green after each (now 3307+201+146). Step 1 SiteUniqueId bit identity (+ latent-bug regression test); step 2 runtime dispatch guard + else-if pin; step 3 WithTimeout bit removal + IsKnownBuilderMethod fix; step 4 conditional Limit/Offset/Distinct fully honored (render gating, bit setting, binding gating, MySQL bind-order, diagnostics). Suspended by context check; next: step 5. |
 | 2026-07-13 | IMPLEMENT (resumed) | Resumed in new session at step 5 (structural cascade grouping). |
+| 2026-07-13 | IMPLEMENT (steps 5-7) | Step 5 structural cascade grouping (per-arm enumeration, ternary support, base-variant-first ordering fix after gap-pin failure); step 6 reachability validator + 13 unit tests; step 7 docs (root llm.md example block, generator llm.md cascade model, querying.md — deliberate small extension). Suite green: 3339+201+146. |
+| 2026-07-13 | IMPLEMENT→REVIEW (suspended) | All 7 plan steps complete. Suspended by context check (3 steps this session) at the REVIEW boundary; branch pushed. Next session: rebase, re-test, delegate analysis pass. |
+| 2026-07-13 | REVIEW, REMEDIATE | Resumed at REVIEW; base unmoved, delegated analysis pass (16 findings: 1H/5M/10L). User classified 7A/7B/2D (all C recs promoted to A). Remediated F1-F14: nested-cascade zero option + validator depth evidence (F3/F11 High), QRY032 demotions for else-if-condition and sibling-arm sites (F4/F6), offset-only no-limit idiom (F5), manifest arm labels + pagination diag meta (F12/F13), ~20 new tests (F7-F10). Rebased onto #308 merge (one golden conflict), suite green 3388+201+146. PR #322 created. |
