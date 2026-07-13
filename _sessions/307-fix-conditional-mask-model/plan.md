@@ -149,21 +149,24 @@ can't hide in both.
 - Depends on step 1 (bit identity); independent of steps 2/3.
 
 ### Step 5: Structural cascade grouping (defect 2)
-- [ ] `NestingContext` gains `GroupKey` (string — cascade head `IfStatementSyntax`
+- [x] `NestingContext` gains `GroupKey` (string — cascade head `IfStatementSyntax`
   span/position; ternary uses its own span), `ArmIndex` (int), `ArmCount` (int),
   `HasFinalElse` (bool). Equality updated. `NestingDepth` semantics: cascades, not ifs.
-- [ ] `DetectNestingContext` (UsageSiteDiscovery): walk from the innermost containing
+- [x] `DetectNestingContext` (UsageSiteDiscovery): walk from the innermost containing
   arm to the cascade head (`if` whose `Parent` is an `ElseClauseSyntax` belongs to the
   parent's cascade); compute arm index by walking the cascade's arms; count arms +
   final else. Ternary = 2-arm cascade with final else. Depth = number of distinct
   cascades crossed walking up to the method body.
-- [ ] ChainAnalyzer: group conditional sites by `GroupKey` (drop condition-text keying
+- [x] ChainAnalyzer: group conditional sites by `GroupKey` (drop condition-text keying
   and the `BranchKind`-based exclusive/independent split); implement per-arm
   enumeration exactly as in the algorithm section. `BranchKind` may become redundant —
-  remove it only if nothing else consumes it, else leave populated.
-- [ ] Verify `MaxIfNestingDepth = 2` guard still demotes cascade-in-cascade beyond
+  remove it only if nothing else consumes it, else leave populated. (Kept: consumed by
+  TerminalEmitHelpers diagnostics; derived as MutuallyExclusive iff ArmCount ≥ 2.
+  No-arm option enumerates FIRST — base variant leads diagnostics/manifest output.)
+- [x] Verify `MaxIfNestingDepth = 2` guard still demotes cascade-in-cascade beyond
   depth 2, and NO LONGER demotes flat else-if chains of any arm count (subject to the
-  8-bit total limit → QRY032 as today).
+  8-bit total limit → QRY032 as today). (Pinned by CascadeThreeDeep_DemotedToRuntimeBuild
+  and ElseIfChain_FourArms_NotDemotedAndPerArmMasks.)
 - Tests:
   - `Generation/`: repro shape 1 (3-arm else-if, one Where per arm) → masks exactly
     {1,2,4}, no null gaps ≤ maxMask reachable, all three predicates present in their

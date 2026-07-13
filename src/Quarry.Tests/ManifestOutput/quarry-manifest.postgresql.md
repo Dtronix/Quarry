@@ -2066,6 +2066,48 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 ---
 
+### Users().Select(...).OrderBy(...).Where(...).Where(...).ExecuteFetchAllAsync() — 3 variants
+
+```sql
+-- base
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" ORDER BY "UserId" ASC
+
+-- +a
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserId" >= 2 ORDER BY "UserId" ASC
+
+-- +b
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserId" >= 3 ORDER BY "UserId" ASC
+```
+
+---
+
+### Users().Select(...).OrderBy(...).Where(...).Where(...).Where(...).ExecuteFetchAllAsync() — 3 variants
+
+```sql
+-- +a
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserId" >= 1 ORDER BY "UserId" ASC
+
+-- +b
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserId" >= 2 ORDER BY "UserId" ASC
+
+-- +b
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserId" >= 3 ORDER BY "UserId" ASC
+```
+
+---
+
+### Users().Select(...).OrderBy(...).Where(...).Where(...).Where(...).ExecuteFetchAllAsync() — 2 variants
+
+```sql
+-- +strict, +strict
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE ("UserId" >= 2) AND ("IsActive" = TRUE) ORDER BY "UserId" ASC
+
+-- +strict
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserId" >= 1 ORDER BY "UserId" ASC
+```
+
+---
+
 ### Users().Select(...).Prepare().ExecuteFetchAllAsync()
 
 ```sql
@@ -2294,6 +2336,21 @@ SELECT "UserId", "UserName" FROM "users" UNION ALL SELECT "ProductId", "ProductN
 
 ```sql
 SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = TRUE
+```
+
+---
+
+### Users().Select(...).Where(...).Where(...).Where(...).ToDiagnostics() — 3 variants
+
+```sql
+-- +a
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserId" >= 1
+
+-- +b
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserId" >= 2
+
+-- +b
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserId" >= 3
 ```
 
 ---
@@ -5354,7 +5411,7 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 608 |
+| Total discovered | 612 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 118 |
-| Rendered | 490 |
+| Rendered | 494 |

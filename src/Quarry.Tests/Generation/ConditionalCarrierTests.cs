@@ -449,6 +449,284 @@ public class Svc
             "Single-variant chains dispatch a fixed SQL string and need no guard");
     }
 
+    // ─────────────────────────────────────────────────────────────────
+    //  Cascades — else-if chains, multi-clause arms, ternaries (#307 defect 2)
+    // ─────────────────────────────────────────────────────────────────
+
+    [Test]
+    public void ElseIfChain_ThreeArms_PerArmMasks()
+    {
+        // Repro shape 1 from #307: an else-if cascade previously keyed branch groups by
+        // condition text, splitting the arms into an independent bit plus an exclusive
+        // pair — masks {2,3,4,5} with a null hole where runtime mask 1 dispatched.
+        // Structural grouping enumerates one mask per arm: exactly {1, 2, 4}.
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public async Task Run(bool a, bool b)
+    {
+        var q = _db.Users().Select(u => u);
+        if (a)
+            q = q.Where(u => u.UserId >= 1);
+        else if (b)
+            q = q.Where(u => u.UserId >= 2);
+        else
+            q = q.Where(u => u.UserId >= 3);
+        await q.ExecuteFetchAllAsync();
+    }
+}
+");
+        AssertPrebuiltDispatchWithMask(code, "SELECT");
+        AssertMaskVariantCount(code, 3);
+
+        var entries = ExtractSqlArrayEntries(code);
+        Assert.That(entries, Has.Count.EqualTo(5), "array is sized to max mask 4 (bit 2) + 1");
+        Assert.That(entries[0], Is.Null, "mask 0 unreachable — the cascade has a final else");
+        Assert.That(entries[3], Is.Null, "mask 3 unreachable — arms are mutually exclusive");
+        Assert.That(entries[1], Does.Contain("\"\"UserId\"\" >= 1"));
+        Assert.That(entries[1], Does.Not.Contain(">= 2").And.Not.Contain(">= 3"));
+        Assert.That(entries[2], Does.Contain("\"\"UserId\"\" >= 2"));
+        Assert.That(entries[2], Does.Not.Contain(">= 1").And.Not.Contain(">= 3"));
+        Assert.That(entries[4], Does.Contain("\"\"UserId\"\" >= 3"));
+        Assert.That(entries[4], Does.Not.Contain(">= 1").And.Not.Contain(">= 2"));
+    }
+
+    [Test]
+    public void IfElse_TwoClausesInOneArm_ArmBitsSetTogether()
+    {
+        // Repro shape 2 from #307: two clauses in one arm share a condition, so the old
+        // exclusive-pair enumeration produced masks {1,2,4} — the both-bits mask 3 that
+        // the runtime actually sets was a null hole, and variants 1/2 each carried only
+        // half the arm's predicates. Per-arm enumeration ORs an arm's bits together.
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public async Task Run(bool strict)
+    {
+        var q = _db.Users().Select(u => u);
+        if (strict)
+        {
+            q = q.Where(u => u.IsActive);
+            q = q.Where(u => u.Age > 18);
+        }
+        else
+        {
+            q = q.Where(u => u.UserId >= 1);
+        }
+        await q.ExecuteFetchAllAsync();
+    }
+}
+");
+        AssertPrebuiltDispatchWithMask(code, "SELECT");
+        AssertMaskVariantCount(code, 2);
+
+        var entries = ExtractSqlArrayEntries(code);
+        Assert.That(entries, Has.Count.EqualTo(5), "array is sized to max mask 4 (bit 2) + 1");
+        Assert.That(entries[0], Is.Null);
+        Assert.That(entries[1], Is.Null, "bit 0 alone is unreachable — its arm always sets bit 1 too");
+        Assert.That(entries[2], Is.Null, "bit 1 alone is unreachable — its arm always sets bit 0 too");
+        Assert.That(entries[3], Does.Contain("\"\"IsActive\"\" = 1").And.Contain("\"\"Age\"\" > 18"),
+            "the both-bits mask carries BOTH of the arm's predicates");
+        Assert.That(entries[4], Does.Contain("\"\"UserId\"\" >= 1"));
+        Assert.That(entries[4], Does.Not.Contain("\"\"IsActive\"\" = 1").And.Not.Contain("\"\"Age\"\" > 18"),
+            "IsActive/Age appear only as projected columns in the else-arm variant, not as predicates");
+    }
+
+    [Test]
+    public void ElseIfChain_NoFinalElse_IncludesMaskZero()
+    {
+        // Without a final else the cascade can take no arm at all — mask 0 must be
+        // enumerated alongside one mask per arm.
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public async Task Run(bool a, bool b)
+    {
+        var q = _db.Users().Select(u => u);
+        if (a)
+            q = q.Where(u => u.UserId >= 1);
+        else if (b)
+            q = q.Where(u => u.UserId >= 2);
+        await q.ExecuteFetchAllAsync();
+    }
+}
+");
+        AssertPrebuiltDispatchWithMask(code, "SELECT");
+        AssertMaskVariantCount(code, 3);
+
+        var entries = ExtractSqlArrayEntries(code);
+        Assert.That(entries, Has.Count.EqualTo(3));
+        Assert.That(entries[0], Is.Not.Null.And.Not.Contain(">= 1").And.Not.Contain(">= 2"),
+            "mask 0 (no arm taken) renders no conditional predicate");
+        Assert.That(entries[1], Does.Contain("\"\"UserId\"\" >= 1"));
+        Assert.That(entries[2], Does.Contain("\"\"UserId\"\" >= 2"));
+    }
+
+    [Test]
+    public void IfElse_ElseArmWithoutChainSites_IncludesMaskZero()
+    {
+        // The else arm exists but never touches the chain — taking it sets no bits,
+        // so mask 0 stays reachable even though the cascade has a final else.
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public int Skipped;
+    public async Task Run(bool filter)
+    {
+        var q = _db.Users().Select(u => u);
+        if (filter)
+            q = q.Where(u => u.IsActive);
+        else
+            Skipped++;
+        await q.ExecuteFetchAllAsync();
+    }
+}
+");
+        AssertPrebuiltDispatchWithMask(code, "SELECT");
+        AssertMaskVariantCount(code, 2);
+
+        var entries = ExtractSqlArrayEntries(code);
+        Assert.That(entries, Has.Count.EqualTo(2));
+        Assert.That(entries[0], Is.Not.Null.And.Not.Contain("\"\"IsActive\"\" = 1"));
+        Assert.That(entries[1], Does.Contain("\"\"IsActive\"\" = 1"));
+    }
+
+    [Test]
+    public void TernaryReassignment_ConditionalArm_GetsBitAndMaskZero()
+    {
+        // `q = flag ? q.Where(...) : q` is a 2-arm cascade with a final else whose
+        // second arm has no chain site → masks {0, 1}. Previously a ternary never
+        // counted toward nesting depth, so the clause was baked unconditionally into
+        // the single SQL variant — silently applied even when flag was false.
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public async Task Run(bool flag)
+    {
+        var q = _db.Users().Select(u => u);
+        q = flag ? q.Where(u => u.IsActive) : q;
+        await q.ExecuteFetchAllAsync();
+    }
+}
+");
+        AssertPrebuiltDispatchWithMask(code, "SELECT");
+        AssertMaskVariantCount(code, 2);
+
+        var entries = ExtractSqlArrayEntries(code);
+        Assert.That(entries, Has.Count.EqualTo(2));
+        Assert.That(entries[0], Is.Not.Null.And.Not.Contain("\"\"IsActive\"\" = 1"),
+            "mask 0 (WhenFalse arm) must not carry the predicate");
+        Assert.That(entries[1], Does.Contain("\"\"IsActive\"\" = 1"));
+    }
+
+    [Test]
+    public void ElseIfChain_FourArms_NotDemotedAndPerArmMasks()
+    {
+        // Flat else-if chains previously accumulated nesting depth per if-statement, so
+        // a 4-arm chain (site depths 1,2,3,3) tripped the depth-2 guard and demoted to
+        // QRY032. Cascade-based depth counts the whole chain as ONE level.
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public async Task Run(int tier)
+    {
+        var q = _db.Users().Select(u => u);
+        if (tier == 0)
+            q = q.Where(u => u.UserId >= 1);
+        else if (tier == 1)
+            q = q.Where(u => u.UserId >= 2);
+        else if (tier == 2)
+            q = q.Where(u => u.UserId >= 3);
+        else
+            q = q.Where(u => u.UserId >= 4);
+        await q.ExecuteFetchAllAsync();
+    }
+}
+");
+        AssertPrebuiltDispatchWithMask(code, "SELECT");
+        AssertMaskVariantCount(code, 4);
+
+        var entries = ExtractSqlArrayEntries(code);
+        Assert.That(entries, Has.Count.EqualTo(9), "array is sized to max mask 8 (bit 3) + 1");
+        Assert.That(entries[1], Does.Contain(">= 1"));
+        Assert.That(entries[2], Does.Contain(">= 2"));
+        Assert.That(entries[4], Does.Contain(">= 3"));
+        Assert.That(entries[8], Does.Contain(">= 4"));
+        foreach (var gap in new[] { 0, 3, 5, 6, 7 })
+            Assert.That(entries[gap], Is.Null, $"mask {gap} is unreachable for a 4-arm cascade");
+    }
+
+    [Test]
+    public void CascadeInsideCascadeArm_DepthTwo_EnumeratesSuperset()
+    {
+        // A cascade nested inside a cascade arm is depth 2 — still analyzable. The inner
+        // and outer cascades enumerate independently (a superset of what is reachable).
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public async Task Run(bool outer, bool inner)
+    {
+        var q = _db.Users().Select(u => u);
+        if (outer)
+        {
+            q = q.Where(u => u.IsActive);
+            if (inner)
+                q = q.Where(u => u.Age > 18);
+        }
+        await q.ExecuteFetchAllAsync();
+    }
+}
+");
+        AssertPrebuiltDispatchWithMask(code, "SELECT");
+        // Outer arm bit crossed with inner arm bit: {0, 1} × {0, 2} → 4 variants.
+        AssertMaskVariantCount(code, 4);
+    }
+
+    [Test]
+    public void CascadeThreeDeep_DemotedToRuntimeBuild()
+    {
+        // Conditional sites more than two cascades below the terminal still demote.
+        var source = SharedSchema + ContextDecl + @"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public async Task Run(bool a, bool b, bool c)
+    {
+        var q = _db.Users().Select(u => u);
+        if (a)
+        {
+            if (b)
+            {
+                if (c)
+                    q = q.Where(u => u.IsActive);
+            }
+        }
+        await q.ExecuteFetchAllAsync();
+    }
+}
+";
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+        var diagnostics = result.Results.SelectMany(r => r.Diagnostics).ToList();
+        Assert.That(diagnostics.Any(d => d.Id == "QRY032"),
+            "depth-3 conditional nesting must demote the chain to RuntimeBuild (QRY032)");
+    }
+
     /// <summary>
     /// Extracts the _sql array entries (verbatim string lines) in mask order.
     /// </summary>
@@ -457,6 +735,19 @@ public class Svc
         return code.Split('\n')
             .Select(l => l.Trim())
             .Where(l => l.StartsWith("@\"") && l.EndsWith("\","))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Extracts ALL _sql array entry lines in mask-index order, mapping null! gap
+    /// entries to null — index N is the SQL for mask N (or null when unenumerated).
+    /// </summary>
+    private static List<string?> ExtractSqlArrayEntries(string code)
+    {
+        return code.Split('\n')
+            .Select(l => l.Trim())
+            .Where(l => (l.StartsWith("@\"") && l.EndsWith("\",")) || l == "null!,")
+            .Select(l => l == "null!," ? null : l)
             .ToList();
     }
 

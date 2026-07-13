@@ -20,34 +20,216 @@ namespace Quarry.Tests.SqlOutput;
 [TestFixture]
 internal class CrossDialectConditionalMaskTests
 {
-    #region Unenumerated Mask Guard (#307)
+    #region Cascades — else-if chains and multi-clause arms (#307 defect 2)
 
-    [Test]
-    public async Task Mask_ElseIfChain_UnenumeratedMask_ThrowsActionableGuard()
+    [TestCase(0)]
+    [TestCase(1)]
+    [TestCase(2)]
+    public async Task Mask_ElseIfChain_ThreeArms_ExecutesEachArm(int arm)
     {
-        // PIN (#307 step 2): a one-level else-if cascade currently produces an
-        // unenumerated mask when the first arm executes — branch groups are keyed by
-        // condition text, so the first arm's bit is enumerated as independent while
-        // the later arms form the exclusive group (issue #307 defect 2). Until step 5
-        // makes these shapes fully supported, the terminal must fail with the
-        // actionable guard exception, not a provider null-CommandText error.
-        // Step 5 replaces this pin with correct-execution assertions.
+        // Replaces the step-2 guard pin: with structural cascade grouping the else-if
+        // shape enumerates one mask per arm ({1,2,4}) and every runtime path dispatches
+        // a real variant. Before #307 step 5, arm 0 hit an unenumerated mask (null SQL).
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, _, _, _) = t;
+        var (Lite, Pg, My, Ss) = t;
 
-        bool a = true, b = false;
-        var q = Lite.Users().Select(u => u);
+        bool a = arm == 0, b = arm == 1;
+
+        var lt = Lite.Users().Select(u => u).OrderBy(u => u.UserId);
+        var pg = Pg.Users().Select(u => u).OrderBy(u => u.UserId);
+        var my = My.Users().Select(u => u).OrderBy(u => u.UserId);
+        var ss = Ss.Users().Select(u => u).OrderBy(u => u.UserId);
+
         if (a)
-            q = q.Where(u => u.UserId >= 1);
+        {
+            lt = lt.Where(u => u.UserId >= 1);
+            pg = pg.Where(u => u.UserId >= 1);
+            my = my.Where(u => u.UserId >= 1);
+            ss = ss.Where(u => u.UserId >= 1);
+        }
         else if (b)
-            q = q.Where(u => u.UserId >= 2);
+        {
+            lt = lt.Where(u => u.UserId >= 2);
+            pg = pg.Where(u => u.UserId >= 2);
+            my = my.Where(u => u.UserId >= 2);
+            ss = ss.Where(u => u.UserId >= 2);
+        }
         else
-            q = q.Where(u => u.UserId >= 3);
+        {
+            lt = lt.Where(u => u.UserId >= 3);
+            pg = pg.Where(u => u.UserId >= 3);
+            my = my.Where(u => u.UserId >= 3);
+            ss = ss.Where(u => u.UserId >= 3);
+        }
 
-        var ex = Assert.ThrowsAsync<InvalidOperationException>(
-            async () => await q.ExecuteFetchAllAsync());
-        Assert.That(ex!.Message, Does.Contain("mask"));
-        Assert.That(ex.Message, Does.Contain("Quarry"));
+        var expectedCount = 3 - arm;
+        var expectedFirstId = arm + 1;
+
+        var ltRows = await lt.ExecuteFetchAllAsync();
+        var pgRows = await pg.ExecuteFetchAllAsync();
+        var myRows = await my.ExecuteFetchAllAsync();
+        var ssRows = await ss.ExecuteFetchAllAsync();
+        Assert.That(ltRows.Count, Is.EqualTo(expectedCount));
+        Assert.That(ltRows[0].UserId, Is.EqualTo(expectedFirstId));
+        Assert.That(pgRows.Count, Is.EqualTo(expectedCount));
+        Assert.That(pgRows[0].UserId, Is.EqualTo(expectedFirstId));
+        Assert.That(myRows.Count, Is.EqualTo(expectedCount));
+        Assert.That(myRows[0].UserId, Is.EqualTo(expectedFirstId));
+        Assert.That(ssRows.Count, Is.EqualTo(expectedCount));
+        Assert.That(ssRows[0].UserId, Is.EqualTo(expectedFirstId));
+    }
+
+    [TestCase(0)]
+    [TestCase(1)]
+    [TestCase(2)]
+    public async Task Mask_ElseIfChain_ThreeArms_Sql(int arm)
+    {
+        // ToDiagnostics consistency: the reported SQL carries exactly the taken arm's
+        // predicate in every dialect.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        bool a = arm == 0, b = arm == 1;
+
+        var lt = Lite.Users().Select(u => u);
+        var pg = Pg.Users().Select(u => u);
+        var my = My.Users().Select(u => u);
+        var ss = Ss.Users().Select(u => u);
+
+        if (a)
+        {
+            lt = lt.Where(u => u.UserId >= 1);
+            pg = pg.Where(u => u.UserId >= 1);
+            my = my.Where(u => u.UserId >= 1);
+            ss = ss.Where(u => u.UserId >= 1);
+        }
+        else if (b)
+        {
+            lt = lt.Where(u => u.UserId >= 2);
+            pg = pg.Where(u => u.UserId >= 2);
+            my = my.Where(u => u.UserId >= 2);
+            ss = ss.Where(u => u.UserId >= 2);
+        }
+        else
+        {
+            lt = lt.Where(u => u.UserId >= 3);
+            pg = pg.Where(u => u.UserId >= 3);
+            my = my.Where(u => u.UserId >= 3);
+            ss = ss.Where(u => u.UserId >= 3);
+        }
+
+        var bound = arm + 1;
+        var cols = "\"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\"";
+        var colsMy = "`UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin`";
+        var colsSs = "[UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin]";
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: $"SELECT {cols} FROM \"users\" WHERE \"UserId\" >= {bound}",
+            pg:     $"SELECT {cols} FROM \"users\" WHERE \"UserId\" >= {bound}",
+            mysql:  $"SELECT {colsMy} FROM `users` WHERE `UserId` >= {bound}",
+            ss:     $"SELECT {colsSs} FROM [users] WHERE [UserId] >= {bound}");
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task Mask_TwoClausesInOneBranch_ExecutesBothWays(bool strict)
+    {
+        // Repro shape 2 from #307: both clauses of the taken arm must apply together.
+        // Before step 5 the both-bits mask was never enumerated (null SQL at runtime),
+        // and the enumerated single-bit variants each carried only half the predicates.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Select(u => u).OrderBy(u => u.UserId);
+        var pg = Pg.Users().Select(u => u).OrderBy(u => u.UserId);
+        var my = My.Users().Select(u => u).OrderBy(u => u.UserId);
+        var ss = Ss.Users().Select(u => u).OrderBy(u => u.UserId);
+
+        if (strict)
+        {
+            lt = lt.Where(u => u.UserId >= 2);
+            lt = lt.Where(u => u.IsActive);
+            pg = pg.Where(u => u.UserId >= 2);
+            pg = pg.Where(u => u.IsActive);
+            my = my.Where(u => u.UserId >= 2);
+            my = my.Where(u => u.IsActive);
+            ss = ss.Where(u => u.UserId >= 2);
+            ss = ss.Where(u => u.IsActive);
+        }
+        else
+        {
+            lt = lt.Where(u => u.UserId >= 1);
+            pg = pg.Where(u => u.UserId >= 1);
+            my = my.Where(u => u.UserId >= 1);
+            ss = ss.Where(u => u.UserId >= 1);
+        }
+
+        // strict: UserId >= 2 AND IsActive → only Bob (2). else: all 3 users.
+        var expectedCount = strict ? 1 : 3;
+        var expectedFirstId = strict ? 2 : 1;
+
+        var ltRows = await lt.ExecuteFetchAllAsync();
+        var pgRows = await pg.ExecuteFetchAllAsync();
+        var myRows = await my.ExecuteFetchAllAsync();
+        var ssRows = await ss.ExecuteFetchAllAsync();
+        Assert.That(ltRows.Count, Is.EqualTo(expectedCount));
+        Assert.That(ltRows[0].UserId, Is.EqualTo(expectedFirstId));
+        Assert.That(pgRows.Count, Is.EqualTo(expectedCount));
+        Assert.That(pgRows[0].UserId, Is.EqualTo(expectedFirstId));
+        Assert.That(myRows.Count, Is.EqualTo(expectedCount));
+        Assert.That(myRows[0].UserId, Is.EqualTo(expectedFirstId));
+        Assert.That(ssRows.Count, Is.EqualTo(expectedCount));
+        Assert.That(ssRows[0].UserId, Is.EqualTo(expectedFirstId));
+    }
+
+    [TestCase(0)]
+    [TestCase(1)]
+    [TestCase(2)]
+    public async Task Mask_ElseIfNoFinalElse_ExecutesIncludingNoArmPath(int arm)
+    {
+        // Without a final else the cascade can take no arm — mask 0 must dispatch a
+        // real (unfiltered) variant. arm 2 drives that path.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        bool a = arm == 0, b = arm == 1;
+
+        var lt = Lite.Users().Select(u => u).OrderBy(u => u.UserId);
+        var pg = Pg.Users().Select(u => u).OrderBy(u => u.UserId);
+        var my = My.Users().Select(u => u).OrderBy(u => u.UserId);
+        var ss = Ss.Users().Select(u => u).OrderBy(u => u.UserId);
+
+        if (a)
+        {
+            lt = lt.Where(u => u.UserId >= 2);
+            pg = pg.Where(u => u.UserId >= 2);
+            my = my.Where(u => u.UserId >= 2);
+            ss = ss.Where(u => u.UserId >= 2);
+        }
+        else if (b)
+        {
+            lt = lt.Where(u => u.UserId >= 3);
+            pg = pg.Where(u => u.UserId >= 3);
+            my = my.Where(u => u.UserId >= 3);
+            ss = ss.Where(u => u.UserId >= 3);
+        }
+
+        var expectedCount = arm switch { 0 => 2, 1 => 1, _ => 3 };
+        var expectedFirstId = arm switch { 0 => 2, 1 => 3, _ => 1 };
+
+        var ltRows = await lt.ExecuteFetchAllAsync();
+        var pgRows = await pg.ExecuteFetchAllAsync();
+        var myRows = await my.ExecuteFetchAllAsync();
+        var ssRows = await ss.ExecuteFetchAllAsync();
+        Assert.That(ltRows.Count, Is.EqualTo(expectedCount));
+        Assert.That(ltRows[0].UserId, Is.EqualTo(expectedFirstId));
+        Assert.That(pgRows.Count, Is.EqualTo(expectedCount));
+        Assert.That(pgRows[0].UserId, Is.EqualTo(expectedFirstId));
+        Assert.That(myRows.Count, Is.EqualTo(expectedCount));
+        Assert.That(myRows[0].UserId, Is.EqualTo(expectedFirstId));
+        Assert.That(ssRows.Count, Is.EqualTo(expectedCount));
+        Assert.That(ssRows[0].UserId, Is.EqualTo(expectedFirstId));
     }
 
     #endregion

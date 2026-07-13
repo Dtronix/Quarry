@@ -42,7 +42,9 @@ internal static class ChainAnalyzer
     private const int MaxConditionalBits = 8;
 
     /// <summary>
-    /// Maximum nesting depth of if-blocks before abandoning analysis.
+    /// Maximum nesting depth of cascades before abandoning analysis. A whole
+    /// if/else-if/else chain (or ternary) is ONE level — flat else-if chains of any
+    /// arm count are depth 1; depth 2 means a cascade nested inside a cascade arm.
     /// </summary>
     private const int MaxIfNestingDepth = 2;
 
@@ -649,11 +651,12 @@ internal static class ChainAnalyzer
 
             conditionalTerms.Add(new ConditionalTerm(bitIndex, role.Value, site.Bound.Raw.UniqueId));
 
-            // Group by condition text for mutual exclusivity detection
-            if (!branchGroups.TryGetValue(condInfo.ConditionText, out var group))
+            // Group by cascade identity: all arms of one if/else-if/else chain
+            // (or ternary) share a GroupKey and enumerate per-arm.
+            if (!branchGroups.TryGetValue(condInfo.GroupKey, out var group))
             {
                 group = new List<(TranslatedCallSite, int)>();
-                branchGroups[condInfo.ConditionText] = group;
+                branchGroups[condInfo.GroupKey] = group;
             }
             group.Add((site, bitIndex));
             bitIndex++;
@@ -671,7 +674,7 @@ internal static class ChainAnalyzer
 
         // Compute possible masks
         var possibleMasks = tier == OptimizationTier.PrebuiltDispatch
-            ? EnumerateMaskCombinations(conditionalTerms, branchGroups, clauseSites)
+            ? EnumerateMaskCombinations(conditionalTerms, branchGroups)
             : Array.Empty<int>();
 
         // Collect unmatched method names (sites not in the chain that are tracked but not intercepted)
@@ -2669,62 +2672,53 @@ internal static class ChainAnalyzer
     }
 
     /// <summary>
-    /// Enumerates all possible ClauseMask values from conditional terms and branch groups.
+    /// Enumerates all possible ClauseMask values from conditional terms and cascade groups.
+    /// Per cascade: at runtime exactly one arm executes (or none, when there is no final
+    /// else or the taken arm has no chain sites), and ALL of an arm's bits are set together.
+    /// The cascade's option set is therefore each represented arm's OR-of-bits, plus 0 when
+    /// a no-bits path is reachable. Masks are the cross-product of one option per cascade.
+    /// A 1-arm if without else yields options {0, bit} — the classic independent bit; a
+    /// 2-arm single-clause if/else yields {b0, b1} — the classic exclusive pair.
     /// </summary>
     private static IReadOnlyList<int> EnumerateMaskCombinations(
         List<ConditionalTerm> conditionalTerms,
-        Dictionary<string, List<(TranslatedCallSite Site, int BitIndex)>> branchGroups,
-        List<TranslatedCallSite> clauseSites)
+        Dictionary<string, List<(TranslatedCallSite Site, int BitIndex)>> branchGroups)
     {
         if (conditionalTerms.Count == 0)
             return new[] { 0 };
 
-        var independentBits = new List<int>();
-        var exclusiveGroups = new List<List<int>>();
+        var masks = new List<int> { 0 };
 
         foreach (var kvp in branchGroups)
         {
             var group = kvp.Value;
-            // Determine if this branch group is mutually exclusive
-            var hasMutuallyExclusive = group.Any(g =>
-                g.Site.Bound.Raw.NestingContext?.BranchKind == BranchKind.MutuallyExclusive);
 
-            if (hasMutuallyExclusive && group.Count >= 2)
+            // OR the bits of each represented arm together.
+            var armBits = new SortedDictionary<int, int>();
+            var armCount = 1;
+            var hasFinalElse = false;
+            foreach (var (site, bit) in group)
             {
-                exclusiveGroups.Add(group.Select(g => g.BitIndex).ToList());
+                var nc = site.Bound.Raw.NestingContext!;
+                armBits.TryGetValue(nc.ArmIndex, out var bits);
+                armBits[nc.ArmIndex] = bits | (1 << bit);
+                armCount = nc.ArmCount;
+                hasFinalElse = nc.HasFinalElse;
             }
-            else
-            {
-                independentBits.AddRange(group.Select(g => g.BitIndex));
-            }
-        }
 
-        // Build combinations
-        var masks = new List<int> { 0 };
+            // The no-bits path is reachable when the cascade can take no arm at all,
+            // or can take an arm that contains no chain sites. It enumerates FIRST so
+            // the base (no conditional clauses) variant keeps its position as the
+            // first-listed variant — diagnostics and manifest output lead with it.
+            var options = new List<int>(armBits.Count + 1);
+            if (!hasFinalElse || armBits.Count < armCount)
+                options.Add(0);
+            options.AddRange(armBits.Values);
 
-        // Independent bits: each can be on or off
-        foreach (var bit in independentBits)
-        {
-            var newMasks = new List<int>(masks.Count * 2);
+            var newMasks = new List<int>(masks.Count * options.Count);
             foreach (var mask in masks)
-            {
-                newMasks.Add(mask);                      // bit off
-                newMasks.Add(mask | (1 << bit));         // bit on
-            }
-            masks = newMasks;
-        }
-
-        // Mutually exclusive groups: exactly one bit from the group is set
-        foreach (var group in exclusiveGroups)
-        {
-            var newMasks = new List<int>(masks.Count * group.Count);
-            foreach (var mask in masks)
-            {
-                foreach (var bit in group)
-                {
-                    newMasks.Add(mask | (1 << bit));
-                }
-            }
+                foreach (var option in options)
+                    newMasks.Add(mask | option);
             masks = newMasks;
         }
 

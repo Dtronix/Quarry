@@ -1978,50 +1978,126 @@ internal static class UsageSiteDiscovery
     }
 
     /// <summary>
-    /// Detects if the invocation is inside an if statement or ternary expression.
-    /// Returns NestingContext with the condition text and nesting depth.
+    /// Detects if the invocation is inside an if/else-if/else cascade or ternary expression.
+    /// Returns NestingContext identifying the innermost cascade structurally: group key
+    /// (cascade head position), arm index/count, and whether a final else exists.
+    /// NestingDepth counts cascades crossed to the method body — an entire
+    /// if/else-if/else chain is one level, so an else-if arm is depth 1, not 2.
+    /// Sites inside a condition expression pass through: they are evaluated as part of
+    /// arm dispatch, not inside an arm, and are not treated as members of that cascade.
     /// </summary>
     private static NestingContext? DetectNestingContext(SyntaxNode node)
     {
-        // Walk all ancestors to count total nesting depth and capture innermost if info
-        int totalIfDepth = 0;
+        int cascadeDepth = 0;
         string? innermostCondition = null;
-        BranchKind innermostBranchKind = BranchKind.Independent;
-        bool passedThroughElse = false;
+        string? groupKey = null;
+        int armIndex = 0, armCount = 1;
+        bool hasFinalElse = false;
 
-        foreach (var ancestor in node.Ancestors())
+        SyntaxNode prev = node;
+        var current = node.Parent;
+        while (current != null)
         {
-            if (ancestor is ElseClauseSyntax)
+            if (current is MethodDeclarationSyntax || current is LocalFunctionStatementSyntax)
+                break;
+
+            if (current is ConditionalExpressionSyntax ternary
+                && (prev == ternary.WhenTrue || prev == ternary.WhenFalse))
             {
-                passedThroughElse = true;
-                continue;
-            }
-            if (ancestor is IfStatementSyntax ifStatement)
-            {
-                totalIfDepth++;
+                cascadeDepth++;
                 if (innermostCondition == null)
                 {
-                    innermostCondition = ifStatement.Condition.ToString();
-                    if (passedThroughElse || ifStatement.Else != null || ifStatement.Parent is ElseClauseSyntax)
-                        innermostBranchKind = BranchKind.MutuallyExclusive;
+                    innermostCondition = ternary.Condition.ToString();
+                    groupKey = "t:" + ternary.SpanStart;
+                    armIndex = prev == ternary.WhenTrue ? 0 : 1;
+                    armCount = 2;
+                    hasFinalElse = true;
                 }
-                passedThroughElse = false;
-                continue;
             }
-            if (ancestor is ConditionalExpressionSyntax ternary && innermostCondition == null)
+            else if (current is IfStatementSyntax ifStatement)
             {
-                innermostCondition = ternary.Condition.ToString();
-                innermostBranchKind = BranchKind.MutuallyExclusive;
-                continue;
+                // Entered through the then-statement, or through a final else clause.
+                // (An else clause whose statement is another if means the site sat in
+                // that else-if's condition — cascade dispatch machinery, pass through.)
+                var enteredThenArm = prev == ifStatement.Statement;
+                var enteredFinalElse = prev == ifStatement.Else
+                    && ifStatement.Else!.Statement is not IfStatementSyntax;
+
+                if (enteredThenArm || enteredFinalElse)
+                {
+                    // Walk up to the cascade head so the whole chain counts once
+                    // and all arms share one group key.
+                    var head = ifStatement;
+                    while (head.Parent is ElseClauseSyntax parentElse
+                        && parentElse.Parent is IfStatementSyntax parentIf)
+                        head = parentIf;
+
+                    cascadeDepth++;
+                    if (innermostCondition == null)
+                    {
+                        innermostCondition = ifStatement.Condition.ToString();
+                        groupKey = "if:" + head.SpanStart;
+                        ComputeCascadeArms(head, ifStatement, enteredFinalElse,
+                            out armIndex, out armCount, out hasFinalElse);
+                    }
+
+                    // Resume the ancestor walk from the cascade head.
+                    prev = head;
+                    current = head.Parent;
+                    continue;
+                }
             }
-            if (ancestor is MethodDeclarationSyntax || ancestor is LocalFunctionStatementSyntax)
-                break;
+
+            prev = current;
+            current = current.Parent;
         }
 
         if (innermostCondition == null)
             return null;
 
-        return new NestingContext(innermostCondition, totalIfDepth, innermostBranchKind);
+        // BranchKind is retained for ToDiagnostics reporting: arms of a multi-arm
+        // cascade are mutually exclusive; a lone if-arm is independent.
+        var branchKind = armCount >= 2 ? BranchKind.MutuallyExclusive : BranchKind.Independent;
+        return new NestingContext(innermostCondition, cascadeDepth, branchKind,
+            groupKey, armIndex, armCount, hasFinalElse);
+    }
+
+    /// <summary>
+    /// Walks a cascade from its head if-statement, enumerating arms in order
+    /// (then-arm, each else-if arm, final else), to locate the entered arm's index
+    /// and compute the total arm count and final-else presence.
+    /// </summary>
+    private static void ComputeCascadeArms(
+        IfStatementSyntax head, IfStatementSyntax enteredIf, bool enteredFinalElse,
+        out int armIndex, out int armCount, out bool hasFinalElse)
+    {
+        armIndex = 0;
+        var index = 0;
+        var cur = head;
+        while (true)
+        {
+            if (cur == enteredIf && !enteredFinalElse)
+                armIndex = index;
+            index++;
+
+            if (cur.Else == null)
+            {
+                armCount = index;
+                hasFinalElse = false;
+                return;
+            }
+            if (cur.Else.Statement is IfStatementSyntax nextIf)
+            {
+                cur = nextIf;
+                continue;
+            }
+            // Final else arm.
+            if (cur == enteredIf && enteredFinalElse)
+                armIndex = index;
+            armCount = index + 1;
+            hasFinalElse = true;
+            return;
+        }
     }
 
     /// <summary>
