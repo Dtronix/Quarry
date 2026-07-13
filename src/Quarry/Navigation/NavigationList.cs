@@ -84,9 +84,20 @@ public sealed class NavigationList<T> : IReadOnlyList<T>
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
     /// <summary>
-    /// Creates an unloaded navigation list.
+    /// The shared unloaded instance. Safe to share because the unloaded state is
+    /// deeply immutable — <see cref="_items"/> is <c>null</c> and read-only and
+    /// <see cref="IsLoaded"/> is <c>false</c> — so nothing about it can be mutated.
+    /// Generated entities initialize every <c>Many&lt;T&gt;</c> navigation from this
+    /// singleton (once per closed generic type) instead of allocating one per row.
+    /// This instance MUST NOT be mutated; a join produces a new loaded instance via
+    /// <see cref="Loaded(IEnumerable{T})"/>.
     /// </summary>
-    public static NavigationList<T> Unloaded() => new();
+    private static readonly NavigationList<T> _unloaded = new();
+
+    /// <summary>
+    /// Returns the shared unloaded navigation list (see <see cref="_unloaded"/>).
+    /// </summary>
+    public static NavigationList<T> Unloaded() => _unloaded;
 
     /// <summary>
     /// Creates a loaded navigation list with the specified items.

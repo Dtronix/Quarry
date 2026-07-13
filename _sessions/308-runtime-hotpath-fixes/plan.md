@@ -6,7 +6,7 @@ Each step is independently committable. All commits stage `_sessions/` (`git add
 
 ## Progress
 - [x] Step 1 — Item 1: IN-cache exact length validation
-- [ ] Step 2 — Item 2: NavigationList Unloaded singleton
+- [x] Step 2 — Item 2: NavigationList Unloaded singleton
 - [ ] Step 3 — Item 3: gate OpId.Next on logger
 - [ ] Step 4 — Item 5: cache RawSql mapper instances
 - [ ] Step 5 — Item 6a: skip ToList when already a list

@@ -46,6 +46,34 @@ public class NavigationListTests
     }
 
     [Test]
+    public void Unloaded_ReturnsSharedSingleton()
+    {
+        // #308 item 2: Unloaded() must return a cached singleton, not a fresh
+        // allocation per call — generated entities initialize every Many<T>
+        // navigation from it once per row.
+        var a = NavigationList<TestEntity>.Unloaded();
+        var b = NavigationList<TestEntity>.Unloaded();
+
+        Assert.That(a, Is.SameAs(b));
+        Assert.That(a.IsLoaded, Is.False);
+        Assert.That(a.Count, Is.EqualTo(0));
+    }
+
+    [Test]
+    public void Unloaded_IsDistinctPerTypeArgument()
+    {
+        // The singleton is per closed generic type; different type arguments
+        // must not share an instance (and the types are unrelated anyway).
+        var ints = NavigationList<int>.Unloaded();
+        var strings = NavigationList<string>.Unloaded();
+
+        Assert.That(ints, Is.SameAs(NavigationList<int>.Unloaded()));
+        Assert.That(strings, Is.SameAs(NavigationList<string>.Unloaded()));
+        Assert.That(ints.IsLoaded, Is.False);
+        Assert.That(strings.IsLoaded, Is.False);
+    }
+
+    [Test]
     public void Loaded_IsLoadedIsTrue()
     {
         var items = new List<TestEntity>
