@@ -52,6 +52,45 @@ internal class CrossDialectBatchInsertTests
 
     #endregion
 
+    #region Batch Insert input-shape coverage (#308 item 6a)
+
+    [Test]
+    public async Task BatchInsert_ListAndLazyEnumerable_BothInsertCorrectly()
+    {
+        // #308 item 6a: the batch-insert terminal reuses an already-materialized list instead
+        // of copying, falling back to ToList for a lazy IEnumerable. Both input shapes must
+        // still insert every row correctly.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        // List<T> input — reused directly as IReadOnlyList<T> (no copy).
+        var listInput = new List<User>
+        {
+            new() { UserName = "batch-list-1", IsActive = true, CreatedAt = new DateTime(2024, 1, 1) },
+            new() { UserName = "batch-list-2", IsActive = false, CreatedAt = new DateTime(2024, 1, 2) },
+        };
+        var listAffected = await Lite.Users()
+            .InsertBatch(u => (u.UserName, u.IsActive, u.CreatedAt)).Values(listInput).ExecuteNonQueryAsync();
+        Assert.That(listAffected, Is.EqualTo(2));
+
+        // Lazy IEnumerable<T> input (Select iterator, not a list) — falls back to ToList.
+        IEnumerable<User> lazyInput = Enumerable.Range(1, 3).Select(i =>
+            new User { UserName = $"batch-lazy-{i}", IsActive = true, CreatedAt = new DateTime(2024, 2, i) });
+        var lazyAffected = await Lite.Users()
+            .InsertBatch(u => (u.UserName, u.IsActive, u.CreatedAt)).Values(lazyInput).ExecuteNonQueryAsync();
+        Assert.That(lazyAffected, Is.EqualTo(3));
+
+        // All rows landed (3 seeded + 2 + 3 = 8).
+        var names = await Lite.Users().Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(names, Has.Count.EqualTo(8));
+        Assert.That(names, Does.Contain("batch-list-1"));
+        Assert.That(names, Does.Contain("batch-list-2"));
+        Assert.That(names, Does.Contain("batch-lazy-1"));
+        Assert.That(names, Does.Contain("batch-lazy-3"));
+    }
+
+    #endregion
+
     #region Batch Insert ExecuteNonQueryAsync
 
     [Test]

@@ -90,6 +90,24 @@ internal class CrossDialectRawSqlTests
 
     #endregion
 
+    [Test]
+    public async Task RawSqlAsync_Entity_WithMappedColumn_MaterializesCorrectly()
+    {
+        // #308 item 5: RawSql readers now materialize custom-mapped columns through a cached
+        // mapper field instead of allocating one per row. Verify the mapping still produces
+        // the correct values (Balance: decimal -> Money via MoneyMapping.FromDb).
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        var rows = await Lite.RawSqlAsync<Account>(
+            "SELECT \"AccountId\", \"Balance\" FROM \"accounts\" ORDER BY \"AccountId\"").ToListAsync();
+
+        Assert.That(rows, Has.Count.EqualTo(3));
+        Assert.That(rows[0].Balance, Is.EqualTo(new Money(1000.50m)));
+        Assert.That(rows[1].Balance, Is.EqualTo(new Money(250.75m)));
+        Assert.That(rows[2].Balance, Is.EqualTo(new Money(500.00m)));
+    }
+
     #region RawSqlAsync<scalar>
 
     [Test]

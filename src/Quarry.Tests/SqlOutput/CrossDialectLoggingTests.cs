@@ -219,6 +219,33 @@ internal partial class CrossDialectLoggingTests
     }
 
     [Test]
+    public async Task FetchFirst_MaterializationThrows_NoSpuriousCompletionLog()
+    {
+        // #308 item 6e / review F3: First materializes the row BEFORE logging completion, so a
+        // reader failure must not emit a spurious "Fetched" completion entry. Force a
+        // materialization (not execution) failure by storing a malformed datetime in CreatedAt
+        // and projecting it as DateTime — the reader throws while converting the value.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        await t.SqlAsync(
+            "INSERT INTO \"users\" (\"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\") " +
+            "VALUES (99, 'BadDate', NULL, 1, 'not-a-valid-date', NULL)");
+
+        _logger.Clear();
+
+        Assert.ThrowsAsync<QuarryQueryException>(async () =>
+            await Lite.Users().Where(u => u.UserId == 99).Select(u => u.CreatedAt).ExecuteFetchFirstAsync());
+
+        // Pre-fix (log-before-materialize) recorded a "Fetched" completion before the throw;
+        // post-fix there must be none.
+        var completion = _logger.Entries
+            .FirstOrDefault(e => e.Category == "Quarry.Query" && e.Message.Contains("Fetched"));
+        Assert.That(completion, Is.Null,
+            "First must not log FetchCompleted when row materialization throws");
+    }
+
+    [Test]
     public async Task FetchFirstOrDefault_NoRows_LogsZeroCount()
     {
         await using var t = await QueryTestHarness.CreateAsync();

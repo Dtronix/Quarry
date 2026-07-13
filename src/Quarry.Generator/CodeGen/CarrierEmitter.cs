@@ -283,7 +283,10 @@ internal static class CarrierEmitter
             var extractionPlan = carrier.GetExtractionPlan(site.UniqueId);
             if (extractionPlan != null && extractionPlan.Extractors.Count > 0)
             {
-                sb.AppendLine($"        var __target = {delegateParamName}.Target!;");
+                // __target (the func.Target display-class read) is only needed for instance
+                // captures; when every extractor is a static field it would be dead.
+                if (extractionPlan.Extractors.Any(e => !e.IsStaticField))
+                    sb.AppendLine($"        var __target = {delegateParamName}.Target!;");
                 foreach (var extractor in extractionPlan.Extractors)
                 {
                     var targetExpr = extractor.IsStaticField ? "null!" : "__target";
@@ -501,7 +504,10 @@ internal static class CarrierEmitter
         var extractionPlan = carrier.GetExtractionPlan(site.UniqueId);
         if (extractionPlan != null && extractionPlan.Extractors.Count > 0)
         {
-            sb.AppendLine($"        var __target = {extractionPlan.DelegateParamName}.Target!;");
+            // __target (the func.Target display-class read) is only needed for instance
+            // captures; when every extractor is a static field it would be dead.
+            if (extractionPlan.Extractors.Any(e => !e.IsStaticField))
+                sb.AppendLine($"        var __target = {extractionPlan.DelegateParamName}.Target!;");
             foreach (var extractor in extractionPlan.Extractors)
             {
                 var targetExpr = extractor.IsStaticField ? "null!" : "__target";
@@ -526,7 +532,10 @@ internal static class CarrierEmitter
         var extractionPlan = carrier.GetExtractionPlan(site.UniqueId);
         if (extractionPlan != null && extractionPlan.Extractors.Count > 0)
         {
-            sb.AppendLine($"        var __target = {extractionPlan.DelegateParamName}.Target!;");
+            // __target (the func.Target display-class read) is only needed for instance
+            // captures; when every extractor is a static field it would be dead.
+            if (extractionPlan.Extractors.Any(e => !e.IsStaticField))
+                sb.AppendLine($"        var __target = {extractionPlan.DelegateParamName}.Target!;");
             foreach (var extractor in extractionPlan.Extractors)
             {
                 var targetExpr = extractor.IsStaticField ? "null!" : "__target";
@@ -971,7 +980,11 @@ internal static class CarrierEmitter
         sb.AppendLine("        var __ctx = __c.Ctx!;");
         sb.AppendLine("        var __logger = LogsmithOutput.Logger;");
 
-        sb.AppendLine("        var __opId = OpId.Next();");
+        // Gate OpId generation on an enabled logger — OpId.Next() is an
+        // Interlocked.Increment on a shared static (cross-core cache-line
+        // contention per insert), and __opId is only ever observed when a
+        // logger is present. Matches the query preamble and batch-insert terminal.
+        sb.AppendLine("        var __opId = __logger != null ? OpId.Next() : 0;");
         EmitCarrierSqlDispatch(sb, carrier, chain);
 
         sb.AppendLine("        if (__logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)");
@@ -1239,8 +1252,16 @@ internal static class CarrierEmitter
         sb.AppendLine("        int __colShift;");
         sb.AppendLine("        string sql;");
 
-        // Cache hit
-        sb.AppendLine("        if (__cached != null && __cached.Hash == __colHash)");
+        // Cache hit — validate by exact per-collection length, not just the hash.
+        // __colHash (an XOR of scaled lengths) is a cheap pre-filter but is NOT
+        // injective: distinct length tuples can collide (e.g. (16,900) and (85,41)).
+        // A false hit would reuse ColParts built for the wrong lengths and drive the
+        // bind loop out of range. The entry already stores ColParts, so compare
+        // ColParts[i].Length against the actual length of each collection.
+        sb.Append("        if (__cached != null && __cached.Hash == __colHash");
+        for (int i = 0; i < collections.Count; i++)
+            sb.Append($" && __cached.ColParts[{i}].Length == __col{collections[i].GlobalIndex}Len");
+        sb.AppendLine(")");
         sb.AppendLine("        {");
         sb.AppendLine("            sql = __cached.Sql;");
         sb.AppendLine("            __colShift = __cached.ColShift;");

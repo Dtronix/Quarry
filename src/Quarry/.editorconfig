@@ -1,0 +1,8 @@
+# No `root = true` here — this file only adds a rule for the runtime project and should
+# still inherit any future repo-root .editorconfig rather than shadowing them.
+#
+# Runtime project only: every awaited operation must use ConfigureAwait(false).
+# Library code has no reason to capture a SynchronizationContext, and enforcing it
+# here prevents deadlock hazards / scheduler pressure from regressing (#308 item 4).
+[*.cs]
+dotnet_diagnostic.CA2007.severity = error

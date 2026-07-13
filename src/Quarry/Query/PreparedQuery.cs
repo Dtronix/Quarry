@@ -15,6 +15,16 @@ namespace Quarry;
 /// they exist only so the compiler resolves the call sites. The generator replaces
 /// them entirely with optimized code.
 /// </para>
+/// <para>
+/// <b>Load-bearing invariant — do not break:</b> this type must stay <c>sealed</c> and
+/// stateless, and its stub bodies must never dereference <c>this</c>. A reference typed as
+/// <c>PreparedQuery&lt;TResult&gt;</c> never actually points at a <c>PreparedQuery</c> instance:
+/// the generated <c>Prepare()</c> interceptor returns the query carrier reinterpret-cast via
+/// <c>Unsafe.As&lt;PreparedQuery&lt;TResult&gt;&gt;(carrier)</c>, and each prepared terminal casts
+/// that same reference straight back to the carrier with <c>Unsafe.As&lt;Chain_N&gt;(builder)</c>.
+/// Adding fields, a base class, or a stub body that touches <c>this</c> would corrupt that
+/// zero-allocation reinterpret cast.
+/// </para>
 /// </remarks>
 /// <typeparam name="TResult">
 /// The row type for select queries, <c>int</c> for delete/update, or <c>TKey</c> for insert scalar returns.

@@ -542,8 +542,11 @@ internal static class TerminalBodyEmitter
         sb.AppendLine("        var __logger = LogsmithOutput.Logger;");
         sb.AppendLine("        var __opId = __logger != null ? OpId.Next() : 0;");
 
-        // Materialize entities
-        sb.AppendLine($"        var __entities = System.Linq.Enumerable.ToList(__c.BatchEntities!);");
+        // Materialize entities. BatchEntities is typed IEnumerable<T>; when the caller
+        // already passed a list/array (the common case), reuse it as IReadOnlyList<T>
+        // instead of copying. Only .Count and the indexer are used below, both of which
+        // IReadOnlyList<T> provides, and iteration is read-only.
+        sb.AppendLine($"        var __entities = __c.BatchEntities as System.Collections.Generic.IReadOnlyList<{entityType}> ?? System.Linq.Enumerable.ToList(__c.BatchEntities!);");
         sb.AppendLine($"        var __entityCount = __entities.Count;");
 
         // Build SQL from prefix template

@@ -231,7 +231,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
         string sql,
         params object?[] parameters)
     {
-        return await RawSqlNonQueryAsync(sql, CancellationToken.None, parameters);
+        return await RawSqlNonQueryAsync(sql, CancellationToken.None, parameters).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -248,17 +248,18 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
     {
         ArgumentNullException.ThrowIfNull(sql);
 
-        var opId = OpId.Next();
+        var opId = LogsmithOutput.Logger != null ? OpId.Next() : 0;
 
         if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName) == true)
             RawSqlLog.SqlGenerated(opId, sql);
 
         LogRawParameters(opId, parameters);
 
-        await EnsureConnectionOpenAsync(cancellationToken);
+        await EnsureConnectionOpenAsync(cancellationToken).ConfigureAwait(false);
 
         var startTimestamp = Stopwatch.GetTimestamp();
-        await using var command = _connection.CreateCommand();
+        var command = _connection.CreateCommand();
+        await using var __commandDisp = command.ConfigureAwait(false);
         command.CommandText = sql;
         command.CommandTimeout = (int)_defaultTimeout.TotalSeconds;
 
@@ -283,7 +284,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
             command.Parameters.Add(param);
         }
 
-        var rowCount = await command.ExecuteNonQueryAsync(cancellationToken);
+        var rowCount = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
 
         if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName) == true)
@@ -305,7 +306,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
         string sql,
         params object?[] parameters)
     {
-        return await RawSqlScalarAsync<T>(sql, CancellationToken.None, parameters);
+        return await RawSqlScalarAsync<T>(sql, CancellationToken.None, parameters).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -323,17 +324,18 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
     {
         ArgumentNullException.ThrowIfNull(sql);
 
-        var opId = OpId.Next();
+        var opId = LogsmithOutput.Logger != null ? OpId.Next() : 0;
 
         if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName) == true)
             RawSqlLog.SqlGenerated(opId, sql);
 
         LogRawParameters(opId, parameters);
 
-        await EnsureConnectionOpenAsync(cancellationToken);
+        await EnsureConnectionOpenAsync(cancellationToken).ConfigureAwait(false);
 
         var startTimestamp = Stopwatch.GetTimestamp();
-        await using var command = _connection.CreateCommand();
+        var command = _connection.CreateCommand();
+        await using var __commandDisp = command.ConfigureAwait(false);
         command.CommandText = sql;
         command.CommandTimeout = (int)_defaultTimeout.TotalSeconds;
 
@@ -346,7 +348,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
             command.Parameters.Add(param);
         }
 
-        var result = await command.ExecuteScalarAsync(cancellationToken);
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
 
         if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName) == true)
@@ -379,7 +381,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
     {
         ArgumentNullException.ThrowIfNull(sql);
 
-        var opId = OpId.Next();
+        var opId = LogsmithOutput.Logger != null ? OpId.Next() : 0;
 
         if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName) == true)
             RawSqlLog.SqlGenerated(opId, sql);
@@ -414,7 +416,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
     {
         ArgumentNullException.ThrowIfNull(sql);
 
-        var opId = OpId.Next();
+        var opId = LogsmithOutput.Logger != null ? OpId.Next() : 0;
 
         if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName) == true)
             RawSqlLog.SqlGenerated(opId, sql);
@@ -449,17 +451,18 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
     {
         ArgumentNullException.ThrowIfNull(sql);
 
-        var opId = OpId.Next();
+        var opId = LogsmithOutput.Logger != null ? OpId.Next() : 0;
 
         if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName) == true)
             RawSqlLog.SqlGenerated(opId, sql);
 
         LogRawParameters(opId, parameters);
 
-        await EnsureConnectionOpenAsync(cancellationToken);
+        await EnsureConnectionOpenAsync(cancellationToken).ConfigureAwait(false);
 
         var startTimestamp = Stopwatch.GetTimestamp();
-        await using var command = _connection.CreateCommand();
+        var command = _connection.CreateCommand();
+        await using var __commandDisp = command.ConfigureAwait(false);
         command.CommandText = sql;
         command.CommandTimeout = (int)_defaultTimeout.TotalSeconds;
 
@@ -471,7 +474,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
             command.Parameters.Add(param);
         }
 
-        var result = await command.ExecuteScalarAsync(cancellationToken);
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
 
         if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName) == true)

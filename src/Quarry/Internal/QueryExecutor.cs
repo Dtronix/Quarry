@@ -23,13 +23,14 @@ public static class QueryExecutor
         DbCommand command, Func<DbDataReader, TResult> reader,
         CommandBehavior behavior, CancellationToken ct)
     {
-        await using var _cmd = command;
+        await using var _cmd = command.ConfigureAwait(false);
 
         if (ctx.Connection.State != ConnectionState.Open)
             await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
 
         var startTimestamp = Stopwatch.GetTimestamp();
-        await using var dbReader = await command.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
+        var dbReader = await command.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
+        await using var __dbReaderDisp = dbReader.ConfigureAwait(false);
 
         var results = new List<TResult>();
         try
@@ -56,20 +57,25 @@ public static class QueryExecutor
         DbCommand command, Func<DbDataReader, TResult> reader,
         CommandBehavior behavior, CancellationToken ct)
     {
-        await using var _cmd = command;
+        await using var _cmd = command.ConfigureAwait(false);
 
         if (ctx.Connection.State != ConnectionState.Open)
             await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
 
         var startTimestamp = Stopwatch.GetTimestamp();
-        await using var dbReader = await command.ExecuteReaderAsync(behavior | CommandBehavior.SingleRow, ct).ConfigureAwait(false);
+        var dbReader = await command.ExecuteReaderAsync(behavior | CommandBehavior.SingleRow, ct).ConfigureAwait(false);
+        await using var __dbReaderDisp = dbReader.ConfigureAwait(false);
 
         try
         {
             if (await dbReader.ReadAsync(ct).ConfigureAwait(false))
             {
+                // Materialize before logging completion so a reader failure is reported as a
+                // reader failure (not a spurious FetchCompleted), and timing includes
+                // materialization — matching ExecuteCarrierFirstOrDefaultWithCommandAsync.
+                var result = reader(dbReader);
                 FinalizeQuery(opId, ctx, startTimestamp, 1, command.CommandText);
-                return reader(dbReader);
+                return result;
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -88,13 +94,14 @@ public static class QueryExecutor
         DbCommand command, Func<DbDataReader, TResult> reader,
         CommandBehavior behavior, CancellationToken ct)
     {
-        await using var _cmd = command;
+        await using var _cmd = command.ConfigureAwait(false);
 
         if (ctx.Connection.State != ConnectionState.Open)
             await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
 
         var startTimestamp = Stopwatch.GetTimestamp();
-        await using var dbReader = await command.ExecuteReaderAsync(behavior | CommandBehavior.SingleRow, ct).ConfigureAwait(false);
+        var dbReader = await command.ExecuteReaderAsync(behavior | CommandBehavior.SingleRow, ct).ConfigureAwait(false);
+        await using var __dbReaderDisp = dbReader.ConfigureAwait(false);
 
         try
         {
@@ -122,13 +129,14 @@ public static class QueryExecutor
         DbCommand command, Func<DbDataReader, TResult> reader,
         CommandBehavior behavior, CancellationToken ct)
     {
-        await using var _cmd = command;
+        await using var _cmd = command.ConfigureAwait(false);
 
         if (ctx.Connection.State != ConnectionState.Open)
             await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
 
         var startTimestamp = Stopwatch.GetTimestamp();
-        await using var dbReader = await command.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
+        var dbReader = await command.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
+        await using var __dbReaderDisp = dbReader.ConfigureAwait(false);
 
         try
         {
@@ -163,13 +171,14 @@ public static class QueryExecutor
         DbCommand command, Func<DbDataReader, TResult> reader,
         CommandBehavior behavior, CancellationToken ct)
     {
-        await using var _cmd = command;
+        await using var _cmd = command.ConfigureAwait(false);
 
         if (ctx.Connection.State != ConnectionState.Open)
             await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
 
         var startTimestamp = Stopwatch.GetTimestamp();
-        await using var dbReader = await command.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
+        var dbReader = await command.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
+        await using var __dbReaderDisp = dbReader.ConfigureAwait(false);
 
         try
         {
@@ -205,7 +214,7 @@ public static class QueryExecutor
         long opId, QuarryContext ctx,
         DbCommand command, CancellationToken ct)
     {
-        await using var _cmd = command;
+        await using var _cmd = command.ConfigureAwait(false);
 
         if (ctx.Connection.State != ConnectionState.Open)
             await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
@@ -260,7 +269,7 @@ public static class QueryExecutor
         long opId, QuarryContext ctx,
         DbCommand command, CancellationToken ct)
     {
-        await using var _cmd = command;
+        await using var _cmd = command.ConfigureAwait(false);
 
         if (ctx.Connection.State != ConnectionState.Open)
             await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
@@ -292,13 +301,14 @@ public static class QueryExecutor
         CommandBehavior behavior,
         [EnumeratorCancellation] CancellationToken ct)
     {
-        await using var _cmd = command;
+        await using var _cmd = command.ConfigureAwait(false);
 
         if (ctx.Connection.State != ConnectionState.Open)
             await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
 
         var startTimestamp = Stopwatch.GetTimestamp();
-        await using var dbReader = await command.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
+        var dbReader = await command.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
+        await using var __dbReaderDisp = dbReader.ConfigureAwait(false);
 
         int rowCount = 0;
         while (await dbReader.ReadAsync(ct).ConfigureAwait(false))
@@ -332,13 +342,14 @@ public static class QueryExecutor
         [EnumeratorCancellation] CancellationToken ct)
         where TReader : struct, IRowReader<TResult>
     {
-        await using var _cmd = command;
+        await using var _cmd = command.ConfigureAwait(false);
 
         if (ctx.Connection.State != ConnectionState.Open)
             await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
 
         var startTimestamp = Stopwatch.GetTimestamp();
-        await using var dbReader = await command.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
+        var dbReader = await command.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
+        await using var __dbReaderDisp = dbReader.ConfigureAwait(false);
 
         var reader = new TReader();
         reader.Resolve(dbReader);

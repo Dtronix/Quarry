@@ -71,11 +71,11 @@ public sealed class NavigationList<T> : IReadOnlyList<T>
 
     /// <summary>
     /// Returns an enumerator that iterates through the collection.
-    /// Returns an empty enumerator if the collection has not been loaded.
+    /// Returns a shared empty enumerator if the collection has not been loaded.
     /// </summary>
     public IEnumerator<T> GetEnumerator()
     {
-        return (_items ?? Enumerable.Empty<T>()).GetEnumerator();
+        return _items is null ? EmptyEnumerator.Instance : _items.GetEnumerator();
     }
 
     /// <summary>
@@ -84,9 +84,38 @@ public sealed class NavigationList<T> : IReadOnlyList<T>
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
     /// <summary>
-    /// Creates an unloaded navigation list.
+    /// Shared empty enumerator for the unloaded state. It is stateless
+    /// (<see cref="MoveNext"/> is always <c>false</c>), so a single instance is safe to share
+    /// and avoids the per-enumeration allocation of <c>Enumerable.Empty&lt;T&gt;().GetEnumerator()</c>.
     /// </summary>
-    public static NavigationList<T> Unloaded() => new();
+    private sealed class EmptyEnumerator : IEnumerator<T>
+    {
+        public static readonly IEnumerator<T> Instance = new EmptyEnumerator();
+
+        private EmptyEnumerator() { }
+
+        public T Current => throw new InvalidOperationException("Enumeration has no elements.");
+        object? IEnumerator.Current => Current;
+        public bool MoveNext() => false;
+        public void Reset() { }
+        public void Dispose() { }
+    }
+
+    /// <summary>
+    /// The shared unloaded instance. Safe to share because the unloaded state is
+    /// deeply immutable — <see cref="_items"/> is <c>null</c> and read-only and
+    /// <see cref="IsLoaded"/> is <c>false</c> — so nothing about it can be mutated.
+    /// Generated entities initialize every <c>Many&lt;T&gt;</c> navigation from this
+    /// singleton (once per closed generic type) instead of allocating one per row.
+    /// This instance MUST NOT be mutated; a join produces a new loaded instance via
+    /// <see cref="Loaded(IEnumerable{T})"/>.
+    /// </summary>
+    private static readonly NavigationList<T> _unloaded = new();
+
+    /// <summary>
+    /// Returns the shared unloaded navigation list (see <see cref="_unloaded"/>).
+    /// </summary>
+    public static NavigationList<T> Unloaded() => _unloaded;
 
     /// <summary>
     /// Creates a loaded navigation list with the specified items.

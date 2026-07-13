@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Text;
+using Quarry.Generators.Generation;
 using Quarry.Generators.IR;
 using Quarry.Generators.Models;
 using Quarry.Generators.Utilities;
@@ -28,6 +29,19 @@ internal static class RawSqlBodyEmitter
         for (int i = 0; i < props.Count; i++)
         {
             sb.AppendLine($"    int _ord{i};");
+        }
+
+        // Cached custom-mapper instances (one per distinct mapping class). The Read method
+        // references these instead of allocating a mapper per row per column. This struct is
+        // file-scoped and cannot reach the interceptor class's private mapper fields, so it
+        // holds its own — the same pattern the carrier Patch binder uses.
+        var emittedMappers = new HashSet<string>();
+        foreach (var prop in props)
+        {
+            if (prop.CustomTypeMappingClass == null) continue;
+            if (!emittedMappers.Add(prop.CustomTypeMappingClass)) continue;
+            var mapperField = InterceptorCodeGenerator.GetMappingFieldName(prop.CustomTypeMappingClass);
+            sb.AppendLine($"    static readonly {prop.CustomTypeMappingClass} {mapperField} = new();");
         }
 
         sb.AppendLine();
@@ -262,7 +276,11 @@ internal static class RawSqlBodyEmitter
         if (prop.CustomTypeMappingClass != null)
         {
             var dbReaderMethod = prop.DbReaderMethodName ?? "GetValue";
-            return $"new {prop.CustomTypeMappingClass}().FromDb(r.{dbReaderMethod}({ordinalExpr}))";
+            // Reference a cached mapper field instead of allocating a mapper per row per
+            // column. The field is emitted either on the reader struct (EmitRowReaderStruct)
+            // or as a file-scope cached field (CollectMappingInstances) for the lambda readers.
+            var mapperField = InterceptorCodeGenerator.GetMappingFieldName(prop.CustomTypeMappingClass);
+            return $"{mapperField}.FromDb(r.{dbReaderMethod}({ordinalExpr}))";
         }
 
         if (prop.IsForeignKey && prop.ReferencedEntityName != null)

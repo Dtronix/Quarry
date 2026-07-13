@@ -150,6 +150,19 @@ internal static partial class InterceptorCodeGenerator
                 if (site.Clause.CustomTypeMappingClass != null)
                     AddIfMissing(mappings, GetMappingFieldName(site.Clause.CustomTypeMappingClass), site.Clause.CustomTypeMappingClass);
             }
+
+            // From raw SQL projection properties. The lambda-based RawSql readers
+            // (compile-time-resolved and fallback) live in the interceptor class and
+            // reference these file-scope cached fields. (The struct-based reader emits its
+            // own field instead — see RawSqlBodyEmitter.EmitRowReaderStruct.)
+            if (site.RawSqlTypeInfo != null)
+            {
+                foreach (var prop in site.RawSqlTypeInfo.Properties)
+                {
+                    if (prop.CustomTypeMappingClass != null)
+                        AddIfMissing(mappings, GetMappingFieldName(prop.CustomTypeMappingClass), prop.CustomTypeMappingClass);
+                }
+            }
         }
 
         return mappings;

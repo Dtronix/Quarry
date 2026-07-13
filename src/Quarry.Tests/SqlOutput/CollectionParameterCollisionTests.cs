@@ -313,6 +313,69 @@ internal class CollectionParameterCollisionTests
         });
     }
 
+    #region Item 1 (#308) — two-collection SQL cache validated by colliding hash
+
+    [Test]
+    public async Task Where_TwoCollections_CollidingLengthPairs_NoStaleCacheReuse()
+    {
+        // #308 item 1: the two-collection SQL cache was validated by an XOR-of-scaled-lengths
+        // hash, which is not injective. Length pairs (16, 900) and (85, 41) both hash to the
+        // same value (-249261860). Executing the SAME chain (shared per-carrier cache) first
+        // with lengths (16, 900) then (85, 41) produced a false cache hit → the ColParts arrays
+        // built for the first lengths were reused for the second, driving the bind loop out of
+        // range (IndexOutOfRangeException on SQLite). The fix validates lengths exactly.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        // Two plain-int collections on order_items: OrderItemId and Quantity.
+        // Seeded rows: item 1 (qty 2), item 2 (qty 1), item 3 (qty 3).
+        //
+        // The collision requires the SAME call site (hence the same per-carrier static SQL
+        // cache) to run with both length pairs. Two textually-distinct call sites compile to
+        // separate carriers with separate caches, so the query is written once inside a loop
+        // and the captured locals are reassigned between iterations.
+
+        // Run 0: itemIds length 16, quantities length 900 — no matches (populates cache).
+        // Run 1: itemIds length 85, quantities length 41 — collides with (16, 900); both length
+        // pairs hash to -249261860. The real ids/quantities are included so the corrected cache
+        // path returns deterministic rows (all three seeded items match).
+        var itemIdsRun1 = new List<int> { 1, 2, 3 };
+        itemIdsRun1.AddRange(Enumerable.Range(5000, 82));         // total 85, distinct
+        var quantitiesRun1 = new List<int> { 1, 2, 3 };
+        quantitiesRun1.AddRange(Enumerable.Range(6000, 38));     // total 41, distinct
+
+        Assert.That(itemIdsRun1, Has.Count.EqualTo(85));
+        Assert.That(quantitiesRun1, Has.Count.EqualTo(41));
+
+        var itemLists = new[] { Enumerable.Range(1000, 16).ToList(), itemIdsRun1 };
+        var quantityLists = new[] { Enumerable.Range(2000, 900).ToList(), quantitiesRun1 };
+
+        // Captured by the lambda below; reassigned each iteration so the single call site
+        // executes against both length pairs through one shared carrier cache.
+        List<int> itemIds = null!;
+        List<int> quantities = null!;
+        var results = new List<int>[2];
+
+        for (int run = 0; run < 2; run++)
+        {
+            itemIds = itemLists[run];
+            quantities = quantityLists[run];
+
+            // Pre-fix: run 1 throws IndexOutOfRangeException (stale 16-length ColParts reused for
+            // the 85-length bind loop). Post-fix: the exact length compare rejects the stale entry.
+            results[run] = await Lite.OrderItems()
+                .Where(oi => itemIds.Contains(oi.OrderItemId) && quantities.Contains(oi.Quantity))
+                .Select(oi => oi.OrderItemId)
+                .ExecuteFetchAllAsync();
+        }
+
+        Assert.That(results[0], Is.Empty, "First execution (16, 900): no matching rows");
+        Assert.That(results[1], Is.EquivalentTo(new[] { 1, 2, 3 }),
+            "Second execution (85, 41) must not reuse the (16, 900) cache entry");
+    }
+
+    #endregion
+
     [Test]
     public async Task Where_CollectionPlusNullableDateTime_ExecutionCorrect()
     {
