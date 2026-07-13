@@ -4,7 +4,7 @@ platform: github
 base-branch: master
 ## State
 phase: IMPLEMENT
-status: active
+status: suspended
 issue: discussion
 pr:
 ## Problem Statement
@@ -77,9 +77,17 @@ Shared refactor: extract introspection (connstring build + introspector factory 
 3. `--rename-map` format: inline `table.col=new,...` and/or `@file`.
 
 ## Suspend State
+- **Phase/position:** IMPLEMENT — steps 1a, 1b, 2 complete and committed+pushed (3 of 10 plan checkboxes). Next up: **step 3**.
+- **In progress:** nothing — working tree clean, all committed. No WIP commit.
+- **Immediate next step:** Step 3 — `--rename-map` parsing (`Schema/RenameMap.cs`: inline `table.col=new,bare=new` + `@file` CSV) + pure `ApplyForcedRenames(SchemaSnapshot from, RenameMap map)` pre-transform of the `from` snapshot, plus emitting explicit RenameColumn steps for sub-0.6 forced pairs. Tests: `RenameMapTests.cs` (parse variants, qualified>bare precedence, sub-0.6 forced pair yields RenameColumn). Remember to add `Schema/RenameMap.cs` to the Quarry.Tests `<Compile Include>` list (csproj) so it's unit-testable (see Implementation discoveries).
+- **Remaining steps:** 3, 4, 5, 6, 7, 8, 9 (see plan.md). Order/deps unchanged.
+- **Test status:** ALL GREEN — full suite 3648 passed / 0 failed / 0 skipped (Analyzers 146, Migration 201, Quarry 3301). Baseline was 3628; +20 new tests this session.
+- **HEAD:** a282132 (step 2). Branch pushed to origin/migrate-adopt-existing-db (no PR yet; CI does not run on branch push, only on PR / master).
+- **Unrecorded context:** none beyond Working Notes. Key carry-forward items already recorded there: FK `ReferencedEntityName` diff-noise to neutralize in step 8; test-project compiles tool .cs files directly (add each new tool file to csproj `<Compile Include>`); squash DB-write block is the template for step 4 history writer; `ComputeChecksum` is `internal` (needs InternalsVisibleTo or replicate); tool never creates `__quarry_migrations` (step 4/5 must).
 
 ## Session Log
 | Date | Phases | Summary |
 |------|--------|---------|
 | 2026-07-13 | Bootstrap, INTAKE | Chose new workflow from discussion over 3 existing worktree workflows (305 FINALIZE/suspended, 307 DESIGN, 308 IMPLEMENT). Detected github/master. Created worktree+branch. Baseline build clean; tests running. Transition to DESIGN. |
 | 2026-07-13 | DESIGN | Explored via 3 agents (CLI arch, metadata/snapshot models, history-write) + self (SchemaDiffer/RenameMatcher/NamingConventions/DdlRenderer). Locked design: 3 CLI verbs (add --from-database, baseline, adopt) + convention-aware match + rename-map + drop guard + shared DatabaseSchemaReader refactor. 3 design decisions approved (always-on match, block-drops-default, dual rename-map format). Transition to PLAN. |
+| 2026-07-13 | PLAN, IMPLEMENT | Plan approved (10 steps). Implemented + committed steps 1a (extract DatabaseSchemaReader), 1b (metadata->snapshot adapter), 2 (always-on canonical rename pre-pass). Full suite green (3648). Suspended at 3-step context checkpoint; branch pushed. Resume at step 3. |
