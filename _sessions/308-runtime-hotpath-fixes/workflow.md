@@ -6,7 +6,7 @@ base-branch: master
 phase: REMEDIATE
 status: active
 issue: #308
-pr:
+pr: #321
 ## Problem Statement
 Combined finding from the 2026-07-07 multi-agent deep review (runtime-perf + generated-code perspectives). Six items on the emitted execution hot path (`CarrierEmitter` / `EntityCodeGenerator` / runtime internals):
 
