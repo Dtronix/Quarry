@@ -6,7 +6,7 @@ base-branch: master
 phase: REMEDIATE
 status: active
 issue: discussion
-pr:
+pr: 323
 ## Problem Statement
 Adopting an existing database into Quarry is painful. `migrate add` diffs schema-vs-last-snapshot (never schema-vs-live-DB), so onboarding a legacy DB requires the multi-step "A4" dance: scaffold to legacy names, snapshot, hand-insert a `__quarry_migrations` history row to mark it applied, swap in the real schemas, then hand-author a rename migration. The automatic rename detection uses Levenshtein scoring (`RenameMatcher`: 0.6 accept / 0.8 auto-accept), and systematic renames like snake_case->PascalCase land in that danger zone, so some renames silently degrade to `DROP COLUMN + ADD COLUMN` (data loss).
 
