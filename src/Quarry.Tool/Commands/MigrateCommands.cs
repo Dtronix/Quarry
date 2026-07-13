@@ -718,21 +718,9 @@ internal static class MigrateCommands
                 }
 
                 // Insert baseline row with squash_from marker
-                using (var insertCmd = connection.CreateCommand())
-                {
-                    insertCmd.Transaction = tx;
-                    insertCmd.CommandText = $@"INSERT INTO __quarry_migrations (version, name, applied_at, checksum, execution_time_ms, applied_by, status, squash_from)
-                        VALUES ({SqlFormatting.FormatParameter(sqlDialect, 0)}, {SqlFormatting.FormatParameter(sqlDialect, 1)}, {SqlFormatting.FormatParameter(sqlDialect, 2)}, {SqlFormatting.FormatParameter(sqlDialect, 3)}, {SqlFormatting.FormatParameter(sqlDialect, 4)}, {SqlFormatting.FormatParameter(sqlDialect, 5)}, {SqlFormatting.FormatParameter(sqlDialect, 6)}, {SqlFormatting.FormatParameter(sqlDialect, 7)});";
-                    AddParameter(insertCmd, sqlDialect, 0, 1);
-                    AddParameter(insertCmd, sqlDialect, 1, "Baseline");
-                    AddParameter(insertCmd, sqlDialect, 2, DateTime.UtcNow.ToString("o"));
-                    AddParameter(insertCmd, sqlDialect, 3, "squashed");
-                    AddParameter(insertCmd, sqlDialect, 4, 0);
-                    AddParameter(insertCmd, sqlDialect, 5, $"{Environment.MachineName}/{Environment.UserName}");
-                    AddParameter(insertCmd, sqlDialect, 6, "applied");
-                    AddParameter(insertCmd, sqlDialect, 7, squashedFromVersion);
-                    await insertCmd.ExecuteNonQueryAsync();
-                }
+                await MigrationHistoryWriter.MarkAppliedAsync(
+                    connection, sqlDialect, version: 1, name: "Baseline", checksum: "squashed",
+                    squashFrom: squashedFromVersion, tx: tx);
 
                 await tx.CommitAsync();
                 Console.WriteLine("Database migration history updated with squashed baseline.");
