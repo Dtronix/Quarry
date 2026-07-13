@@ -6,7 +6,7 @@ base-branch: master
 
 ## State
 phase: IMPLEMENT
-status: active
+status: suspended
 issue: #307
 pr:
 
@@ -179,9 +179,44 @@ rebase later if #306 merges first.
   InvalidOperationException.
 
 ## Suspend State
+- Phase: IMPLEMENT — steps 1-4 of 7 complete and committed (see plan.md checkboxes);
+  next is step 5 (structural cascade grouping), then 6 (validator), 7 (docs).
+- Working tree clean; no WIP commit. Last commit 976d4ed (step 4).
+- Test status: full suite green after step 4 — Quarry.Tests 3307, Migration 201,
+  Analyzers 146; 0 failed, 0 skipped (all 4 dialects via Docker).
+- Trigger: IMPLEMENT context check (≥3 plan steps completed this session).
+- Immediate next step: implement plan.md step 5 exactly as specified in its
+  "Algorithm: per-arm mask enumeration" section.
+- Step-5 prep findings not yet in plan.md:
+  - `NestingContext.BranchKind` IS consumed downstream — `TerminalEmitHelpers.cs:471`
+    maps it to `DiagnosticBranchKind` on ClauseDiagnostic (pinned by
+    CrossDialectDiagnosticsTests:484-488). Keep it populated: MutuallyExclusive iff
+    cascade armCount ≥ 2 (matches old behavior incl. ternary), Independent otherwise.
+  - `TestCallSiteBuilder.WithNestingContext(conditionText, depth, branchKind)` at
+    Testing/TestCallSiteBuilder.cs:80 constructs NestingContext directly — give the
+    new NestingContext fields defaults (groupKey: fall back to conditionText,
+    armIndex 0, armCount 1, hasFinalElse false) so synthetic test sites keep compiling;
+    CallSiteTests.cs:136-138 constructs NestingContext directly too (equality tests —
+    extend for new fields).
+  - DetectNestingContext rewrite sketch: walk ancestors with prev-tracking; the first
+    IfStatement entered via .Statement or .Else (or ternary via WhenTrue/WhenFalse) is
+    the innermost arm container; walk up `if.Parent is ElseClause -> parent if` to the
+    cascade head; enumerate arms from the head (then-arm, each else-if arm, final else);
+    groupKey = cascade head SpanStart (prefix "if:"/"t:"); depth counts CASCADES (resume
+    the ancestor walk from the cascade head), not IfStatements; sites inside an if's
+    CONDITION expression pass through (no arm).
+  - EnumerateMaskCombinations rewrite: per cascade, options = each represented arm's
+    OR of bits, plus 0 when (!hasFinalElse || representedArms < armCount); cross-product
+    across cascades (a 1-arm no-else cascade reproduces today's independent bit; a
+    2-arm single-clause cascade reproduces today's exclusive pair — variant counts for
+    supported shapes unchanged). Nested cascades enumerate as superset (safe).
+  - Step-2 pin `Mask_ElseIfChain_UnenumeratedMask_ThrowsActionableGuard`
+    (CrossDialectConditionalMaskTests) must be REPLACED in step 5 by correct-execution
+    assertions (3-arm else-if down each arm).
 
 ## Session Log
 | Date | Phases | Summary |
 |------|--------|---------|
 | 2026-07-13 | INTAKE | Loaded issue #307, created worktree + branch from 7bb0e35, baseline suite started. #305 workflow suspended at FINALIZE in parallel worktree. |
 | 2026-07-13 | DESIGN, PLAN | Baseline green (3628 tests). Verified all issue claims in source; found WithTimeout already runtime-correct (bit is waste) and the fragile positional bit protocol. User approved: honor Limit/Offset/Distinct bits, structural cascade grouping, both defense layers. 7-step plan.md approved; entering IMPLEMENT. |
+| 2026-07-13 | IMPLEMENT (suspended) | Steps 1-4 committed, suite green after each (now 3307+201+146). Step 1 SiteUniqueId bit identity (+ latent-bug regression test); step 2 runtime dispatch guard + else-if pin; step 3 WithTimeout bit removal + IsKnownBuilderMethod fix; step 4 conditional Limit/Offset/Distinct fully honored (render gating, bit setting, binding gating, MySQL bind-order, diagnostics). Suspended by context check; next: step 5. |
