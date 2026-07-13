@@ -179,6 +179,168 @@ public class SchemaDifferRenameTests
         }
     }
 
+    // --- Convention-aware deterministic rename (step 2) ---
+
+    [Test]
+    public void Diff_ColumnRename_SnakeToPascal_IsDeterministic_UnderDefaultCallback()
+    {
+        var from = BuildSnapshot(1, new[]
+        {
+            BuildTable("users", new[]
+            {
+                BuildColumn("id", "int", ColumnKind.PrimaryKey),
+                BuildColumn("user_name", "string", ColumnKind.Standard)
+            })
+        });
+        var to = BuildSnapshot(2, new[]
+        {
+            BuildTable("users", new[]
+            {
+                BuildColumn("id", "int", ColumnKind.PrimaryKey),
+                BuildColumn("UserName", "string", ColumnKind.Standard)
+            })
+        });
+
+        // NO accept-all callback — the default (null) path. Convention rename must still fire.
+        var steps = SchemaDiffer.Diff(from, to);
+
+        Assert.That(steps.Any(s => s.StepType == MigrationStepType.RenameColumn), Is.True);
+        Assert.That(steps.Any(s => s.StepType == MigrationStepType.DropColumn), Is.False);
+        Assert.That(steps.Any(s => s.StepType == MigrationStepType.AddColumn), Is.False);
+    }
+
+    [Test]
+    public void Diff_ColumnRename_Canonical_IgnoresRejectCallback()
+    {
+        var from = BuildSnapshot(1, new[]
+        {
+            BuildTable("users", new[]
+            {
+                BuildColumn("id", "int", ColumnKind.PrimaryKey),
+                BuildColumn("user_name", "string", ColumnKind.Standard)
+            })
+        });
+        var to = BuildSnapshot(2, new[]
+        {
+            BuildTable("users", new[]
+            {
+                BuildColumn("id", "int", ColumnKind.PrimaryKey),
+                BuildColumn("UserName", "string", ColumnKind.Standard)
+            })
+        });
+
+        // Even an explicit reject must NOT turn a canonical rename into drop+add.
+        var steps = SchemaDiffer.Diff(from, to, _ => false);
+
+        Assert.That(steps.Any(s => s.StepType == MigrationStepType.RenameColumn), Is.True);
+        Assert.That(steps.Any(s => s.StepType == MigrationStepType.DropColumn), Is.False);
+    }
+
+    [Test]
+    public void Diff_TableRename_SnakeToPascal_IsDeterministic()
+    {
+        var from = BuildSnapshot(1, new[]
+        {
+            BuildTable("order_items", new[] { BuildColumn("id", "int", ColumnKind.PrimaryKey) })
+        });
+        var to = BuildSnapshot(2, new[]
+        {
+            BuildTable("OrderItems", new[] { BuildColumn("id", "int", ColumnKind.PrimaryKey) })
+        });
+
+        var steps = SchemaDiffer.Diff(from, to);
+
+        Assert.That(steps.Any(s => s.StepType == MigrationStepType.RenameTable), Is.True);
+        Assert.That(steps.Any(s => s.StepType == MigrationStepType.DropTable), Is.False);
+        Assert.That(steps.Any(s => s.StepType == MigrationStepType.CreateTable), Is.False);
+    }
+
+    [Test]
+    public void Diff_CanonicalRename_WithTypeChange_EmitsRenameAndAlter()
+    {
+        var from = BuildSnapshot(1, new[]
+        {
+            BuildTable("users", new[]
+            {
+                BuildColumn("id", "int", ColumnKind.PrimaryKey),
+                BuildColumn("is_active", "bool", ColumnKind.Standard)
+            })
+        });
+        var to = BuildSnapshot(2, new[]
+        {
+            BuildTable("users", new[]
+            {
+                BuildColumn("id", "int", ColumnKind.PrimaryKey),
+                BuildColumn("IsActive", "int", ColumnKind.Standard) // canonical-equal name, type changed
+            })
+        });
+
+        var steps = SchemaDiffer.Diff(from, to, _ => false);
+
+        Assert.That(steps.Any(s => s.StepType == MigrationStepType.RenameColumn), Is.True);
+        Assert.That(steps.Any(s => s.StepType == MigrationStepType.AlterColumn), Is.True);
+    }
+
+    [Test]
+    public void Diff_CanonicalCollision_DoesNotDeterministicallyRename()
+    {
+        // Two added columns share a canonical form ("username") — ambiguous, so the
+        // deterministic pass must NOT match; with a reject callback it falls to drop+add.
+        // (Separator variants, not case variants, so they don't collapse under the
+        // case-insensitive same-name match that runs first.)
+        var from = BuildSnapshot(1, new[]
+        {
+            BuildTable("users", new[]
+            {
+                BuildColumn("id", "int", ColumnKind.PrimaryKey),
+                BuildColumn("user_name", "string", ColumnKind.Standard)
+            })
+        });
+        var to = BuildSnapshot(2, new[]
+        {
+            BuildTable("users", new[]
+            {
+                BuildColumn("id", "int", ColumnKind.PrimaryKey),
+                BuildColumn("username", "string", ColumnKind.Standard),
+                BuildColumn("user-name", "string", ColumnKind.Standard)
+            })
+        });
+
+        var steps = SchemaDiffer.Diff(from, to, _ => false);
+
+        Assert.That(steps.Any(s => s.StepType == MigrationStepType.RenameColumn), Is.False);
+        Assert.That(steps.Any(s => s.StepType == MigrationStepType.DropColumn), Is.True);
+    }
+
+    [Test]
+    public void Diff_GenuinelyDifferentNames_AreNotCanonicalMatched()
+    {
+        var from = BuildSnapshot(1, new[]
+        {
+            BuildTable("users", new[]
+            {
+                BuildColumn("id", "int", ColumnKind.PrimaryKey),
+                BuildColumn("first_name", "string", ColumnKind.Standard)
+            })
+        });
+        var to = BuildSnapshot(2, new[]
+        {
+            BuildTable("users", new[]
+            {
+                BuildColumn("id", "int", ColumnKind.PrimaryKey),
+                BuildColumn("full_name", "string", ColumnKind.Standard)
+            })
+        });
+
+        // Reject heuristic renames; canonical forms differ ("firstname" vs "fullname"),
+        // so no rename should be emitted — it must be drop+add.
+        var steps = SchemaDiffer.Diff(from, to, _ => false);
+
+        Assert.That(steps.Any(s => s.StepType == MigrationStepType.RenameColumn), Is.False);
+        Assert.That(steps.Any(s => s.StepType == MigrationStepType.DropColumn), Is.True);
+        Assert.That(steps.Any(s => s.StepType == MigrationStepType.AddColumn), Is.True);
+    }
+
     #region Helpers
 
     private static SchemaSnapshot BuildSnapshot(int version, IReadOnlyList<TableDef> tables)

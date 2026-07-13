@@ -60,7 +60,15 @@ static class SchemaDiffer
                 droppedTables.Add(kvp.Value);
         }
 
-        // Rename detection for tables — greedy matching across all add/drop pairs
+        // Deterministic convention-aware rename detection (always-on): match tables whose
+        // names are equal under canonical normalization (case/separator-insensitive). These
+        // are certain renames and are not subject to the acceptRename callback.
+        if (addedTables.Count > 0 && droppedTables.Count > 0)
+        {
+            DetectCanonicalTableRenames(addedTables, droppedTables, steps, acceptRename);
+        }
+
+        // Rename detection for tables — greedy (Levenshtein) matching across the remainder
         if (addedTables.Count > 0 && droppedTables.Count > 0)
         {
             DetectTableRenames(addedTables, droppedTables, steps, acceptRename);
@@ -231,7 +239,16 @@ static class SchemaDiffer
                 droppedCols.Add(kvp.Value);
         }
 
-        // Rename detection for columns — greedy matching across all add/drop pairs
+        // Deterministic convention-aware rename detection (always-on): match columns whose
+        // names are equal under canonical normalization (case/separator-insensitive). These
+        // are certain renames — emitted directly, never subject to the acceptRename callback,
+        // so a snake_case->PascalCase migration can never silently become drop+add.
+        if (addedCols.Count > 0 && droppedCols.Count > 0)
+        {
+            DetectCanonicalColumnRenames(addedCols, droppedCols, tableName, schemaName, steps);
+        }
+
+        // Rename detection for columns — greedy (Levenshtein) matching across the remainder
         if (addedCols.Count > 0 && droppedCols.Count > 0)
         {
             DetectColumnRenames(addedCols, droppedCols, tableName, schemaName, steps, acceptRename);
@@ -258,6 +275,131 @@ static class SchemaDiffer
                 col, null,
                 $"Drop column '{col.Name}' from '{tableName}'"));
         }
+    }
+
+    /// <summary>
+    /// Groups items by the canonical form of their name, returning a map from canonical
+    /// key to the single item index. A canonical key that occurs more than once maps to
+    /// -1 (ambiguous) so it is never used for a deterministic match.
+    /// </summary>
+    private static Dictionary<string, int> GroupUniqueByCanonical<T>(List<T> items, Func<T, string> nameSelector)
+    {
+        var map = new Dictionary<string, int>(StringComparer.Ordinal);
+        for (var i = 0; i < items.Count; i++)
+        {
+            var canon = NamingConventions.Canonicalize(nameSelector(items[i]));
+            map[canon] = map.ContainsKey(canon) ? -1 : i;
+        }
+        return map;
+    }
+
+    /// <summary>
+    /// Deterministically matches added/dropped tables whose names share a canonical form
+    /// (a naming-convention-only rename), emitting RenameTable and diffing the matched pair.
+    /// Only canonical keys that are unique on both sides are matched; ambiguous keys fall
+    /// through to heuristic detection.
+    /// </summary>
+    private static void DetectCanonicalTableRenames(
+        List<TableDef> addedTables, List<TableDef> droppedTables,
+        List<MigrationStep> steps,
+        Func<RenameMatcher.RenameCandidate, bool>? acceptRename)
+    {
+        var addedByCanon = GroupUniqueByCanonical(addedTables, t => t.TableName);
+        var droppedByCanon = GroupUniqueByCanonical(droppedTables, t => t.TableName);
+
+        var usedAdded = new HashSet<int>();
+        var usedDropped = new HashSet<int>();
+
+        foreach (var kvp in droppedByCanon)
+        {
+            if (kvp.Value < 0) continue;
+            if (!addedByCanon.TryGetValue(kvp.Key, out var addIdx) || addIdx < 0) continue;
+
+            var dropped = droppedTables[kvp.Value];
+            var added = addedTables[addIdx];
+
+            steps.Add(new MigrationStep(
+                MigrationStepType.RenameTable,
+                StepClassification.Cautious,
+                dropped.TableName,
+                dropped.SchemaName,
+                null,
+                dropped.TableName,
+                added.TableName,
+                $"Rename table '{dropped.TableName}' to '{added.TableName}'"));
+
+            DiffColumns(dropped, added, added.TableName, added.SchemaName, steps, acceptRename);
+            DiffForeignKeys(dropped, added, added.TableName, added.SchemaName, steps);
+            DiffIndexes(dropped, added, added.TableName, added.SchemaName, steps);
+
+            usedAdded.Add(addIdx);
+            usedDropped.Add(kvp.Value);
+        }
+
+        foreach (var idx in usedAdded.OrderByDescending(i => i))
+            addedTables.RemoveAt(idx);
+        foreach (var idx in usedDropped.OrderByDescending(i => i))
+            droppedTables.RemoveAt(idx);
+    }
+
+    /// <summary>
+    /// Deterministically matches added/dropped columns whose names share a canonical form
+    /// (a naming-convention-only rename), emitting RenameColumn (plus AlterColumn when other
+    /// properties also changed). Only canonical keys unique on both sides are matched.
+    /// </summary>
+    private static void DetectCanonicalColumnRenames(
+        List<ColumnDef> addedCols, List<ColumnDef> droppedCols,
+        string tableName, string? schemaName,
+        List<MigrationStep> steps)
+    {
+        var addedByCanon = GroupUniqueByCanonical(addedCols, c => c.Name);
+        var droppedByCanon = GroupUniqueByCanonical(droppedCols, c => c.Name);
+
+        var usedAdded = new HashSet<int>();
+        var usedDropped = new HashSet<int>();
+
+        foreach (var kvp in droppedByCanon)
+        {
+            if (kvp.Value < 0) continue;
+            if (!addedByCanon.TryGetValue(kvp.Key, out var addIdx) || addIdx < 0) continue;
+
+            var dropped = droppedCols[kvp.Value];
+            var added = addedCols[addIdx];
+
+            steps.Add(new MigrationStep(
+                MigrationStepType.RenameColumn,
+                StepClassification.Cautious,
+                tableName, schemaName, dropped.Name,
+                dropped.Name, added.Name,
+                $"Rename column '{dropped.Name}' to '{added.Name}' in '{tableName}'"));
+
+            // Emit AlterColumn if properties other than the name changed too.
+            var oldWithNewName = new ColumnDef(
+                added.Name, dropped.ClrType, dropped.IsNullable, dropped.Kind,
+                dropped.IsIdentity, dropped.IsClientGenerated, dropped.IsComputed,
+                dropped.MaxLength, dropped.Precision, dropped.Scale,
+                dropped.HasDefault, dropped.DefaultExpression, dropped.MappedName,
+                dropped.ReferencedEntityName, dropped.CustomTypeMapping,
+                dropped.ComputedExpression, dropped.Collation);
+
+            if (!oldWithNewName.Equals(added))
+            {
+                steps.Add(new MigrationStep(
+                    MigrationStepType.AlterColumn,
+                    StepClassification.Cautious,
+                    tableName, schemaName, added.Name,
+                    dropped, added,
+                    $"Alter column '{added.Name}' in '{tableName}'"));
+            }
+
+            usedAdded.Add(addIdx);
+            usedDropped.Add(kvp.Value);
+        }
+
+        foreach (var idx in usedAdded.OrderByDescending(i => i))
+            addedCols.RemoveAt(idx);
+        foreach (var idx in usedDropped.OrderByDescending(i => i))
+            droppedCols.RemoveAt(idx);
     }
 
     /// <summary>
