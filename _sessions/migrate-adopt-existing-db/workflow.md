@@ -3,8 +3,8 @@
 platform: github
 base-branch: master
 ## State
-phase: IMPLEMENT
-status: active
+phase: REVIEW
+status: suspended
 issue: discussion
 pr:
 ## Problem Statement
@@ -87,7 +87,13 @@ Shared refactor: extract introspection (connstring build + introspector factory 
 3. `--rename-map` format: inline `table.col=new,...` and/or `@file`.
 
 ## Suspend State
-- **Phase/position:** IMPLEMENT — steps 1a, 1b, 2, 3, 4, 5 complete and committed+pushed (6 of 10 plan checkboxes). Next up: **step 6**.
+- **Phase/position:** IMPLEMENT COMPLETE — all 10 plan checkboxes done (1a,1b,2,3,4,5,6,7,8,9), committed+pushed. Transitioned to **REVIEW**; REVIEW work has NOT started yet.
+- **In progress:** nothing — working tree clean. No WIP commit.
+- **Immediate next step (REVIEW phase):** (1) `git fetch origin`; rebase branch on `origin/master`; run full suite until green; if branch was pushed + rebased, `git push --force-with-lease`. (2) Delegate the 6-section analysis pass to an agent over `git diff origin/master...HEAD -- . ':!_sessions'` — agent reads plan.md + workflow.md Decisions and writes review.md (see Review Template; stable IDs F1.., severity H/M/L; sections: Plan Compliance, Correctness, Security, Test Quality, Codebase Consistency, Integration/Breaking Changes). (3) Read review.md on main context; classify findings A/B/C/D; write ## Classifications table at top of review.md; ask user with one-line summary. Then REMEDIATE.
+- **Test status:** ALL GREEN — full suite 3671 passed / 0 failed / 0 skipped (Analyzers 146, Migration 201, Quarry 3324). Baseline was 3628; +43 new tests total.
+- **HEAD:** c6f1696 (step 9 docs). Branch pushed to origin/migrate-adopt-existing-db (no PR yet; CI runs on PR / master only).
+- **REVIEW focus hints (things to scrutinize):** (a) NormalizeForDiff correctness — it clears FK/index/composite so adopt ignores them (documented limitation) — confirm that's acceptable and not hiding real drops; (b) drop guard only runs when fromDatabase set — confirm adopt path also guards (it does, step 4 of MigrateAdopt); (c) baseline/adopt use checksum sentinel "baseline" -> StrictChecksums warns (squash-consistent); (d) MigrateAdd/MigrateDiff refactor (ResolveFromSnapshotAsync, normalization tuple) — verify default (non-DB) path is byte-identical behavior; (e) adopt version numbering assumes fresh-ish project (baseline=latest+1, rename=latest+2); (f) MigrateCommands methods not directly unit-tested (not in test project) — coverage is by-composition; note in Plan Compliance.
+- **Earlier (superseded) suspend notes below are historical.** Prior: suspended at step 5 (HEAD b8c0962) with next=step 6.
 - **In progress:** nothing — working tree clean, all committed. No WIP commit.
 - **Immediate next step:** Step 6 — add `--from-database <connstr>` + `-d/--dialect` + `-c/--connection` params to `MigrateAdd` and `MigrateDiff` (MigrateCommands): when `--from-database` set, the "from"/comparison snapshot = `DatabaseSchemaReader.ReadTablesAsync` + `ToSnapshot` instead of `FindAndBuildSnapshot`. Wire options in Program.cs (mirror the `migrate baseline` case just added). Keep the opened `DbConnection` available for the step-7 drop guard. Test intent: `add --from-database` against a seeded SQLite legacy snake_case DB vs PascalCase project schemas emits RenameColumn (via the always-on canonical pass), no drop+add. NOTE: MigrateCommands is NOT in the test project, so prefer testing the seam via DatabaseSchemaReader.ToSnapshot + SchemaDiffer.Diff composition (already unit-testable) rather than the CLI method; or add a focused runner-style integration test.
 - **Remaining steps:** 6 (--from-database), 7 (drop guard), 8 (adopt orchestration — reuse MigrateBaseline + from-database diff + RenameMap.ApplyForcedRenames + drop guard; keep as MigrateCommands method), 9 (docs: README + llm.md + llm-migrate.md, replace A4 dance). See plan.md.
@@ -102,3 +108,4 @@ Shared refactor: extract introspection (connstring build + introspector factory 
 | 2026-07-13 | DESIGN | Explored via 3 agents (CLI arch, metadata/snapshot models, history-write) + self (SchemaDiffer/RenameMatcher/NamingConventions/DdlRenderer). Locked design: 3 CLI verbs (add --from-database, baseline, adopt) + convention-aware match + rename-map + drop guard + shared DatabaseSchemaReader refactor. 3 design decisions approved (always-on match, block-drops-default, dual rename-map format). Transition to PLAN. |
 | 2026-07-13 | PLAN, IMPLEMENT | Plan approved (10 steps). Implemented + committed steps 1a (extract DatabaseSchemaReader), 1b (metadata->snapshot adapter), 2 (always-on canonical rename pre-pass). Full suite green (3648). Suspended at 3-step context checkpoint; branch pushed. Resume at step 3. |
 | 2026-07-13 | IMPLEMENT (resume) | Implemented + committed steps 3 (--rename-map + forced-rename pre-transform), 4 (MigrationHistoryWriter + squash refactor), 5 (migrate baseline command). Full suite green (3662). Suspended at 3-step checkpoint; branch pushed (HEAD b8c0962). Resume at step 6. |
+| 2026-07-13 | IMPLEMENT (resume 2) | Implemented + committed steps 6 (--from-database), 7 (drop guard), 8 (adopt + NormalizeForDiff correctness fix), 9 (docs). IMPLEMENT COMPLETE (10/10). Full suite green (3671). Auto-transitioned to REVIEW; suspended before REVIEW work (rebase+analysis deserve fresh context). HEAD c6f1696. |
