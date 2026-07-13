@@ -88,6 +88,37 @@ public class MigrationHistoryWriterTests
     }
 
     [Test]
+    public async Task MarkApplied_ThenRun_SkipsBaselinedMigration_NoDdlExecuted()
+    {
+        // End-to-end proof of the `migrate baseline` guarantee: after a version is recorded
+        // as applied (without running its DDL), MigrationRunner skips it — the table it would
+        // have created is never created.
+        await using var conn = new SqliteConnection("Data Source=:memory:");
+        await conn.OpenAsync();
+
+        await MigrationHistoryWriter.EnsureHistoryTableAsync(conn, SqlDialect.SQLite);
+        await MigrationHistoryWriter.MarkAppliedAsync(conn, SqlDialect.SQLite, 1, "InitialCreate", "baseline");
+
+        var migrations = new (int, string, Action<MigrationBuilder>, Action<MigrationBuilder>, Action<MigrationBuilder>)[]
+        {
+            (1, "InitialCreate",
+                b => b.CreateTable("legacy_users", null, t =>
+                {
+                    t.Column("id", c => c.ClrType("int").NotNull());
+                    t.PrimaryKey("PK_legacy_users", "id");
+                }),
+                b => b.DropTable("legacy_users"),
+                _ => { })
+        };
+
+        await MigrationRunner.RunAsync(conn, SqlDialect.SQLite, migrations);
+
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name='legacy_users';";
+        Assert.That(await cmd.ExecuteScalarAsync(), Is.Null, "baselined migration should have been skipped");
+    }
+
+    [Test]
     public async Task MarkAppliedAsync_SquashFrom_WritesSquashBaselineRow()
     {
         await using var conn = new SqliteConnection(_connectionString);

@@ -125,6 +125,118 @@ internal static class MigrateCommands
     }
 
     /// <summary>
+    /// quarry migrate baseline — Generates a migration representing the current schema (or a
+    /// live database's schema via <c>--from-database</c>) and records it as already-applied in
+    /// <c>__quarry_migrations</c> WITHOUT executing its DDL. Use this when adopting an existing
+    /// database into Quarry so the initial state is not re-created on the next MigrateAsync.
+    /// </summary>
+    /// <param name="name">Migration name (e.g. InitialCreate).</param>
+    /// <param name="project">-p, Path to .csproj.</param>
+    /// <param name="output">-o, Output directory for migration files.</param>
+    /// <param name="nonInteractive">--ni, Non-interactive mode for CI.</param>
+    /// <param name="fromDatabase">--from-database, connection string to introspect the schema from a live database.</param>
+    /// <param name="dialect">-d, SQL dialect (falls back to the context's declared dialect).</param>
+    /// <param name="connection">-c, connection string of the DB to mark the baseline applied on (when not using --from-database).</param>
+    public static async Task MigrateBaseline(
+        string name,
+        string project = ".",
+        string output = "Migrations",
+        bool nonInteractive = false,
+        string? fromDatabase = null,
+        string? dialect = null,
+        string? connection = null)
+    {
+        var csprojPath = CommandHelpers.ResolveCsproj(project);
+        Console.WriteLine($"Loading project: {csprojPath}");
+
+        var compilation = await ProjectSchemaReader.OpenProjectAsync(csprojPath);
+        if (compilation == null)
+        {
+            Console.Error.WriteLine("Failed to load project compilation.");
+            return;
+        }
+
+        var baseOutputDir = Path.Combine(Path.GetDirectoryName(csprojPath)!, output);
+        Directory.CreateDirectory(baseOutputDir);
+
+        var latestVersion = FindLatestSnapshotVersion(compilation);
+        var newVersion = latestVersion + 1;
+        var parentVersion = latestVersion > 0 ? latestVersion : (int?)null;
+
+        var resolvedDialect = DialectResolver.ResolveDialect(compilation, dialect);
+
+        // Build the snapshot to baseline: from a live DB (--from-database) or the project schemas.
+        SchemaSnapshot currentSnapshot;
+        if (fromDatabase != null)
+        {
+            if (resolvedDialect == null)
+            {
+                Console.Error.WriteLine("Could not determine SQL dialect for --from-database. Use --dialect / -d.");
+                return;
+            }
+            var tables = await DatabaseSchemaReader.ReadTablesAsync(resolvedDialect, fromDatabase, null, null);
+            currentSnapshot = DatabaseSchemaReader.ToSnapshot(tables, resolvedDialect, newVersion, name, parentVersion);
+        }
+        else
+        {
+            currentSnapshot = ProjectSchemaReader.ExtractSchemaSnapshot(compilation, newVersion, name, parentVersion);
+        }
+
+        var previousSnapshot = latestVersion > 0 ? FindAndBuildSnapshot(compilation, latestVersion) : null;
+        var steps = SchemaDiffer.Diff(previousSnapshot, currentSnapshot);
+
+        if (steps.Count == 0)
+        {
+            Console.WriteLine("No schema changes to baseline.");
+            return;
+        }
+
+        // Generate the migration + snapshot files (same layout as `migrate add`).
+        var names = ComputeMigrationNames(newVersion, name);
+        var migrationDir = Path.Combine(baseOutputDir, names.SubdirName);
+        Directory.CreateDirectory(migrationDir);
+        var ns = GuessNamespace(csprojPath, output);
+
+        var combinedCode = GenerateCombinedMigrationFile(newVersion, name, steps, previousSnapshot, currentSnapshot, ns);
+        await File.WriteAllTextAsync(Path.Combine(migrationDir, names.GeneratedFileName), combinedCode);
+        Console.WriteLine($"Created: {Path.Combine(output, names.SubdirName, names.GeneratedFileName)}");
+
+        var userFilePath = Path.Combine(migrationDir, names.UserFileName);
+        if (!File.Exists(userFilePath))
+        {
+            await File.WriteAllTextAsync(userFilePath, GenerateUserPartialFile(newVersion, name, ns));
+            Console.WriteLine($"Created: {Path.Combine(output, names.SubdirName, names.UserFileName)}");
+        }
+
+        // Record the migration as already-applied without executing its DDL.
+        var connString = fromDatabase ?? connection;
+        if (connString != null)
+        {
+            if (resolvedDialect == null)
+            {
+                Console.Error.WriteLine("Could not determine SQL dialect to record the baseline. Use --dialect / -d.");
+                return;
+            }
+            var sqlDialect = ParseDialect(resolvedDialect);
+            await using var conn = CreateConnection(resolvedDialect, connString);
+            await conn.OpenAsync();
+            await MigrationHistoryWriter.EnsureHistoryTableAsync(conn, sqlDialect);
+            // Checksum sentinel "baseline" mirrors squash's "squashed": MigrateAsync skips by
+            // version, and non-strict checksum validation ignores it (StrictChecksums will warn).
+            await MigrationHistoryWriter.MarkAppliedAsync(conn, sqlDialect, newVersion, name, checksum: "baseline");
+            Console.WriteLine($"Recorded migration {newVersion} '{name}' as already-applied (no DDL executed).");
+        }
+        else
+        {
+            Console.WriteLine("No --connection / --from-database provided: files were generated but not marked applied.");
+            Console.WriteLine("  Provide a connection to record the baseline in __quarry_migrations.");
+        }
+
+        Console.WriteLine();
+        Console.WriteLine($"Baseline migration {newVersion}: {name} ({steps.Count} step(s)).");
+    }
+
+    /// <summary>
     /// quarry migrate add-empty — Creates an empty migration for manual data operations.
     /// </summary>
     public static async Task MigrateAddEmpty(string name, string project = ".", string output = "Migrations")

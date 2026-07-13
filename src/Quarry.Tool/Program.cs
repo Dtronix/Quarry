@@ -37,6 +37,17 @@ async Task<int> DispatchAsync(string command, string[] args)
                 HasFlag(opts, "ni", "non-interactive"));
             return 0;
 
+        case "migrate baseline":
+            await MigrateCommands.MigrateBaseline(
+                GetPositional(opts, "name", args, 2),
+                GetOpt(opts, "p", "project", "."),
+                GetOpt(opts, "o", "output", "Migrations"),
+                HasFlag(opts, "ni", "non-interactive"),
+                GetOptOrNull(opts, null, "from-database"),
+                GetOptOrNull(opts, "d", "dialect"),
+                GetOptOrNull(opts, "c", "connection"));
+            return 0;
+
         case "migrate add-empty":
             await MigrateCommands.MigrateAddEmpty(
                 GetPositional(opts, "name", args, 2),
@@ -209,6 +220,7 @@ void PrintUsage()
     Console.WriteLine();
     Console.WriteLine("Commands:");
     Console.WriteLine("  migrate add <name>       Scaffold a new migration from schema changes");
+    Console.WriteLine("  migrate baseline <name>  Snapshot the current/live-DB schema and record it applied (adopt an existing DB)");
     Console.WriteLine("  migrate add-empty <name> Create an empty migration for manual operations");
     Console.WriteLine("  migrate list             List all migrations");
     Console.WriteLine("  migrate validate         Validate migration integrity");
