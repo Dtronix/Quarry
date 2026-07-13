@@ -1422,6 +1422,20 @@ INSERT INTO "users" ("UserName", "IsActive") VALUES (@p0, @p1), ...
 
 ---
 
+### Users().InsertBatch(...).Values(...).ExecuteNonQueryAsync()
+
+```sql
+INSERT INTO "users" ("UserName", "IsActive", "CreatedAt") VALUES (@p0, @p1, @p2), ...
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `bool` |
+| `@p2` | `DateTime` |
+
+---
+
 ### Users().InsertBatch(...).Values(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -5632,7 +5646,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 707 |
+| Total discovered | 710 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 193 |
-| Rendered | 514 |
+| Consolidated (deduped) | 195 |
+| Rendered | 515 |
