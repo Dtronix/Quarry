@@ -38,6 +38,20 @@ public class NavigationListTests
     }
 
     [Test]
+    public void Unloaded_GetEnumerator_ReturnsSharedInstance()
+    {
+        // #308 item 6d: the unloaded path returns a shared empty enumerator instead of
+        // allocating one (via Enumerable.Empty<T>().GetEnumerator()) each time.
+        var list = NavigationList<TestEntity>.Unloaded();
+
+        var e1 = list.GetEnumerator();
+        var e2 = list.GetEnumerator();
+
+        Assert.That(e2, Is.SameAs(e1));
+        Assert.That(e1.MoveNext(), Is.False);
+    }
+
+    [Test]
     public void Unloaded_IndexerThrowsInvalidOperationException()
     {
         var list = NavigationList<TestEntity>.Unloaded();

@@ -71,17 +71,35 @@ public sealed class NavigationList<T> : IReadOnlyList<T>
 
     /// <summary>
     /// Returns an enumerator that iterates through the collection.
-    /// Returns an empty enumerator if the collection has not been loaded.
+    /// Returns a shared empty enumerator if the collection has not been loaded.
     /// </summary>
     public IEnumerator<T> GetEnumerator()
     {
-        return (_items ?? Enumerable.Empty<T>()).GetEnumerator();
+        return _items is null ? EmptyEnumerator.Instance : _items.GetEnumerator();
     }
 
     /// <summary>
     /// Returns an enumerator that iterates through the collection.
     /// </summary>
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+    /// <summary>
+    /// Shared empty enumerator for the unloaded state. It is stateless
+    /// (<see cref="MoveNext"/> is always <c>false</c>), so a single instance is safe to share
+    /// and avoids the per-enumeration allocation of <c>Enumerable.Empty&lt;T&gt;().GetEnumerator()</c>.
+    /// </summary>
+    private sealed class EmptyEnumerator : IEnumerator<T>
+    {
+        public static readonly IEnumerator<T> Instance = new EmptyEnumerator();
+
+        private EmptyEnumerator() { }
+
+        public T Current => throw new InvalidOperationException("Enumeration has no elements.");
+        object? IEnumerator.Current => Current;
+        public bool MoveNext() => false;
+        public void Reset() { }
+        public void Dispose() { }
+    }
 
     /// <summary>
     /// The shared unloaded instance. Safe to share because the unloaded state is
