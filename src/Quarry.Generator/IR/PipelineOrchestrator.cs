@@ -645,10 +645,20 @@ internal static class PipelineOrchestrator
                 if (active != seen.Contains(i))
                     failure = $"placeholder slot set does not match the active parameter set for mask {mask} (parameter {i})";
             }
-            if (failure == null && limitSlot != null && !seen.Contains(limitSlot.Value))
-                failure = $"limit placeholder missing from the SQL variant for mask {mask}";
-            if (failure == null && offsetSlot != null && !seen.Contains(offsetSlot.Value))
-                failure = $"offset placeholder missing from the SQL variant for mask {mask}";
+            // Conditional pagination: the placeholder must appear exactly in the variants
+            // whose mask has the site's bit set (unconditional == always active).
+            if (failure == null && limitSlot != null)
+            {
+                var limitActive = pag!.LimitBitIndex == null || (mask & (1 << pag.LimitBitIndex.Value)) != 0;
+                if (limitActive != seen.Contains(limitSlot.Value))
+                    failure = $"limit placeholder presence does not match its conditional bit for mask {mask}";
+            }
+            if (failure == null && offsetSlot != null)
+            {
+                var offsetActive = pag!.OffsetBitIndex == null || (mask & (1 << pag.OffsetBitIndex.Value)) != 0;
+                if (offsetActive != seen.Contains(offsetSlot.Value))
+                    failure = $"offset placeholder presence does not match its conditional bit for mask {mask}";
+            }
             if (failure != null) continue;
 
             if (textOrder.Count > 0)

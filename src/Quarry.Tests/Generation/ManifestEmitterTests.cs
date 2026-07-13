@@ -825,7 +825,7 @@ public class ManifestEmitterTests
             .Build();
 
         var plan = CreatePlanWithConditionals(execution, new[] { chainRoot, where },
-            "SELECT 1", new[] { new ConditionalTerm(0, ClauseRole.Where) },
+            "SELECT 1", new[] { new ConditionalTerm(0, ClauseRole.Where, "where_0") },
             new int[] { 0, 1 });
 
         var result = ManifestEmitter.BuildBitIndexToConditionText(plan);
@@ -873,8 +873,8 @@ public class ManifestEmitterTests
             "SELECT 1",
             new[]
             {
-                new ConditionalTerm(0, ClauseRole.Where),
-                new ConditionalTerm(1, ClauseRole.OrderBy)
+                new ConditionalTerm(0, ClauseRole.Where, "where_0"),
+                new ConditionalTerm(1, ClauseRole.OrderBy, "order_0")
             },
             new int[] { 0, 1, 2, 3 });
 
@@ -924,7 +924,7 @@ public class ManifestEmitterTests
         var plan = CreatePlanWithConditionals(execution,
             new[] { chainRoot, whereUnconditional, orderBy },
             "SELECT 1",
-            new[] { new ConditionalTerm(0, ClauseRole.OrderBy) },
+            new[] { new ConditionalTerm(0, ClauseRole.OrderBy, "order_0") },
             new int[] { 0, 1 });
 
         var result = ManifestEmitter.BuildBitIndexToConditionText(plan);
@@ -964,7 +964,7 @@ public class ManifestEmitterTests
 
         var plan = CreatePlanWithConditionals(execution, new[] { chainRoot, where },
             "SELECT 1",
-            new[] { new ConditionalTerm(0, ClauseRole.Where) },
+            new[] { new ConditionalTerm(0, ClauseRole.Where, "where_0") },
             new int[] { 0, 1 });
 
         var result = ManifestEmitter.BuildBitIndexToConditionText(plan);
@@ -1042,7 +1042,7 @@ public class ManifestEmitterTests
 
         var plan = CreatePlanWithConditionals(execution, new[] { chainRoot, where },
             "SELECT 1",
-            new[] { new ConditionalTerm(0, ClauseRole.Where) },
+            new[] { new ConditionalTerm(0, ClauseRole.Where, "where_0") },
             new int[] { 0, 1 },
             parameters: new[]
             {
@@ -1114,7 +1114,7 @@ public class ManifestEmitterTests
         var plan = CreatePlanWithConditionals(execution,
             new[] { chainRoot, whereUnconditional, orderBy },
             "SELECT 1",
-            new[] { new ConditionalTerm(0, ClauseRole.OrderBy) },
+            new[] { new ConditionalTerm(0, ClauseRole.OrderBy, "order_0") },
             new int[] { 0, 1 },
             parameters: new[]
             {
@@ -1161,7 +1161,7 @@ public class ManifestEmitterTests
         var plan = CreatePlanWithConditionals(execution,
             new[] { chainRoot, distinct },
             "SELECT 1",
-            new[] { new ConditionalTerm(0, ClauseRole.Distinct) },
+            new[] { new ConditionalTerm(0, ClauseRole.Distinct, "distinct_0") },
             new int[] { 0, 1 },
             parameters: new[]
             {

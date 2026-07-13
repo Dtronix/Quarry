@@ -230,10 +230,10 @@ internal static class ManifestEmitter
 
         sb.AppendLine();
 
-        // Build bit index → condition text mapping for conditional chains
-        Dictionary<int, string>? bitToCondition = null;
+        // Build bit index → condition text/arm identity mapping for conditional chains
+        Dictionary<int, (string Label, string ArmKey)>? bitToCondition = null;
         if (isConditional)
-            bitToCondition = BuildBitIndexToConditionText(plan);
+            bitToCondition = BuildBitIndexToArmLabel(plan);
 
         // SQL block(s) — all variants in a single fenced block
         sb.AppendLine("```sql");
@@ -426,32 +426,47 @@ internal static class ManifestEmitter
     internal static Dictionary<int, string> BuildBitIndexToConditionText(AssembledPlan plan)
     {
         var result = new Dictionary<int, string>();
+        foreach (var kvp in BuildBitIndexToArmLabel(plan))
+            result[kvp.Key] = kvp.Value.Label;
+        return result;
+    }
+
+    /// <summary>
+    /// Like <see cref="BuildBitIndexToConditionText"/> but also carries each bit's arm
+    /// identity (cascade GroupKey + arm index) so variant labels can collapse bits from
+    /// the SAME arm (a multi-clause branch — one label suffices) without merging
+    /// distinct cascades that merely share condition text.
+    /// </summary>
+    internal static Dictionary<int, (string Label, string ArmKey)> BuildBitIndexToArmLabel(AssembledPlan plan)
+    {
+        var result = new Dictionary<int, (string, string)>();
         var conditionalTerms = plan.ConditionalTerms;
         if (conditionalTerms.Count == 0)
             return result;
 
-        // Determine baseline nesting depth from the execution terminal
-        var baselineDepth = plan.ExecutionSite.Bound.Raw.NestingContext?.NestingDepth ?? 0;
-
-        // Walk clause sites in order (same order ChainAnalyzer uses to assign bit indices)
-        int termIndex = 0;
-        foreach (var site in plan.ClauseSites)
+        // Resolve each term's site by identity (SiteUniqueId) — positional correlation
+        // against ClauseSites is not sound because bit assignment skips sites.
+        foreach (var term in conditionalTerms)
         {
-            if (termIndex >= conditionalTerms.Count)
+            foreach (var site in plan.ClauseSites)
+            {
+                if (site.UniqueId != term.SiteUniqueId)
+                    continue;
+
+                var nestingCtx = site.Bound.Raw.NestingContext;
+                if (nestingCtx != null)
+                {
+                    // A final-else arm's ConditionText is the PRECEDING arm's condition
+                    // (an else has none of its own) — label it as such so it doesn't
+                    // read identically to that arm's label.
+                    var text = TruncateConditionText(nestingCtx.ConditionText);
+                    var label = nestingCtx.HasFinalElse && nestingCtx.ArmIndex == nestingCtx.ArmCount - 1
+                        ? $"else({text})"
+                        : text;
+                    result[term.BitIndex] = (label, $"{nestingCtx.GroupKey}#{nestingCtx.ArmIndex}");
+                }
                 break;
-
-            var nestingCtx = site.Bound.Raw.NestingContext;
-            if (nestingCtx == null)
-                continue;
-
-            var relativeDepth = nestingCtx.NestingDepth - baselineDepth;
-            if (relativeDepth <= 0)
-                continue;
-
-            // This clause is conditional — it corresponds to the next ConditionalTerm
-            var term = conditionalTerms[termIndex];
-            result[term.BitIndex] = TruncateConditionText(nestingCtx.ConditionText);
-            termIndex++;
+            }
         }
 
         return result;
@@ -468,8 +483,6 @@ internal static class ManifestEmitter
         if (bitToCondition.Count == 0)
             return result;
 
-        var baselineDepth = plan.ExecutionSite.Bound.Raw.NestingContext?.NestingDepth ?? 0;
-
         // Walk clause sites, accumulate parameter indices, and mark conditional ones
         // ChainAnalyzer collects parameters from clauses in order with sequential global indices.
         // We need to find which global index range each clause owns.
@@ -477,21 +490,17 @@ internal static class ManifestEmitter
         if (planParams.Count == 0)
             return result;
 
-        // Build a clause-site to condition-text mapping
-        int termIndex = 0;
         var conditionalTerms = plan.ConditionalTerms;
         foreach (var site in plan.ClauseSites)
         {
-            var nestingCtx = site.Bound.Raw.NestingContext;
+            // A site is conditional iff a ConditionalTerm carries its UniqueId
             string? conditionText = null;
-
-            if (nestingCtx != null)
+            foreach (var term in conditionalTerms)
             {
-                var relativeDepth = nestingCtx.NestingDepth - baselineDepth;
-                if (relativeDepth > 0 && termIndex < conditionalTerms.Count)
+                if (term.SiteUniqueId == site.UniqueId)
                 {
-                    conditionText = TruncateConditionText(nestingCtx.ConditionText);
-                    termIndex++;
+                    bitToCondition.TryGetValue(term.BitIndex, out conditionText);
+                    break;
                 }
             }
 
@@ -523,18 +532,26 @@ internal static class ManifestEmitter
     /// <summary>
     /// Builds the variant label for a given bitmask value.
     /// </summary>
-    private static string BuildVariantLabel(int mask, Dictionary<int, string> bitToCondition)
+    private static string BuildVariantLabel(int mask, Dictionary<int, (string Label, string ArmKey)> bitToCondition)
     {
         if (mask == 0)
             return "base";
 
         var parts = new List<string>();
+        var seenArms = new HashSet<string>(StringComparer.Ordinal);
         for (int bit = 0; bit < 8; bit++)
         {
             if ((mask & (1 << bit)) != 0)
             {
-                var label = bitToCondition.TryGetValue(bit, out var text) ? text : $"bit{bit}";
-                parts.Add($"+{label}");
+                if (!bitToCondition.TryGetValue(bit, out var entry))
+                {
+                    parts.Add($"+bit{bit}");
+                    continue;
+                }
+                // Bits from the SAME arm always activate together — one label suffices.
+                // Distinct cascades that merely share condition text keep their repeats.
+                if (seenArms.Add(entry.ArmKey))
+                    parts.Add($"+{entry.Label}");
             }
         }
 
@@ -631,6 +648,10 @@ internal static class ManifestEmitter
 
     private static string TruncateConditionText(string text)
     {
+        // Labels render as `-- +<text>` comment lines inside a fenced SQL block —
+        // a multi-line condition would break out of the comment.
+        if (text.IndexOf('\n') >= 0)
+            text = text.Replace("\r", "").Replace('\n', ' ');
         const int maxLength = 60;
         if (text.Length <= maxLength)
             return text;

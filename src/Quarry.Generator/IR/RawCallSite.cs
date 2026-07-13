@@ -564,16 +564,49 @@ internal enum CaptureKind
 /// </summary>
 internal sealed class NestingContext : IEquatable<NestingContext>
 {
-    public NestingContext(string conditionText, int nestingDepth, BranchKind branchKind = BranchKind.Independent)
+    public NestingContext(string conditionText, int nestingDepth, BranchKind branchKind = BranchKind.Independent,
+        string? groupKey = null, int armIndex = 0, int armCount = 1, bool hasFinalElse = false,
+        string? unanalyzablePositionKey = null)
     {
         ConditionText = conditionText;
         NestingDepth = nestingDepth;
         BranchKind = branchKind;
+        GroupKey = groupKey ?? conditionText;
+        ArmIndex = armIndex;
+        ArmCount = armCount;
+        HasFinalElse = hasFinalElse;
+        UnanalyzablePositionKey = unanalyzablePositionKey;
     }
 
     public string ConditionText { get; }
+
+    /// <summary>Number of cascades (if/else-if/else statements or ternaries) crossed
+    /// walking up to the method body. An else-if arm is depth 1, not 2.</summary>
     public int NestingDepth { get; }
+
     public BranchKind BranchKind { get; }
+
+    /// <summary>Identity of the innermost containing cascade — derived from the cascade
+    /// head's span position, so all arms of one if/else-if/else chain share a key.</summary>
+    public string GroupKey { get; }
+
+    /// <summary>Zero-based index of the containing arm within the cascade
+    /// (then-arm = 0, each else-if in order, final else last).</summary>
+    public int ArmIndex { get; }
+
+    /// <summary>Total number of syntactic arms in the cascade, including a final else.</summary>
+    public int ArmCount { get; }
+
+    /// <summary>True when the cascade ends in an unconditional else (or is a ternary),
+    /// meaning exactly one arm always executes.</summary>
+    public bool HasFinalElse { get; }
+
+    /// <summary>Non-null when the site sits inside a NON-head arm's condition expression
+    /// (an <c>else if (...)</c> condition) — evaluated only when every earlier arm's
+    /// condition was false, so it is conditionally executed yet bound to no arm. The key
+    /// identifies the condition's if-statement; a chain is analyzable only if all its
+    /// sites and the terminal share the same key (usually all null).</summary>
+    public string? UnanalyzablePositionKey { get; }
 
     public bool Equals(NestingContext? other)
     {
@@ -581,9 +614,16 @@ internal sealed class NestingContext : IEquatable<NestingContext>
         if (ReferenceEquals(this, other)) return true;
         return ConditionText == other.ConditionText
             && NestingDepth == other.NestingDepth
-            && BranchKind == other.BranchKind;
+            && BranchKind == other.BranchKind
+            && GroupKey == other.GroupKey
+            && ArmIndex == other.ArmIndex
+            && ArmCount == other.ArmCount
+            && HasFinalElse == other.HasFinalElse
+            && UnanalyzablePositionKey == other.UnanalyzablePositionKey;
     }
 
     public override bool Equals(object? obj) => Equals(obj as NestingContext);
-    public override int GetHashCode() => HashCode.Combine(ConditionText, NestingDepth, BranchKind);
+    public override int GetHashCode() => HashCode.Combine(
+        ConditionText, NestingDepth, BranchKind, GroupKey, ArmIndex, ArmCount, HasFinalElse,
+        UnanalyzablePositionKey);
 }

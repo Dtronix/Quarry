@@ -142,6 +142,36 @@ public class CallSiteTests
         Assert.That(a.Equals(c), Is.False);
     }
 
+    [Test]
+    public void NestingContext_CascadeFields_AffectEquality()
+    {
+        // GroupKey defaults to the condition text when not supplied.
+        var defaulted = new NestingContext("x > 0", 1);
+        Assert.That(defaulted.GroupKey, Is.EqualTo("x > 0"));
+        Assert.That(defaulted.ArmIndex, Is.EqualTo(0));
+        Assert.That(defaulted.ArmCount, Is.EqualTo(1));
+        Assert.That(defaulted.HasFinalElse, Is.False);
+
+        var a = new NestingContext("x > 0", 1, BranchKind.MutuallyExclusive,
+            groupKey: "if:10", armIndex: 0, armCount: 3, hasFinalElse: true);
+        var same = new NestingContext("x > 0", 1, BranchKind.MutuallyExclusive,
+            groupKey: "if:10", armIndex: 0, armCount: 3, hasFinalElse: true);
+        Assert.That(a.Equals(same), Is.True);
+        Assert.That(a.GetHashCode(), Is.EqualTo(same.GetHashCode()));
+
+        Assert.That(a.Equals(new NestingContext("x > 0", 1, BranchKind.MutuallyExclusive,
+            groupKey: "if:20", armIndex: 0, armCount: 3, hasFinalElse: true)), Is.False);
+        Assert.That(a.Equals(new NestingContext("x > 0", 1, BranchKind.MutuallyExclusive,
+            groupKey: "if:10", armIndex: 1, armCount: 3, hasFinalElse: true)), Is.False);
+        Assert.That(a.Equals(new NestingContext("x > 0", 1, BranchKind.MutuallyExclusive,
+            groupKey: "if:10", armIndex: 0, armCount: 2, hasFinalElse: true)), Is.False);
+        Assert.That(a.Equals(new NestingContext("x > 0", 1, BranchKind.MutuallyExclusive,
+            groupKey: "if:10", armIndex: 0, armCount: 3, hasFinalElse: false)), Is.False);
+        Assert.That(a.Equals(new NestingContext("x > 0", 1, BranchKind.MutuallyExclusive,
+            groupKey: "if:10", armIndex: 0, armCount: 3, hasFinalElse: true,
+            unanalyzablePositionKey: "cond:5")), Is.False);
+    }
+
     #endregion
 
     #region EntityRef Tests

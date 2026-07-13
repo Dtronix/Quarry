@@ -204,6 +204,19 @@ db.With<User, ActiveUser>(users => users
 // Direct-argument With<TDto>(IQueryBuilder<TDto>) overloads REMOVED — use lambda form only.
 // Diagnostics: QRY080 (CTE inner not analyzable), QRY081 (FromCte without With), QRY082 (duplicate CTE name).
 
+// Conditional clauses — reassign inside if/else; compiled to bitmask-dispatched SQL variants
+var q = db.Users().Select(u => u);
+if (filterActive) q = q.Where(u => u.IsActive);          // plain if
+if (byName)       q = q.OrderBy(u => u.UserName);        // independent conditionals compose
+else if (byDate)  q = q.OrderBy(u => u.CreatedAt);       // else-if cascades supported (any arm count)
+if (page)         q = q.Limit(25).Offset(50);            // Limit/Offset/Distinct honor the branch
+q = urgent ? q.WithTimeout(TimeSpan.FromSeconds(5)) : q; // ternary form supported
+await q.ExecuteFetchAllAsync();
+// Participating (consume a mask bit when branched): Where, OrderBy/ThenBy, GroupBy, Having,
+// Select, Set, joins, Limit, Offset, Distinct. WithTimeout is branch-safe WITHOUT a bit
+// (falls back to DefaultTimeout). Multiple clauses per branch are fine. Limits: 8 bits
+// (256 variants), nesting ≤ 2 cascade levels (a whole if/else-if/else chain = 1 level) → QRY032.
+
 // Where operators: ==, !=, <, >, <=, >=, &&, ||, !, null checks
 // String: Contains, StartsWith, EndsWith, ToLower, ToUpper, Trim, Substring
 // Collection: IEnumerable<T>/IReadOnlyList<T>/T[] .Contains(col) → IN (empty collection emits IN (SELECT 1 WHERE 1=0))
@@ -322,7 +335,7 @@ Categories: `Quarry.Connection` (Info), `Quarry.Query`/`Quarry.Modify`/`Quarry.R
 
 What an LLM should avoid suggesting — Quarry is a compile-time SQL builder, not an ORM:
 
-- **Single analyzable scope.** A full chain (entry → terminal) must live in one method body. No storing builders in fields/collections, passing across methods, returning them, or building inside a loop → **QRY032**. Use `if`/`else` for conditional clauses (bitmask-dispatched, up to 8 bits / 256 variants), not dynamic composition.
+- **Single analyzable scope.** A full chain (entry → terminal) must live in one method body. No storing builders in fields/collections, passing across methods, returning them, or building inside a loop → **QRY032**. Use `if`/`else if`/`else` or ternary reassignment for conditional clauses (bitmask-dispatched, up to 8 bits / 256 variants; nesting ≤ 2 cascade levels), not dynamic composition — see the Querying section for participating methods.
 - **Entity accessors are methods:** `db.Users()`, not `db.Users`.
 - **Chain-continuation methods** (`OrderBy`, `ThenBy`, `Limit`, `Offset`, `Distinct`, `WithTimeout`) live on `IQueryBuilder<T>` and only appear after a first clause (`Where`/`Select`/`GroupBy`). `db.Users().OrderBy(...)` won't compile.
 - **Modification entry points** are on `IEntityAccessor<T>`: `db.Users().Insert(...)`/`.Update()`/`.Delete()`/`.InsertBatch(...)`. Update/Delete require `Where()` or `All()` before a terminal (QRY012).

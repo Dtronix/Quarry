@@ -789,30 +789,53 @@ internal static class CarrierEmitter
         if (inConditionalBlock)
             sb.AppendLine("        }");
 
-        // Pagination parameters — always unconditional.
+        // Pagination parameters — mask-gated when the Limit/Offset site is conditional
+        // (the SQL variant then omits the placeholder, so the DbParameter must be
+        // omitted too), unconditional otherwise.
         // __bindShift == __colShift here: both accumulate (colLen-1) per collection
         // in GlobalIndex order. Using __bindShift keeps the binding self-contained.
+        var pagination = chain.Plan.Pagination;
         var nextIdx = paramCount;
         if (hasLimitField)
         {
-            sb.AppendLine($"        var __pL = __cmd.CreateParameter();");
+            var limitBit = pagination?.LimitBitIndex;
+            var indent = "        ";
+            if (limitBit.HasValue)
+            {
+                sb.AppendLine($"        if ((__c.Mask & unchecked(({maskType})(1 << {limitBit.Value}))) != 0)");
+                sb.AppendLine("        {");
+                indent = "            ";
+            }
+            sb.AppendLine($"{indent}var __pL = __cmd.CreateParameter();");
             if (whereShiftExpr != null)
-                sb.AppendLine($"        __pL.ParameterName = {EmitParamNameExpr(chain.Dialect, nextIdx, whereShiftExpr)};");
+                sb.AppendLine($"{indent}__pL.ParameterName = {EmitParamNameExpr(chain.Dialect, nextIdx, whereShiftExpr)};");
             else
-                sb.AppendLine($"        __pL.ParameterName = \"{FormatParamName(chain.Dialect, nextIdx)}\";");
-            sb.AppendLine($"        __pL.Value = (object)__c.Limit;");
-            sb.AppendLine($"        __cmd.Parameters.Add(__pL);");
+                sb.AppendLine($"{indent}__pL.ParameterName = \"{FormatParamName(chain.Dialect, nextIdx)}\";");
+            sb.AppendLine($"{indent}__pL.Value = (object)__c.Limit;");
+            sb.AppendLine($"{indent}__cmd.Parameters.Add(__pL);");
+            if (limitBit.HasValue)
+                sb.AppendLine("        }");
             nextIdx++;
         }
         if (hasOffsetField)
         {
-            sb.AppendLine($"        var __pO = __cmd.CreateParameter();");
+            var offsetBit = pagination?.OffsetBitIndex;
+            var indent = "        ";
+            if (offsetBit.HasValue)
+            {
+                sb.AppendLine($"        if ((__c.Mask & unchecked(({maskType})(1 << {offsetBit.Value}))) != 0)");
+                sb.AppendLine("        {");
+                indent = "            ";
+            }
+            sb.AppendLine($"{indent}var __pO = __cmd.CreateParameter();");
             if (whereShiftExpr != null)
-                sb.AppendLine($"        __pO.ParameterName = {EmitParamNameExpr(chain.Dialect, nextIdx, whereShiftExpr)};");
+                sb.AppendLine($"{indent}__pO.ParameterName = {EmitParamNameExpr(chain.Dialect, nextIdx, whereShiftExpr)};");
             else
-                sb.AppendLine($"        __pO.ParameterName = \"{FormatParamName(chain.Dialect, nextIdx)}\";");
-            sb.AppendLine($"        __pO.Value = (object)__c.Offset;");
-            sb.AppendLine($"        __cmd.Parameters.Add(__pO);");
+                sb.AppendLine($"{indent}__pO.ParameterName = \"{FormatParamName(chain.Dialect, nextIdx)}\";");
+            sb.AppendLine($"{indent}__pO.Value = (object)__c.Offset;");
+            sb.AppendLine($"{indent}__cmd.Parameters.Add(__pO);");
+            if (offsetBit.HasValue)
+                sb.AppendLine("        }");
         }
     }
 
@@ -1181,9 +1204,19 @@ internal static class CarrierEmitter
         if (!hasCollections)
         {
             if (chain.SqlVariants.Count == 1)
+            {
                 sb.AppendLine($"        var sql = {carrier.ClassName}._sql;");
+            }
             else
-                sb.AppendLine($"        var sql = {carrier.ClassName}._sql[__c.Mask];");
+            {
+                // Guard both unenumerated-mask failure modes: a mask beyond the variant
+                // table (IndexOutOfRange) and a null! gap entry (null CommandText at the
+                // provider). Either means enumeration missed a reachable branch combination.
+                var arraySize = chain.SqlVariants.Keys.Max() + 1;
+                sb.AppendLine($"        var sql = (uint)__c.Mask < {arraySize}u && {carrier.ClassName}._sql[__c.Mask] is not null");
+                sb.AppendLine($"            ? {carrier.ClassName}._sql[__c.Mask]");
+                sb.AppendLine($"            : Quarry.Internal.ThrowHelper.UnenumeratedMask(__c.Mask);");
+            }
             return;
         }
 
@@ -1244,6 +1277,15 @@ internal static class CarrierEmitter
 
         // Step 3: Cache check
         var maskExpr = chain.SqlVariants.Count == 1 ? "0" : "__c.Mask";
+        if (chain.SqlVariants.Count > 1)
+        {
+            // Bounds guard: _sqlCache is sized maxMask+1; an unenumerated mask beyond it
+            // must throw the actionable guard, not IndexOutOfRange. Gap masks within
+            // bounds fall through to the mask switch below, whose default arm throws.
+            var cacheSize = chain.SqlVariants.Keys.Max() + 1;
+            sb.AppendLine($"        if ((uint)__c.Mask >= {cacheSize}u)");
+            sb.AppendLine($"            Quarry.Internal.ThrowHelper.UnenumeratedMask(__c.Mask);");
+        }
         sb.AppendLine($"        var __cached = {carrier.ClassName}._sqlCache[{maskExpr}];");
 
         // Declare vars
@@ -1306,7 +1348,9 @@ internal static class CarrierEmitter
                 // Reset __colShift between cases would be wrong — each case is mutually exclusive
                 sb.AppendLine("                break;");
             }
-            sb.AppendLine("            default: break;");
+            // A gap mask (within bounds but never enumerated) reaches the default arm —
+            // throw the actionable guard instead of building an empty CommandText.
+            sb.AppendLine("            default: Quarry.Internal.ThrowHelper.UnenumeratedMask(__c.Mask); break;");
             sb.AppendLine("            }");
         }
 

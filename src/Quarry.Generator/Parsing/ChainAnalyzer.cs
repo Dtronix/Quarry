@@ -42,7 +42,9 @@ internal static class ChainAnalyzer
     private const int MaxConditionalBits = 8;
 
     /// <summary>
-    /// Maximum nesting depth of if-blocks before abandoning analysis.
+    /// Maximum nesting depth of cascades before abandoning analysis. A whole
+    /// if/else-if/else chain (or ternary) is ONE level — flat else-if chains of any
+    /// arm count are depth 1; depth 2 means a cascade nested inside a cascade arm.
     /// </summary>
     private const int MaxIfNestingDepth = 2;
 
@@ -617,7 +619,8 @@ internal static class ChainAnalyzer
 
         // Baseline nesting depth: clauses at or below the execution terminal's depth
         // are not conditionally included — the entire chain is simply inside nested control flow.
-        var baselineDepth = executionSite.Bound.Raw.NestingContext?.NestingDepth ?? 0;
+        var terminalNesting = executionSite.Bound.Raw.NestingContext;
+        var baselineDepth = terminalNesting?.NestingDepth ?? 0;
 
         foreach (var site in clauseSites)
         {
@@ -625,10 +628,34 @@ internal static class ChainAnalyzer
             if (condInfo == null)
                 continue;
 
+            // A clause in an else-if condition expression executes only when earlier
+            // arms' conditions failed, but belongs to no arm — not representable in the
+            // mask model. Analyzable only when the terminal shares the exact position
+            // (whole chain inside one condition); otherwise fail loud (#307 review F4).
+            if (condInfo.UnanalyzablePositionKey != null
+                && condInfo.UnanalyzablePositionKey != terminalNesting?.UnanalyzablePositionKey)
+            {
+                return MakeRuntimeBuildChain(executionSite, clauseSites,
+                    "Conditional clause inside an else-if condition expression", registry, isTraced);
+            }
+
             // Only clauses deeper than the execution terminal are genuinely conditional.
             var relativeDepth = condInfo.NestingDepth - baselineDepth;
             if (relativeDepth <= 0)
+            {
+                // Same depth but a DIFFERENT arm of the terminal's own cascade: the
+                // clause never executes on any path that reaches this terminal, yet
+                // depth comparison alone would bake it in unconditionally. Fail loud
+                // (#307 review F6).
+                if (relativeDepth == 0 && terminalNesting != null
+                    && condInfo.GroupKey == terminalNesting.GroupKey
+                    && condInfo.ArmIndex != terminalNesting.ArmIndex)
+                {
+                    return MakeRuntimeBuildChain(executionSite, clauseSites,
+                        "Clause and execution terminal sit in different arms of the same conditional", registry, isTraced);
+                }
                 continue;
+            }
 
             // Check relative nesting depth
             if (relativeDepth > MaxIfNestingDepth)
@@ -640,13 +667,21 @@ internal static class ChainAnalyzer
             if (role == null)
                 continue;
 
-            conditionalTerms.Add(new ConditionalTerm(bitIndex, role.Value));
+            // WithTimeout never consumes a conditional bit: the carrier's Timeout field
+            // is TimeSpan? and terminals fall back to DefaultTimeout when it is unset,
+            // so a conditional WithTimeout is already correct at runtime. A bit would
+            // only double the SQL variant table with byte-identical entries.
+            if (site.Bound.Raw.Kind == InterceptorKind.WithTimeout)
+                continue;
 
-            // Group by condition text for mutual exclusivity detection
-            if (!branchGroups.TryGetValue(condInfo.ConditionText, out var group))
+            conditionalTerms.Add(new ConditionalTerm(bitIndex, role.Value, site.Bound.Raw.UniqueId));
+
+            // Group by cascade identity: all arms of one if/else-if/else chain
+            // (or ternary) share a GroupKey and enumerate per-arm.
+            if (!branchGroups.TryGetValue(condInfo.GroupKey, out var group))
             {
                 group = new List<(TranslatedCallSite, int)>();
-                branchGroups[condInfo.ConditionText] = group;
+                branchGroups[condInfo.GroupKey] = group;
             }
             group.Add((site, bitIndex));
             bitIndex++;
@@ -664,8 +699,19 @@ internal static class ChainAnalyzer
 
         // Compute possible masks
         var possibleMasks = tier == OptimizationTier.PrebuiltDispatch
-            ? EnumerateMaskCombinations(conditionalTerms, branchGroups, clauseSites)
+            ? EnumerateMaskCombinations(conditionalTerms, branchGroups, baselineDepth)
             : Array.Empty<int>();
+
+        // Defense in depth (#307): every structurally reachable mask must have an
+        // enumerated variant — otherwise the generated dispatch would hit a null SQL
+        // entry at runtime. Fail loud at generation time instead of emitting broken code.
+        if (tier == OptimizationTier.PrebuiltDispatch && conditionalTerms.Count > 0
+            && !ValidateMaskEnumeration(BuildCascadeShapes(branchGroups, baselineDepth), totalBits, possibleMasks))
+        {
+            return MakeRuntimeBuildChain(executionSite, clauseSites,
+                "Conditional mask enumeration incomplete — a reachable clause combination has no SQL variant",
+                registry, isTraced);
+        }
 
         // Collect unmatched method names (sites not in the chain that are tracked but not intercepted)
         // In the new pipeline, all sites in the chain are matched by ChainId — unmatched is N/A.
@@ -693,7 +739,10 @@ internal static class ChainAnalyzer
         var hasOffset = false;
         int? limitLiteral = null;
         int? offsetLiteral = null;
+        int? limitBitIndex = null;
+        int? offsetBitIndex = null;
         bool isDistinct = false;
+        int? distinctBitIndex = null;
         SelectProjection? projection = null;
         var setOperationPlans = new List<SetOperationPlan>();
         var primaryTable = new TableRef(
@@ -944,7 +993,6 @@ internal static class ChainAnalyzer
         var queryKind = DetermineQueryKind(executionSite.Bound.Raw.Kind, effectiveBuilderKind);
 
         // Process clause sites to build terms
-        var consumedConditionalTerms = new HashSet<int>();
         for (int i = 0; i < clauseSites.Count; i++)
         {
             var site = clauseSites[i];
@@ -953,18 +1001,13 @@ internal static class ChainAnalyzer
             var role = MapInterceptorKindToClauseRole(kind);
             int? clauseBitIndex = null;
 
-            // Check if this clause is conditional
-            if (raw.NestingContext != null)
+            // Check if this clause is conditional — match its bit by site identity
+            for (int ci = 0; ci < conditionalTerms.Count; ci++)
             {
-                // Find its bit index — match by role and consume each term only once
-                for (int ci = 0; ci < conditionalTerms.Count; ci++)
+                if (conditionalTerms[ci].SiteUniqueId == raw.UniqueId)
                 {
-                    if (conditionalTerms[ci].Role == role && !consumedConditionalTerms.Contains(ci))
-                    {
-                        clauseBitIndex = conditionalTerms[ci].BitIndex;
-                        consumedConditionalTerms.Add(ci);
-                        break;
-                    }
+                    clauseBitIndex = conditionalTerms[ci].BitIndex;
+                    break;
                 }
             }
 
@@ -1189,15 +1232,18 @@ internal static class ChainAnalyzer
             {
                 hasLimit = true;
                 limitLiteral = raw.ConstantIntValue;
+                limitBitIndex = clauseBitIndex;
             }
             else if (kind == InterceptorKind.Offset)
             {
                 hasOffset = true;
                 offsetLiteral = raw.ConstantIntValue;
+                offsetBitIndex = clauseBitIndex;
             }
             else if (kind == InterceptorKind.Distinct)
             {
                 isDistinct = true;
+                distinctBitIndex = clauseBitIndex;
             }
             else if (IsSetOperationKind(kind))
             {
@@ -1291,7 +1337,9 @@ internal static class ChainAnalyzer
                 literalLimit: limitLiteral,
                 literalOffset: offsetLiteral,
                 limitParamIndex: hasLimit && limitLiteral == null ? paramGlobalIndex++ : (int?)null,
-                offsetParamIndex: hasOffset && offsetLiteral == null ? paramGlobalIndex++ : (int?)null);
+                offsetParamIndex: hasOffset && offsetLiteral == null ? paramGlobalIndex++ : (int?)null,
+                limitBitIndex: limitBitIndex,
+                offsetBitIndex: offsetBitIndex);
         }
 
         // Default projection if none specified
@@ -1393,7 +1441,8 @@ internal static class ChainAnalyzer
             postUnionWhereTerms: postUnionWhereTerms.Count > 0 ? postUnionWhereTerms : null,
             postUnionGroupByExprs: postUnionGroupByExprs.Count > 0 ? postUnionGroupByExprs : null,
             postUnionHavingExprs: postUnionHavingExprs.Count > 0 ? postUnionHavingExprs : null,
-            cteDefinitions: cteDefinitions.Count > 0 ? cteDefinitions : null);
+            cteDefinitions: cteDefinitions.Count > 0 ? cteDefinitions : null,
+            distinctBitIndex: distinctBitIndex);
 
         // Trace logging: only for traced chains. Reconstruct per-site discovery/binding/
         // translation traces from the TranslatedCallSite data, then log chain-level analysis.
@@ -2659,66 +2708,147 @@ internal static class ChainAnalyzer
     }
 
     /// <summary>
-    /// Enumerates all possible ClauseMask values from conditional terms and branch groups.
+    /// Enumerates all possible ClauseMask values from conditional terms and cascade groups.
+    /// Per cascade: at runtime exactly one arm executes (or none, when there is no final
+    /// else or the taken arm has no chain sites), and ALL of an arm's bits are set together.
+    /// The cascade's option set is therefore each represented arm's OR-of-bits, plus 0 when
+    /// a no-bits path is reachable. Masks are the cross-product of one option per cascade.
+    /// A 1-arm if without else yields options {0, bit} — the classic independent bit; a
+    /// 2-arm single-clause if/else yields {b0, b1} — the classic exclusive pair.
     /// </summary>
     private static IReadOnlyList<int> EnumerateMaskCombinations(
         List<ConditionalTerm> conditionalTerms,
         Dictionary<string, List<(TranslatedCallSite Site, int BitIndex)>> branchGroups,
-        List<TranslatedCallSite> clauseSites)
+        int baselineDepth)
     {
         if (conditionalTerms.Count == 0)
             return new[] { 0 };
 
-        var independentBits = new List<int>();
-        var exclusiveGroups = new List<List<int>>();
+        var masks = new List<int> { 0 };
 
         foreach (var kvp in branchGroups)
         {
             var group = kvp.Value;
-            // Determine if this branch group is mutually exclusive
-            var hasMutuallyExclusive = group.Any(g =>
-                g.Site.Bound.Raw.NestingContext?.BranchKind == BranchKind.MutuallyExclusive);
 
-            if (hasMutuallyExclusive && group.Count >= 2)
+            // OR the bits of each represented arm together. All sites sharing an
+            // innermost cascade share the same NestingDepth, so any site's depth
+            // stands for the cascade's.
+            var armBits = new SortedDictionary<int, int>();
+            var armCount = 1;
+            var hasFinalElse = false;
+            var cascadeDepth = 0;
+            foreach (var (site, bit) in group)
             {
-                exclusiveGroups.Add(group.Select(g => g.BitIndex).ToList());
+                var nc = site.Bound.Raw.NestingContext!;
+                armBits.TryGetValue(nc.ArmIndex, out var bits);
+                armBits[nc.ArmIndex] = bits | (1 << bit);
+                armCount = nc.ArmCount;
+                hasFinalElse = nc.HasFinalElse;
+                cascadeDepth = nc.NestingDepth;
             }
-            else
-            {
-                independentBits.AddRange(group.Select(g => g.BitIndex));
-            }
-        }
 
-        // Build combinations
-        var masks = new List<int> { 0 };
+            // The no-bits path is reachable when the cascade can take no arm at all,
+            // when it can take an arm that contains no chain sites, or when the
+            // cascade itself sits inside another conditional arm (relative depth > 1)
+            // and may be skipped entirely — a final else does not help then (#307
+            // review F3). It enumerates FIRST so the base (no conditional clauses)
+            // variant keeps its position as the first-listed variant — diagnostics
+            // and manifest output lead with it.
+            var options = new List<int>(armBits.Count + 1);
+            if (!hasFinalElse || armBits.Count < armCount || cascadeDepth - baselineDepth > 1)
+                options.Add(0);
+            options.AddRange(armBits.Values);
 
-        // Independent bits: each can be on or off
-        foreach (var bit in independentBits)
-        {
-            var newMasks = new List<int>(masks.Count * 2);
+            var newMasks = new List<int>(masks.Count * options.Count);
             foreach (var mask in masks)
-            {
-                newMasks.Add(mask);                      // bit off
-                newMasks.Add(mask | (1 << bit));         // bit on
-            }
-            masks = newMasks;
-        }
-
-        // Mutually exclusive groups: exactly one bit from the group is set
-        foreach (var group in exclusiveGroups)
-        {
-            var newMasks = new List<int>(masks.Count * group.Count);
-            foreach (var mask in masks)
-            {
-                foreach (var bit in group)
-                {
-                    newMasks.Add(mask | (1 << bit));
-                }
-            }
+                foreach (var option in options)
+                    newMasks.Add(mask | option);
             masks = newMasks;
         }
 
         return masks;
+    }
+
+    /// <summary>
+    /// Extracts each cascade's shape — the OR-ed bit set per represented arm, and
+    /// whether the no-bits path is reachable — for reachability validation.
+    /// The no-bits path is reachable when the cascade has no final else, has arms
+    /// without chain sites, or is itself conditionally entered (its sites sit more
+    /// than one cascade level below the terminal, so the whole cascade can be skipped).
+    /// </summary>
+    private static List<(IReadOnlyList<int> ArmBitSets, bool ZeroAllowed)> BuildCascadeShapes(
+        Dictionary<string, List<(TranslatedCallSite Site, int BitIndex)>> branchGroups,
+        int baselineDepth)
+    {
+        var cascades = new List<(IReadOnlyList<int>, bool)>(branchGroups.Count);
+        foreach (var kvp in branchGroups)
+        {
+            var armBits = new SortedDictionary<int, int>();
+            var armCount = 1;
+            var hasFinalElse = false;
+            var cascadeDepth = 0;
+            foreach (var (site, bit) in kvp.Value)
+            {
+                var nc = site.Bound.Raw.NestingContext!;
+                armBits.TryGetValue(nc.ArmIndex, out var bits);
+                armBits[nc.ArmIndex] = bits | (1 << bit);
+                armCount = nc.ArmCount;
+                hasFinalElse = nc.HasFinalElse;
+                cascadeDepth = nc.NestingDepth;
+            }
+            var zeroAllowed = !hasFinalElse || armBits.Count < armCount
+                || cascadeDepth - baselineDepth > 1;
+            cascades.Add((armBits.Values.ToList(), zeroAllowed));
+        }
+        return cascades;
+    }
+
+    /// <summary>
+    /// Defense in depth (#307): verifies reachable ⊆ enumerated. Deliberately a separate
+    /// walk from <see cref="EnumerateMaskCombinations"/> — brute force over all
+    /// 2^totalBits masks checked against per-cascade constraints, instead of a
+    /// cross-product construction — so one bug cannot hide in both.
+    /// A mask is structurally reachable iff for every cascade its intersection with the
+    /// cascade's bits is either empty (allowed only when the cascade can take no
+    /// represented arm) or exactly one arm's complete bit set. Extra enumerated masks
+    /// (an unreachable superset) are harmless and accepted.
+    /// Internal for direct unit testing with synthetic cascade shapes; it should never
+    /// fail through the public pipeline.
+    /// </summary>
+    internal static bool ValidateMaskEnumeration(
+        IReadOnlyList<(IReadOnlyList<int> ArmBitSets, bool ZeroAllowed)> cascades,
+        int totalBits,
+        IReadOnlyList<int> enumeratedMasks)
+    {
+        var enumerated = new HashSet<int>(enumeratedMasks);
+        var totalMasks = 1 << totalBits;
+        for (var mask = 0; mask < totalMasks; mask++)
+        {
+            var reachable = true;
+            foreach (var (armBitSets, zeroAllowed) in cascades)
+            {
+                var cascadeBits = 0;
+                foreach (var armBitSet in armBitSets)
+                    cascadeBits |= armBitSet;
+
+                var overlap = mask & cascadeBits;
+                if (overlap == 0)
+                {
+                    if (!zeroAllowed) { reachable = false; break; }
+                    continue;
+                }
+                var isExactlyOneArm = false;
+                foreach (var armBitSet in armBitSets)
+                {
+                    if (overlap == armBitSet) { isExactlyOneArm = true; break; }
+                }
+                if (!isExactlyOneArm) { reachable = false; break; }
+            }
+
+            if (reachable && !enumerated.Contains(mask))
+                return false;
+        }
+        return true;
     }
 
     /// <summary>

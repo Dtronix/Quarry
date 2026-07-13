@@ -161,10 +161,10 @@ internal static partial class SqlFormatting
         if (dialect == SqlDialect.SqlServer)
             return FormatSqlServerPagination(limit, offset);
 
-        return FormatLimitOffset(limit, offset);
+        return FormatLimitOffset(dialect, limit, offset);
     }
 
-    private static string FormatLimitOffset(int? limit, int? offset)
+    private static string FormatLimitOffset(SqlDialect dialect, int? limit, int? offset)
     {
         var sb = new StringBuilder();
 
@@ -175,12 +175,28 @@ internal static partial class SqlFormatting
 
         if (offset.HasValue && offset.Value > 0)
         {
+            if (sb.Length == 0)
+            {
+                var noLimit = NoLimitIdiom(dialect);
+                if (noLimit != null) sb.Append(noLimit);
+            }
             if (sb.Length > 0) sb.Append(' ');
             sb.Append($"OFFSET {offset.Value}");
         }
 
         return sb.ToString();
     }
+
+    /// <summary>
+    /// SQLite and MySQL reject OFFSET without LIMIT; these are their documented
+    /// "no limit" idioms. PostgreSQL accepts a bare OFFSET (returns null).
+    /// </summary>
+    private static string? NoLimitIdiom(SqlDialect dialect) => dialect switch
+    {
+        SqlDialect.SQLite => "LIMIT -1",
+        SqlDialect.MySQL => "LIMIT 18446744073709551615",
+        _ => null
+    };
 
     private static string FormatSqlServerPagination(int? limit, int? offset)
     {
@@ -251,6 +267,13 @@ internal static partial class SqlFormatting
             {
                 sb.Append("LIMIT ");
                 sb.Append(limitStr);
+            }
+            else if (offsetStr != null)
+            {
+                // Offset-only variant (chain never had a LIMIT, or a conditional
+                // LIMIT is inactive in this mask) — SQLite/MySQL need the idiom.
+                var noLimit = NoLimitIdiom(dialect);
+                if (noLimit != null) sb.Append(noLimit);
             }
             if (offsetStr != null)
             {

@@ -335,8 +335,30 @@ internal static class TransitionBodyEmitter
             sb.AppendLine($"        Unsafe.As<{carrier.ClassName}>(builder).{fieldName} = count;");
         }
 
+        EmitConditionalMaskSet(sb, site, carrier, chain);
+
         sb.AppendLine($"        return builder;");
         sb.AppendLine($"    }}");
+    }
+
+    /// <summary>
+    /// Sets the carrier mask bit when the site is conditional (has a ConditionalTerm),
+    /// mirroring the clause emitters' `__c.Mask |=` — required so mask-gated SQL
+    /// variants and parameter binding see the modifier as active.
+    /// </summary>
+    private static void EmitConditionalMaskSet(
+        StringBuilder sb, TranslatedCallSite site, CarrierPlan carrier, AssembledPlan? chain)
+    {
+        if (chain == null)
+            return;
+        foreach (var term in chain.ConditionalTerms)
+        {
+            if (term.SiteUniqueId == site.UniqueId)
+            {
+                sb.AppendLine($"        Unsafe.As<{carrier.ClassName}>(builder).Mask |= unchecked(({CarrierEmitter.GetMaskType(chain)})(1 << {term.BitIndex}));");
+                return;
+            }
+        }
     }
 
     /// <summary>
@@ -354,6 +376,7 @@ internal static class TransitionBodyEmitter
         sb.AppendLine($"    public static {returnTypeName} {methodName}(");
         sb.AppendLine($"        this {receiverType} builder)");
         sb.AppendLine($"    {{");
+        EmitConditionalMaskSet(sb, site, carrier, chain);
         if (returnTypeName != receiverType)
             sb.AppendLine($"        return Unsafe.As<{returnTypeName}>(builder);");
         else

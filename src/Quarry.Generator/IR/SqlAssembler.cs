@@ -89,6 +89,13 @@ internal static class SqlAssembler
         var canBatch = plan.PossibleMasks.Count > 1 && plan.Kind is QueryKind.Select or QueryKind.Delete;
         if (canBatch && plan.Kind == QueryKind.Select && MayNeedDistinctOrderByWrap(plan, dialectConfig))
             canBatch = false;
+        // Conditional DISTINCT/LIMIT/OFFSET vary per mask, but the batch path renders
+        // DISTINCT into the shared prefix and pagination into the shared suffix — fall
+        // back to per-mask rendering so those segments can differ across variants.
+        if (canBatch && (plan.DistinctBitIndex != null
+            || plan.Pagination?.LimitBitIndex != null
+            || plan.Pagination?.OffsetBitIndex != null))
+            canBatch = false;
         if (canBatch)
         {
             // Batch rendering: pre-render shared segments once and assemble per mask
@@ -261,7 +268,7 @@ internal static class SqlAssembler
 
         // SELECT
         sb.Append("SELECT ");
-        if (plan.IsDistinct)
+        if (plan.IsDistinct && IsDistinctActive(plan, mask))
             sb.Append("DISTINCT ");
 
         if (plan.Projection.Columns.Count > 0)
@@ -383,7 +390,7 @@ internal static class SqlAssembler
         paramIndex = orderParamOffset;
 
         // PAGINATION (applies to combined result when set operations present)
-        AppendPagination(sb, plan, config, activeOrderRendered.Count > 0, ref paramIndex);
+        AppendPagination(sb, plan, config, activeOrderRendered.Count > 0, ref paramIndex, mask);
 
         // Ensure returned ParameterCount includes projection params.  Projection
         // column {@N} placeholders are resolved by AppendSelectColumns (rendered in
@@ -625,7 +632,9 @@ internal static class SqlAssembler
             needsSqlServerOrderByFallback = dialect == SqlDialect.SqlServer;
             // Render pagination without SQL Server ORDER BY fallback — handled per mask
             var pagSb = new StringBuilder();
-            AppendPagination(pagSb, plan, config, hasOrderBy: true, ref paramIndex);
+            // Batch rendering is disabled for conditional pagination (see canBatch in
+            // Assemble), so the shared suffix always renders the unconditional form.
+            AppendPagination(pagSb, plan, config, hasOrderBy: true, ref paramIndex, mask: 0);
             paginationStr = pagSb.ToString();
         }
 
@@ -1063,12 +1072,21 @@ internal static class SqlAssembler
         }
     }
 
-    private static void AppendPagination(StringBuilder sb, QueryPlan plan, SqlDialectConfig config, bool hasOrderBy, ref int paramIndex)
+    private static void AppendPagination(StringBuilder sb, QueryPlan plan, SqlDialectConfig config, bool hasOrderBy, ref int paramIndex, int mask)
     {
         if (plan.Pagination == null) return;
 
         var dialect = config.Dialect;
         var pag = plan.Pagination;
+
+        // Conditional pagination: a LIMIT/OFFSET site guarded by a mask bit is rendered
+        // only into variants whose mask has the bit set. Inactive parts contribute
+        // neither SQL nor a parameter slot to this variant.
+        var limitActive = pag.LimitBitIndex == null || (mask & (1 << pag.LimitBitIndex.Value)) != 0;
+        var offsetActive = pag.OffsetBitIndex == null || (mask & (1 << pag.OffsetBitIndex.Value)) != 0;
+        var hasLimitPart = limitActive && (pag.LiteralLimit != null || pag.LimitParamIndex != null);
+        var hasOffsetPart = offsetActive && (pag.LiteralOffset != null || pag.OffsetParamIndex != null);
+        if (!hasLimitPart && !hasOffsetPart) return;
 
         // SQL Server requires ORDER BY for OFFSET/FETCH
         if (dialect == SqlDialect.SqlServer && !hasOrderBy)
@@ -1076,13 +1094,15 @@ internal static class SqlAssembler
             sb.Append(" ORDER BY (SELECT NULL)");
         }
 
-        bool hasParamLimit = pag.LimitParamIndex != null;
-        bool hasParamOffset = pag.OffsetParamIndex != null;
+        bool hasParamLimit = hasLimitPart && pag.LimitParamIndex != null;
+        bool hasParamOffset = hasOffsetPart && pag.OffsetParamIndex != null;
 
         if (!hasParamLimit && !hasParamOffset)
         {
             // All values are literal (or absent) — use the literal formatter
-            var pagination = SqlFormatting.FormatPagination(dialect, pag.LiteralLimit, pag.LiteralOffset);
+            var pagination = SqlFormatting.FormatPagination(dialect,
+                hasLimitPart ? pag.LiteralLimit : null,
+                hasOffsetPart ? pag.LiteralOffset : null);
             if (!string.IsNullOrEmpty(pagination))
             {
                 sb.Append(' ');
@@ -1118,7 +1138,9 @@ internal static class SqlAssembler
             }
 
             var pagination = SqlFormatting.FormatMixedPagination(
-                dialect, pag.LiteralLimit, limitIdx, pag.LiteralOffset, offsetIdx,
+                dialect,
+                hasLimitPart ? pag.LiteralLimit : null, limitIdx,
+                hasOffsetPart ? pag.LiteralOffset : null, offsetIdx,
                 config.EmitMySqlBindMarkers ? MySqlMarkerFormatter : null);
             if (!string.IsNullOrEmpty(pagination))
             {
@@ -1127,6 +1149,13 @@ internal static class SqlAssembler
             }
         }
     }
+
+    /// <summary>
+    /// True when the plan's DISTINCT applies to the given mask variant — i.e. Distinct
+    /// is unconditional or its conditional bit is set in the mask.
+    /// </summary>
+    private static bool IsDistinctActive(QueryPlan plan, int mask)
+        => plan.DistinctBitIndex == null || (mask & (1 << plan.DistinctBitIndex.Value)) != 0;
 
     private static string GetSetOperatorKeyword(SetOperatorKind kind)
     {
@@ -1501,6 +1530,9 @@ internal static class SqlAssembler
     private static bool NeedsDistinctOrderByWrap(QueryPlan plan, int mask, SqlDialectConfig config)
     {
         if (!plan.IsDistinct) return false;
+        // Conditional DISTINCT: variants without the bit render as a plain SELECT,
+        // so no wrap is needed for them.
+        if (!IsDistinctActive(plan, mask)) return false;
         if (plan.SetOperations.Count > 0) return false;
         if (plan.Projection == null || plan.Projection.Columns.Count == 0) return false;
         if (plan.OrderTerms.Count == 0) return false;
@@ -1725,7 +1757,7 @@ internal static class SqlAssembler
         }
 
         paramIndex = paramIndexAfterOrderBy;
-        AppendPagination(sb, plan, config, hasOrderBy: outerOrderByEntries.Count > 0, ref paramIndex);
+        AppendPagination(sb, plan, config, hasOrderBy: outerOrderByEntries.Count > 0, ref paramIndex, mask);
 
         var totalPlanParams = paramBaseOffset + plan.Parameters.Count;
         paramIndex = Math.Max(paramIndex, totalPlanParams);

@@ -147,22 +147,25 @@ internal sealed class AssembledPlan : IEquatable<AssembledPlan>
         if (_clauseEntries != null) return _clauseEntries;
 
         var entries = new List<ChainClauseEntry>();
-        int condIdx = 0;
         foreach (var cs in ClauseSites)
         {
             var role = Parsing.ChainAnalyzer.MapInterceptorKindToClauseRole(cs.Kind);
             if (role == null) continue;
 
+            // A clause is only conditional if it has a matching ConditionalTerm, resolved
+            // by site identity. Clause sites may have NestingContext from being inside
+            // nested control flow without being genuinely conditional (relative depth <=
+            // baseline), so presence of NestingContext must not imply a bit.
             int? bitIndex = null;
-            if (cs.Bound.Raw.NestingContext != null && condIdx < Plan.ConditionalTerms.Count)
+            foreach (var term in Plan.ConditionalTerms)
             {
-                bitIndex = Plan.ConditionalTerms[condIdx].BitIndex;
-                condIdx++;
+                if (term.SiteUniqueId == cs.UniqueId)
+                {
+                    bitIndex = term.BitIndex;
+                    break;
+                }
             }
 
-            // A clause is only conditional if it has a matching ConditionalTerm (bitIndex assigned).
-            // Clause sites may have NestingContext from being inside nested control flow without
-            // being genuinely conditional (relative depth <= baseline).
             entries.Add(new ChainClauseEntry(cs, bitIndex.HasValue, bitIndex, role.Value));
         }
         _clauseEntries = entries;
