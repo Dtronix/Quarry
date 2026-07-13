@@ -1819,7 +1819,8 @@ internal static class UsageSiteDiscovery
     private static bool IsKnownBuilderMethod(string name)
     {
         return name is "Where" or "OrderBy" or "ThenBy" or "Select" or "GroupBy" or "Having"
-            or "Set" or "Join" or "LeftJoin" or "RightJoin" or "CrossJoin" or "FullOuterJoin" or "Limit" or "Offset" or "Distinct"
+            or "Set" or "Join" or "LeftJoin" or "RightJoin" or "CrossJoin" or "FullOuterJoin"
+            or "Limit" or "Offset" or "Distinct" or "WithTimeout"
             or "ExecuteFetchAllAsync" or "ExecuteFetchFirstAsync" or "ExecuteFetchFirstOrDefaultAsync"
             or "ExecuteFetchSingleAsync" or "ExecuteFetchSingleOrDefaultAsync"
             or "ExecuteScalarAsync" or "ExecuteNonQueryAsync"

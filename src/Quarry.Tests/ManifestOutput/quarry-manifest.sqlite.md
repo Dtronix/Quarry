@@ -2521,6 +2521,14 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 ---
 
+### Users().Select(...).WithTimeout(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users"
+```
+
+---
+
 ### Users().ToDiagnostics()
 
 ```sql
@@ -5637,7 +5645,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 707 |
+| Total discovered | 708 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 193 |
-| Rendered | 514 |
+| Rendered | 515 |

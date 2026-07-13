@@ -152,6 +152,18 @@ rebase later if #306 merges first.
   pins the old behavior — update in step 4 (its Limit/Offset there are UNconditional
   though; only the assertion comment text is stale, the shape keeps pagination
   unconditional and stays valid).
+- **Step 3 discovery:** `UsageSiteDiscovery.IsKnownBuilderMethod` (:1819) — the allowlist
+  used by `DetectVariableDisqualifiers` for `q = q.X(...)` reassignments — omitted
+  `WithTimeout`, so the idiomatic reassigning form of conditional WithTimeout was demoted
+  to QRY032 ("assigned from non-Quarry method") before ever reaching the bit logic. Added
+  to the list in step 3. The issue's WithTimeout claim applied to the non-reassigning form
+  `if (x) q.WithTimeout(...)`. NOTE the same list also omits `With`/`FromCte`/`All`/
+  `Values`/set-operation methods — reassignment of those shapes would hit the same wall;
+  out of scope here (worth a follow-up issue if REVIEW agrees).
+- Test-shape gotchas (SqlOutput): a chain variable may have only ONE terminal (QRY033) —
+  use fluent `.Prepare()` for ToDiagnostics+execute; `var p = q.Prepare()` into a NEW
+  variable is NOT analyzable (QRY032 "assigned from non-Quarry method" walks ALL
+  references of the root var in the method body).
 - Runtime guard must cover BOTH failure modes: unenumerated mask ≤ maxMask → `null!` entry;
   unenumerated mask > maxMask → IndexOutOfRange. Emit bounds check + null check → actionable
   InvalidOperationException.

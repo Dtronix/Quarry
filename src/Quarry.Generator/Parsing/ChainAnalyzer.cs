@@ -640,6 +640,13 @@ internal static class ChainAnalyzer
             if (role == null)
                 continue;
 
+            // WithTimeout never consumes a conditional bit: the carrier's Timeout field
+            // is TimeSpan? and terminals fall back to DefaultTimeout when it is unset,
+            // so a conditional WithTimeout is already correct at runtime. A bit would
+            // only double the SQL variant table with byte-identical entries.
+            if (site.Bound.Raw.Kind == InterceptorKind.WithTimeout)
+                continue;
+
             conditionalTerms.Add(new ConditionalTerm(bitIndex, role.Value, site.Bound.Raw.UniqueId));
 
             // Group by condition text for mutual exclusivity detection

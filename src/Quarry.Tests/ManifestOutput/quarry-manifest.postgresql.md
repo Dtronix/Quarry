@@ -2232,6 +2232,14 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 ---
 
+### Users().Select(...).WithTimeout(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users"
+```
+
+---
+
 ### Users().Update().Set(...).Set(...).Set(...).Where(...).Prepare().ToDiagnostics() — 2 variants
 
 ```sql
@@ -5280,7 +5288,7 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 601 |
+| Total discovered | 602 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 117 |
-| Rendered | 484 |
+| Rendered | 485 |

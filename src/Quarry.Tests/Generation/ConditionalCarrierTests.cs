@@ -217,6 +217,41 @@ public class Svc
     }
 
     // ─────────────────────────────────────────────────────────────────
+    //  Conditional WithTimeout — no bit consumed (#307)
+    // ─────────────────────────────────────────────────────────────────
+
+    [Test]
+    public void ConditionalWithTimeout_ConsumesNoBit()
+    {
+        // The carrier Timeout field is TimeSpan? with a DefaultTimeout fallback at the
+        // terminal, so a conditional WithTimeout is runtime-correct without a mask bit.
+        // Only the conditional Where should consume a bit here: 2 variants, not 4.
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public async Task Run(bool filter, bool slow)
+    {
+        var q = _db.Users().Select(u => u);
+        if (filter)
+            q = q.Where(u => u.IsActive);
+        if (slow)
+            q = q.WithTimeout(TimeSpan.FromSeconds(60));
+        await q.ExecuteFetchAllAsync();
+    }
+}
+");
+        AssertPrebuiltDispatchWithMask(code, "SELECT");
+        AssertMaskVariantCount(code, 2);
+
+        Assert.That(code, Does.Contain(".Timeout = timeout"),
+            "WithTimeout interceptor must still store the timeout on the carrier");
+        var maskSets = code.Split("Mask |=").Length - 1;
+        Assert.That(maskSets, Is.EqualTo(1), "WithTimeout must not set a mask bit");
+    }
+
+    // ─────────────────────────────────────────────────────────────────
     //  Unenumerated-mask dispatch guard (#307)
     // ─────────────────────────────────────────────────────────────────
 

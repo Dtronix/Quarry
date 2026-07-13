@@ -2183,6 +2183,14 @@ SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM 
 
 ---
 
+### Users().Select(...).WithTimeout(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users]
+```
+
+---
+
 ### Users().Update().Set(...).Set(...).Set(...).Where(...).Prepare().ToDiagnostics() — 2 variants
 
 ```sql
@@ -5092,7 +5100,7 @@ WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 566 |
+| Total discovered | 567 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 101 |
-| Rendered | 465 |
+| Rendered | 466 |

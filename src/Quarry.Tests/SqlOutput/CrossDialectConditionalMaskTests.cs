@@ -52,6 +52,42 @@ internal class CrossDialectConditionalMaskTests
 
     #endregion
 
+    #region Conditional WithTimeout (#307 — no bit consumed)
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task Mask_ConditionalWithTimeout_SameSqlBothWays_Executes(bool slow)
+    {
+        // WithTimeout inside an if consumes no conditional bit: SQL is identical
+        // whether or not the branch is taken, and the timeout falls back to
+        // DefaultTimeout when the interceptor never runs.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // SQL-identity and variant-count for conditional WithTimeout are asserted at the
+        // generator level (ConditionalCarrierTests.ConditionalWithTimeout_ConsumesNoBit);
+        // here each dialect executes the chain with the branch taken and not taken.
+        var lt = Lite.Users().Select(u => u);
+        var pg = Pg.Users().Select(u => u);
+        var my = My.Users().Select(u => u);
+        var ss = Ss.Users().Select(u => u);
+
+        if (slow)
+        {
+            lt = lt.WithTimeout(TimeSpan.FromSeconds(90));
+            pg = pg.WithTimeout(TimeSpan.FromSeconds(90));
+            my = my.WithTimeout(TimeSpan.FromSeconds(90));
+            ss = ss.WithTimeout(TimeSpan.FromSeconds(90));
+        }
+
+        Assert.That((await lt.ExecuteFetchAllAsync()).Count, Is.EqualTo(3));
+        Assert.That((await pg.ExecuteFetchAllAsync()).Count, Is.EqualTo(3));
+        Assert.That((await my.ExecuteFetchAllAsync()).Count, Is.EqualTo(3));
+        Assert.That((await ss.ExecuteFetchAllAsync()).Count, Is.EqualTo(3));
+    }
+
+    #endregion
+
     #region 8-Bit Mask Boundaries
 
     [Test]

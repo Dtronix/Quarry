@@ -96,10 +96,10 @@ can't hide in both.
 - No dependencies (independent of steps 1/3-5).
 
 ### Step 3: WithTimeout stops consuming a conditional bit
-- [ ] ChainAnalyzer bit loop: skip `InterceptorKind.WithTimeout` (explicit kind check —
+- [x] ChainAnalyzer bit loop: skip `InterceptorKind.WithTimeout` (explicit kind check —
   do NOT remove `ClauseRole.WithTimeout` from `MapInterceptorKindToClauseRole`; roles are
   used for clause-entry classification elsewhere).
-- [ ] Confirm `GetClauseEntries` (now ID-matched, step 1) yields IsConditional=false for
+- [x] Confirm `GetClauseEntries` (now ID-matched, step 1) yields IsConditional=false for
   the WithTimeout site; carrier Timeout field emission unchanged.
 - Tests: `Generation/` — chain with conditional WithTimeout + one conditional Where emits
   2 variants (not 4), WithTimeout interceptor body sets Timeout but no Mask.
