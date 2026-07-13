@@ -3,7 +3,7 @@
 platform: github
 base-branch: master
 ## State
-phase: IMPLEMENT
+phase: REVIEW
 status: active
 issue: #308
 pr:
