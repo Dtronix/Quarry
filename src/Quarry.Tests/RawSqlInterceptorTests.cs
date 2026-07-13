@@ -328,8 +328,11 @@ public class RawSqlInterceptorTests
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
             "AppDbContext", "TestApp", "test0000", new[] { site });
 
-        // Assert — custom type mapping uses cached ordinal in struct Read method
-        Assert.That(result, Does.Contain("new MoneyMapping().FromDb(r.GetDecimal(_ord1))"));
+        // Assert — custom type mapping uses a cached mapper field (not a per-row allocation)
+        // and the cached ordinal, in the struct Read method (#308 item 5).
+        Assert.That(result, Does.Contain("_mapper_MoneyMapping.FromDb(r.GetDecimal(_ord1))"));
+        Assert.That(result, Does.Contain("static readonly MoneyMapping _mapper_MoneyMapping = new();"));
+        Assert.That(result, Does.Not.Contain("new MoneyMapping().FromDb("));
     }
 
     [Test]
