@@ -4,7 +4,7 @@ platform: github
 base-branch: master
 ## State
 phase: REVIEW
-status: suspended
+status: active
 issue: discussion
 pr:
 ## Problem Statement
@@ -109,3 +109,4 @@ Shared refactor: extract introspection (connstring build + introspector factory 
 | 2026-07-13 | PLAN, IMPLEMENT | Plan approved (10 steps). Implemented + committed steps 1a (extract DatabaseSchemaReader), 1b (metadata->snapshot adapter), 2 (always-on canonical rename pre-pass). Full suite green (3648). Suspended at 3-step context checkpoint; branch pushed. Resume at step 3. |
 | 2026-07-13 | IMPLEMENT (resume) | Implemented + committed steps 3 (--rename-map + forced-rename pre-transform), 4 (MigrationHistoryWriter + squash refactor), 5 (migrate baseline command). Full suite green (3662). Suspended at 3-step checkpoint; branch pushed (HEAD b8c0962). Resume at step 6. |
 | 2026-07-13 | IMPLEMENT (resume 2) | Implemented + committed steps 6 (--from-database), 7 (drop guard), 8 (adopt + NormalizeForDiff correctness fix), 9 (docs). IMPLEMENT COMPLETE (10/10). Full suite green (3671). Auto-transitioned to REVIEW; suspended before REVIEW work (rebase+analysis deserve fresh context). HEAD c6f1696. |
+| 2026-07-13 | REVIEW (resume) | Resumed from suspend. origin/master advanced by 1 commit (4fe287f runtime hot-path fixes). Rebasing branch, then analysis pass. |
