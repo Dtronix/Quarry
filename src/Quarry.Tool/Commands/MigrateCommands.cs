@@ -18,7 +18,8 @@ internal static class MigrateCommands
     /// <param name="project">-p, Path to .csproj</param>
     /// <param name="output">-o, Output directory for migration files</param>
     /// <param name="nonInteractive">--ni, Non-interactive mode for CI</param>
-    public static async Task MigrateAdd(string name, string project = ".", string output = "Migrations", bool nonInteractive = false)
+    public static async Task MigrateAdd(string name, string project = ".", string output = "Migrations", bool nonInteractive = false,
+        string? fromDatabase = null, string? dialect = null)
     {
         var csprojPath = CommandHelpers.ResolveCsproj(project);
         Console.WriteLine($"Loading project: {csprojPath}");
@@ -42,13 +43,10 @@ internal static class MigrateCommands
             // Build current schema
             var currentSnapshot = ProjectSchemaReader.ExtractSchemaSnapshot(compilation, newVersion, name, latestVersion > 0 ? latestVersion : null);
 
-            // Build previous snapshot (if any)
-            SchemaSnapshot? previousSnapshot = null;
-            if (latestVersion > 0)
-            {
-                // Try to find and invoke the previous snapshot's Build() method
-                previousSnapshot = FindAndBuildSnapshot(compilation, latestVersion);
-            }
+            // Build previous snapshot: from the live DB (--from-database) or the last snapshot.
+            var (fromOk, previousSnapshot) = await ResolveFromSnapshotAsync(compilation, latestVersion, fromDatabase, dialect);
+            if (!fromOk)
+                return;
 
             // Diff
             Func<RenameMatcher.RenameCandidate, bool>? acceptRename = null;
@@ -481,7 +479,8 @@ internal static class MigrateCommands
     /// <summary>
     /// quarry migrate diff — Preview schema changes without generating migration files.
     /// </summary>
-    public static async Task MigrateDiff(string project = ".", bool nonInteractive = false)
+    public static async Task MigrateDiff(string project = ".", bool nonInteractive = false,
+        string? fromDatabase = null, string? dialect = null)
     {
         var csprojPath = CommandHelpers.ResolveCsproj(project);
         Console.WriteLine($"Loading project: {csprojPath}");
@@ -500,10 +499,10 @@ internal static class MigrateCommands
         var currentSnapshot = ProjectSchemaReader.ExtractSchemaSnapshot(
             compilation, previewVersion, "preview", latestVersion > 0 ? latestVersion : null);
 
-        // Build previous snapshot (if any)
-        SchemaSnapshot? previousSnapshot = null;
-        if (latestVersion > 0)
-            previousSnapshot = FindAndBuildSnapshot(compilation, latestVersion);
+        // Build previous snapshot: from the live DB (--from-database) or the last snapshot.
+        var (fromOk, previousSnapshot) = await ResolveFromSnapshotAsync(compilation, latestVersion, fromDatabase, dialect);
+        if (!fromOk)
+            return;
 
         // Diff
         Func<RenameMatcher.RenameCandidate, bool>? acceptRename = null;
@@ -876,6 +875,32 @@ internal static class MigrateCommands
     private static SchemaSnapshot? FindAndBuildSnapshot(Microsoft.CodeAnalysis.Compilation compilation, int version)
     {
         return SnapshotCompiler.CompileAndBuild(compilation, version);
+    }
+
+    /// <summary>
+    /// Resolves the "from" (comparison) snapshot for a diff. When <paramref name="fromDatabase"/>
+    /// is set, the snapshot is introspected from the live database so the diff runs against
+    /// database reality; otherwise it is the last persisted project snapshot (or null if none).
+    /// Returns <c>Ok = false</c> (after logging) when a database source is requested but the
+    /// dialect cannot be resolved.
+    /// </summary>
+    private static async Task<(bool Ok, SchemaSnapshot? Snapshot)> ResolveFromSnapshotAsync(
+        Microsoft.CodeAnalysis.Compilation compilation, int latestVersion, string? fromDatabase, string? dialect)
+    {
+        if (fromDatabase != null)
+        {
+            var resolvedDialect = DialectResolver.ResolveDialect(compilation, dialect);
+            if (resolvedDialect == null)
+            {
+                Console.Error.WriteLine("Could not determine SQL dialect for --from-database. Use --dialect / -d.");
+                return (false, null);
+            }
+            var tables = await DatabaseSchemaReader.ReadTablesAsync(resolvedDialect, fromDatabase, null, null);
+            var snapshot = DatabaseSchemaReader.ToSnapshot(tables, resolvedDialect, latestVersion, "FromDatabase", null);
+            return (true, snapshot);
+        }
+
+        return (true, latestVersion > 0 ? FindAndBuildSnapshot(compilation, latestVersion) : null);
     }
 
     private static string GuessNamespace(string csprojPath, string outputDir)

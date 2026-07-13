@@ -34,7 +34,9 @@ async Task<int> DispatchAsync(string command, string[] args)
                 GetPositional(opts, "name", args, 2),
                 GetOpt(opts, "p", "project", "."),
                 GetOpt(opts, "o", "output", "Migrations"),
-                HasFlag(opts, "ni", "non-interactive"));
+                HasFlag(opts, "ni", "non-interactive"),
+                GetOptOrNull(opts, null, "from-database"),
+                GetOptOrNull(opts, "d", "dialect"));
             return 0;
 
         case "migrate baseline":
@@ -73,7 +75,9 @@ async Task<int> DispatchAsync(string command, string[] args)
         case "migrate diff":
             await MigrateCommands.MigrateDiff(
                 GetOpt(opts, "p", "project", "."),
-                HasFlag(opts, "ni", "non-interactive"));
+                HasFlag(opts, "ni", "non-interactive"),
+                GetOptOrNull(opts, null, "from-database"),
+                GetOptOrNull(opts, "d", "dialect"));
             return 0;
 
         case "migrate script":
