@@ -1181,9 +1181,19 @@ internal static class CarrierEmitter
         if (!hasCollections)
         {
             if (chain.SqlVariants.Count == 1)
+            {
                 sb.AppendLine($"        var sql = {carrier.ClassName}._sql;");
+            }
             else
-                sb.AppendLine($"        var sql = {carrier.ClassName}._sql[__c.Mask];");
+            {
+                // Guard both unenumerated-mask failure modes: a mask beyond the variant
+                // table (IndexOutOfRange) and a null! gap entry (null CommandText at the
+                // provider). Either means enumeration missed a reachable branch combination.
+                var arraySize = chain.SqlVariants.Keys.Max() + 1;
+                sb.AppendLine($"        var sql = (uint)__c.Mask < {arraySize}u && {carrier.ClassName}._sql[__c.Mask] is not null");
+                sb.AppendLine($"            ? {carrier.ClassName}._sql[__c.Mask]");
+                sb.AppendLine($"            : Quarry.Internal.ThrowHelper.UnenumeratedMask(__c.Mask);");
+            }
             return;
         }
 
@@ -1244,6 +1254,15 @@ internal static class CarrierEmitter
 
         // Step 3: Cache check
         var maskExpr = chain.SqlVariants.Count == 1 ? "0" : "__c.Mask";
+        if (chain.SqlVariants.Count > 1)
+        {
+            // Bounds guard: _sqlCache is sized maxMask+1; an unenumerated mask beyond it
+            // must throw the actionable guard, not IndexOutOfRange. Gap masks within
+            // bounds fall through to the mask switch below, whose default arm throws.
+            var cacheSize = chain.SqlVariants.Keys.Max() + 1;
+            sb.AppendLine($"        if ((uint)__c.Mask >= {cacheSize}u)");
+            sb.AppendLine($"            Quarry.Internal.ThrowHelper.UnenumeratedMask(__c.Mask);");
+        }
         sb.AppendLine($"        var __cached = {carrier.ClassName}._sqlCache[{maskExpr}];");
 
         // Declare vars
@@ -1306,7 +1325,9 @@ internal static class CarrierEmitter
                 // Reset __colShift between cases would be wrong — each case is mutually exclusive
                 sb.AppendLine("                break;");
             }
-            sb.AppendLine("            default: break;");
+            // A gap mask (within bounds but never enumerated) reaches the default arm —
+            // throw the actionable guard instead of building an empty CommandText.
+            sb.AppendLine("            default: Quarry.Internal.ThrowHelper.UnenumeratedMask(__c.Mask); break;");
             sb.AppendLine("            }");
         }
 

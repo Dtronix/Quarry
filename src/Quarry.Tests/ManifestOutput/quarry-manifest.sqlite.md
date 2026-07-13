@@ -292,19 +292,6 @@ UPDATE "order_items" SET "LineTotal" = (("LineTotal" - "UnitPrice") + @p0) WHERE
 
 ---
 
-### OrderItems().Where(...).Select(...).ExecuteFetchAllAsync()
-
-```sql
-SELECT "OrderItemId" FROM "order_items" WHERE "OrderItemId" IN ({__COL_P0__}) AND "Quantity" IN ({__COL_P1__})
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `int[]` |
-| `@p1` | `int[]` |
-
----
-
 ### OrderItems().Where(...).Select(...).ExecuteFetchFirstAsync()
 
 ```sql
@@ -1422,20 +1409,6 @@ INSERT INTO "users" ("UserName", "IsActive") VALUES (@p0, @p1), ...
 
 ---
 
-### Users().InsertBatch(...).Values(...).ExecuteNonQueryAsync()
-
-```sql
-INSERT INTO "users" ("UserName", "IsActive", "CreatedAt") VALUES (@p0, @p1, @p2), ...
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `string` |
-| `@p1` | `bool` |
-| `@p2` | `DateTime` |
-
----
-
 ### Users().InsertBatch(...).Values(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -2530,6 +2503,24 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 ---
 
+### Users().Select(...).Where(...).Where(...).Where(...).ExecuteFetchAllAsync() — 4 variants
+
+```sql
+-- +b
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserId" >= 2
+
+-- +a, +b
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE ("UserId" >= 1) AND ("UserId" >= 2)
+
+-- +b
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserId" >= 3
+
+-- +a, +b
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE ("UserId" >= 1) AND ("UserId" >= 3)
+```
+
+---
+
 ### Users().ToDiagnostics()
 
 ```sql
@@ -3267,14 +3258,6 @@ SELECT "UserName" FROM "users" WHERE "UserName" = @p0
 | Parameter | Type |
 |-----------|------|
 | `@p0` | `string` |
-
----
-
-### Users().Where(...).Select(...).ExecuteFetchFirstAsync()
-
-```sql
-SELECT "CreatedAt" FROM "users" WHERE "UserId" = 99
-```
 
 ---
 
@@ -5654,7 +5637,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 711 |
+| Total discovered | 707 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 195 |
-| Rendered | 516 |
+| Consolidated (deduped) | 193 |
+| Rendered | 514 |

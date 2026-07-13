@@ -216,6 +216,49 @@ public class Svc
         Assert.That(variants[1], Does.Contain("\"\"Age\"\" > 18"));
     }
 
+    // ─────────────────────────────────────────────────────────────────
+    //  Unenumerated-mask dispatch guard (#307)
+    // ─────────────────────────────────────────────────────────────────
+
+    [Test]
+    public void MultiVariant_Dispatch_EmitsUnenumeratedMaskGuard()
+    {
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public async Task Run(bool filter)
+    {
+        var q = _db.Users().Select(u => u);
+        if (filter)
+            q = q.Where(u => u.IsActive);
+        await q.ExecuteFetchAllAsync();
+    }
+}
+");
+        Assert.That(code, Does.Contain("Quarry.Internal.ThrowHelper.UnenumeratedMask(__c.Mask)"),
+            "Multi-variant dispatch must guard against unenumerated masks");
+    }
+
+    [Test]
+    public void SingleVariant_Dispatch_HasNoMaskGuard()
+    {
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public async Task Run()
+    {
+        await _db.Users().Where(u => u.IsActive).Select(u => u).ExecuteFetchAllAsync();
+    }
+}
+");
+        Assert.That(code, Does.Not.Contain("UnenumeratedMask"),
+            "Single-variant chains dispatch a fixed SQL string and need no guard");
+    }
+
     /// <summary>
     /// Extracts the _sql array entries (verbatim string lines) in mask order.
     /// </summary>

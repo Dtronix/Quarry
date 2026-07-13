@@ -79,14 +79,14 @@ can't hide in both.
 - No dependencies.
 
 ### Step 2: Runtime dispatch guard (defense in depth, runtime layer)
-- [ ] `CarrierEmitter.EmitCarrierSqlDispatch` multi-variant paths (plain `_sql[__c.Mask]`
+- [x] `CarrierEmitter.EmitCarrierSqlDispatch` multi-variant paths (plain `_sql[__c.Mask]`
   at :1173 and the collection `_sqlCache[mask]` path) emit a bounds + null guard:
   `if ((uint)__c.Mask >= _sql.Length || _sql[__c.Mask] is null) throw new
   InvalidOperationException("Quarry: conditional clause combination (mask N) was not
   enumerated at compile time — this is a Quarry generator bug; please file an issue…")`.
   Keep the guard on a helper (e.g. `Quarry.Internal.ThrowHelper`) if generated-size matters;
   follow existing generated-code idioms.
-- [ ] Audit all other generated `_sql[` indexing sites (TerminalEmitHelpers diagnostics
+- [x] Audit all other generated `_sql[` indexing sites (TerminalEmitHelpers diagnostics
   path iterates enumerated keys only — no guard needed there).
 - Tests: `Generation/` — multi-variant chain's generated dispatch contains the guard;
   single-variant chains contain none. End-to-end: the else-if repro shape (still broken

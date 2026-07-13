@@ -20,6 +20,38 @@ namespace Quarry.Tests.SqlOutput;
 [TestFixture]
 internal class CrossDialectConditionalMaskTests
 {
+    #region Unenumerated Mask Guard (#307)
+
+    [Test]
+    public async Task Mask_ElseIfChain_UnenumeratedMask_ThrowsActionableGuard()
+    {
+        // PIN (#307 step 2): a one-level else-if cascade currently produces an
+        // unenumerated mask when the first arm executes — branch groups are keyed by
+        // condition text, so the first arm's bit is enumerated as independent while
+        // the later arms form the exclusive group (issue #307 defect 2). Until step 5
+        // makes these shapes fully supported, the terminal must fail with the
+        // actionable guard exception, not a provider null-CommandText error.
+        // Step 5 replaces this pin with correct-execution assertions.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        bool a = true, b = false;
+        var q = Lite.Users().Select(u => u);
+        if (a)
+            q = q.Where(u => u.UserId >= 1);
+        else if (b)
+            q = q.Where(u => u.UserId >= 2);
+        else
+            q = q.Where(u => u.UserId >= 3);
+
+        var ex = Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await q.ExecuteFetchAllAsync());
+        Assert.That(ex!.Message, Does.Contain("mask"));
+        Assert.That(ex.Message, Does.Contain("Quarry"));
+    }
+
+    #endregion
+
     #region 8-Bit Mask Boundaries
 
     [Test]
