@@ -68,8 +68,12 @@ public static class QueryExecutor
         {
             if (await dbReader.ReadAsync(ct).ConfigureAwait(false))
             {
+                // Materialize before logging completion so a reader failure is reported as a
+                // reader failure (not a spurious FetchCompleted), and timing includes
+                // materialization — matching ExecuteCarrierFirstOrDefaultWithCommandAsync.
+                var result = reader(dbReader);
                 FinalizeQuery(opId, ctx, startTimestamp, 1, command.CommandText);
-                return reader(dbReader);
+                return result;
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

@@ -13,7 +13,7 @@ Each step is independently committable. All commits stage `_sessions/` (`git add
 - [x] Step 6 — Item 6b: widen ParameterNames cache
 - [x] Step 7 — Item 6c: drop dead func.Target read
 - [x] Step 8 — Item 6d: cached empty enumerator
-- [ ] Step 9 — Item 6e: materialize before log in First
+- [x] Step 9 — Item 6e: materialize before log in First
 - [ ] Step 10 — Item 6f: PreparedQuery invariant comment
 - [ ] Step 11 — Item 4: ConfigureAwait sweep + CA2007 guard
 
