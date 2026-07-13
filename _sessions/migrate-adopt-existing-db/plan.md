@@ -50,7 +50,7 @@ Full "adopt existing database" bundle (6 features) in one PR. Steps are ordered 
   Add `string? fromDatabase`, `string? dialect`, `string? connection` params to `MigrateAdd`/`MigrateDiff`; when `--from-database` set, the "from" snapshot = `DatabaseSchemaReader.ToSnapshot(...)` instead of `FindAndBuildSnapshot`. Wire options in `Program.cs`. Keep the open `DbConnection` around (needed by step 7).
   *Tests:* `MigrateAddFromDatabaseTests.cs` — seed SQLite with legacy snake_case table, point project schemas at PascalCase, run `add --from-database` → generated migration contains `RenameColumn` steps (assert via generated file text or by diffing snapshots), no drop+add.
 
-- [ ] **7. `--allow-data-loss` drop guard on DB-sourced diffs.**
+- [x] **7. `--allow-data-loss` drop guard on DB-sourced diffs.** (Wired into add/adopt, not diff — diff is preview-only so blocking is meaningless. DropColumn uses `WHERE col IS NOT NULL` so all-null columns don't block.)
   Add `HasFlag(opts, null, "allow-data-loss")` to the `add`/`diff`/`adopt` cases. After the diff, when a live connection exists, for each `DropColumn`/`DropTable` step run `SELECT COUNT(*)` on the target; if >0 and flag unset, abort with an explicit message listing the offending objects. Put the check in a shared `DropGuard.CheckAsync(conn, dialect, steps, allowDataLoss)`.
   *Tests:* `DropGuardTests.cs` (SQLite) — populated column drop aborts; empty table proceeds; `--allow-data-loss` overrides; non-destructive steps unaffected.
 

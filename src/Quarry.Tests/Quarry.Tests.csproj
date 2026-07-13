@@ -78,6 +78,7 @@
     <Compile Include="../Quarry.Tool/Schema/DatabaseSchemaReader.cs" LinkBase="Shared" />
     <Compile Include="../Quarry.Tool/Schema/RenameMap.cs" LinkBase="Shared" />
     <Compile Include="../Quarry.Tool/Schema/MigrationHistoryWriter.cs" LinkBase="Shared" />
+    <Compile Include="../Quarry.Tool/Schema/DropGuard.cs" LinkBase="Shared" />
     <Compile Include="../Quarry.Tool/Commands/BundleCommand.cs" LinkBase="Shared" />
     <Compile Include="../Quarry.Tool/Commands/CommandHelpers.cs" LinkBase="Shared" />
   </ItemGroup>

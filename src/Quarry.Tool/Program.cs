@@ -36,7 +36,8 @@ async Task<int> DispatchAsync(string command, string[] args)
                 GetOpt(opts, "o", "output", "Migrations"),
                 HasFlag(opts, "ni", "non-interactive"),
                 GetOptOrNull(opts, null, "from-database"),
-                GetOptOrNull(opts, "d", "dialect"));
+                GetOptOrNull(opts, "d", "dialect"),
+                HasFlag(opts, null, "allow-data-loss"));
             return 0;
 
         case "migrate baseline":

@@ -19,7 +19,7 @@ internal static class MigrateCommands
     /// <param name="output">-o, Output directory for migration files</param>
     /// <param name="nonInteractive">--ni, Non-interactive mode for CI</param>
     public static async Task MigrateAdd(string name, string project = ".", string output = "Migrations", bool nonInteractive = false,
-        string? fromDatabase = null, string? dialect = null)
+        string? fromDatabase = null, string? dialect = null, bool allowDataLoss = false)
     {
         var csprojPath = CommandHelpers.ResolveCsproj(project);
         Console.WriteLine($"Loading project: {csprojPath}");
@@ -66,6 +66,12 @@ internal static class MigrateCommands
                 Console.WriteLine("No schema changes detected.");
                 return;
             }
+
+            // Data-loss guard: when diffing against a live database, refuse to emit a migration
+            // that would drop a populated column/table (a rename the differ missed) unless the
+            // caller explicitly opts in with --allow-data-loss.
+            if (fromDatabase != null && !await GuardAgainstDataLossAsync(compilation, dialect, fromDatabase, steps, allowDataLoss))
+                return;
 
             // Generate files
             var names = ComputeMigrationNames(newVersion, name);
@@ -901,6 +907,34 @@ internal static class MigrateCommands
         }
 
         return (true, latestVersion > 0 ? FindAndBuildSnapshot(compilation, latestVersion) : null);
+    }
+
+    /// <summary>
+    /// When diffing against a live database, blocks destructive drops of populated objects
+    /// unless <paramref name="allowDataLoss"/> is set. Returns true if it is safe to proceed,
+    /// false if the operation was blocked (a message is written to stderr).
+    /// </summary>
+    private static async Task<bool> GuardAgainstDataLossAsync(
+        Microsoft.CodeAnalysis.Compilation compilation, string? dialect, string fromDatabase,
+        IReadOnlyList<MigrationStep> steps, bool allowDataLoss)
+    {
+        var resolvedDialect = DialectResolver.ResolveDialect(compilation, dialect);
+        if (resolvedDialect == null)
+            return true; // dialect is validated upstream for --from-database; nothing further to check
+
+        var sqlDialect = ParseDialect(resolvedDialect);
+        await using var conn = CreateConnection(resolvedDialect, fromDatabase);
+        await conn.OpenAsync();
+
+        var violations = await DropGuard.FindViolationsAsync(conn, sqlDialect, steps);
+        if (violations.Count == 0 || allowDataLoss)
+            return true;
+
+        Console.Error.WriteLine("Refusing to generate: the following operations would lose data (no rename detected):");
+        foreach (var v in violations)
+            Console.Error.WriteLine($"  ! {v.Describe()}");
+        Console.Error.WriteLine("Declare intended renames with --rename-map, or pass --allow-data-loss to proceed anyway.");
+        return false;
     }
 
     private static string GuessNamespace(string csprojPath, string outputDir)
