@@ -97,4 +97,84 @@ public class DropGuardTests
             new MigrationStep(MigrationStepType.AddColumn, StepClassification.Safe, "customers", null, "age", null, null, "add"));
         Assert.That(v, Is.Empty);
     }
+
+    // --- Schema qualification (F5): a normalized diff strips the schema, so the guard must
+    //     re-qualify the drop with the live table's real schema on multi-schema dialects. ---
+
+    [Test]
+    public void FormatTable_NonSqliteDialect_QualifiesWithSchema()
+    {
+        var expected = $"{SqlFormatting.QuoteIdentifier(SqlDialect.PostgreSQL, "sales")}." +
+                       $"{SqlFormatting.QuoteIdentifier(SqlDialect.PostgreSQL, "customers")}";
+        Assert.That(DropGuard.FormatTable(SqlDialect.PostgreSQL, "sales", "customers"), Is.EqualTo(expected));
+        // Without a schema it is just the (quoted) table.
+        Assert.That(DropGuard.FormatTable(SqlDialect.PostgreSQL, null, "customers"),
+            Is.EqualTo(SqlFormatting.QuoteIdentifier(SqlDialect.PostgreSQL, "customers")));
+    }
+
+    [Test]
+    public void FormatTable_Sqlite_IgnoresSchema()
+    {
+        // SQLite has no schema qualifier; a supplied schema must be ignored (never mis-qualified).
+        Assert.That(DropGuard.FormatTable(SqlDialect.SQLite, "sales", "customers"),
+            Is.EqualTo(DropGuard.FormatTable(SqlDialect.SQLite, null, "customers")));
+    }
+
+    [Test]
+    public void ResolveSchema_PrefersStepSchema_ThenLiveMap()
+    {
+        var live = new SchemaSnapshot(1, "db", DateTimeOffset.UtcNow, null, new[]
+        {
+            new TableDef("customers", "sales", NamingStyleKind.Exact,
+                new[] { new ColumnDef("id", "int", false, ColumnKind.PrimaryKey) },
+                Array.Empty<ForeignKeyDef>(), Array.Empty<IndexDef>())
+        });
+        var map = DropGuard.BuildTableSchemaMap(live);
+
+        // Normalized step (schema == null) -> resolved from the live map.
+        var stripped = new MigrationStep(MigrationStepType.DropTable, StepClassification.Destructive, "customers", null, null, null, null, "d");
+        Assert.That(DropGuard.ResolveSchema(stripped, map), Is.EqualTo("sales"));
+
+        // A step that already carries a schema keeps it (map is only a fallback).
+        var explicitSchema = new MigrationStep(MigrationStepType.DropTable, StepClassification.Destructive, "customers", "audit", null, null, null, "d");
+        Assert.That(DropGuard.ResolveSchema(explicitSchema, map), Is.EqualTo("audit"));
+
+        // Unknown table with no step schema -> null (unqualified).
+        var unknown = new MigrationStep(MigrationStepType.DropTable, StepClassification.Destructive, "orders", null, null, null, null, "d");
+        Assert.That(DropGuard.ResolveSchema(unknown, map), Is.Null);
+    }
+
+    [Test]
+    public void BuildTableSchemaMap_IsCaseInsensitiveOnTableName()
+    {
+        var live = new SchemaSnapshot(1, "db", DateTimeOffset.UtcNow, null, new[]
+        {
+            new TableDef("Customers", "sales", NamingStyleKind.Exact,
+                new[] { new ColumnDef("id", "int", false, ColumnKind.PrimaryKey) },
+                Array.Empty<ForeignKeyDef>(), Array.Empty<IndexDef>())
+        });
+        var map = DropGuard.BuildTableSchemaMap(live);
+        Assert.That(map.TryGetValue("customers", out var schema), Is.True);
+        Assert.That(schema, Is.EqualTo("sales"));
+    }
+
+    [Test]
+    public async Task FindViolations_WithLiveSchemaMap_StillCountsOnSqlite()
+    {
+        // Wiring smoke test: passing a schema map must not change SQLite counting (schema ignored).
+        var live = new SchemaSnapshot(1, "db", DateTimeOffset.UtcNow, null, new[]
+        {
+            new TableDef("customers", null, NamingStyleKind.Exact,
+                new[] { new ColumnDef("id", "int", false, ColumnKind.PrimaryKey) },
+                Array.Empty<ForeignKeyDef>(), Array.Empty<IndexDef>())
+        });
+        var map = DropGuard.BuildTableSchemaMap(live);
+
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync();
+        var v = await DropGuard.FindViolationsAsync(conn, SqlDialect.SQLite,
+            new[] { Drop(MigrationStepType.DropColumn, "customers", "name") }, map);
+        Assert.That(v.Count, Is.EqualTo(1));
+        Assert.That(v[0].RowCount, Is.EqualTo(2));
+    }
 }

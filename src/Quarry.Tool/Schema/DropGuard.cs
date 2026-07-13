@@ -27,9 +27,17 @@ internal static class DropGuard
     /// <summary>
     /// Returns the destructive steps in <paramref name="steps"/> that would lose data from a
     /// populated object in the connected database. An empty list means no data would be lost.
+    /// <para>
+    /// A normalized diff clears the schema qualifier from its steps (see
+    /// <see cref="DatabaseSchemaReader.NormalizeForDiff"/>), so <paramref name="tableSchemas"/>
+    /// supplies the real schema per table (from the rich live-database snapshot). Without it,
+    /// a drop against a table in a non-default schema (PostgreSQL/SqlServer) would query the
+    /// wrong object. Build it with <see cref="BuildTableSchemaMap"/>.
+    /// </para>
     /// </summary>
     public static async Task<IReadOnlyList<Violation>> FindViolationsAsync(
-        DbConnection connection, SqlDialect dialect, IReadOnlyList<MigrationStep> steps)
+        DbConnection connection, SqlDialect dialect, IReadOnlyList<MigrationStep> steps,
+        IReadOnlyDictionary<string, string?>? tableSchemas = null)
     {
         var violations = new List<Violation>();
 
@@ -39,14 +47,16 @@ internal static class DropGuard
             {
                 case MigrationStepType.DropTable:
                 {
-                    var count = await CountAsync(connection, dialect, step.TableName, step.SchemaName, null);
+                    var schema = ResolveSchema(step, tableSchemas);
+                    var count = await CountAsync(connection, dialect, step.TableName, schema, null);
                     if (count > 0)
                         violations.Add(new Violation(step.StepType, step.TableName, null, count));
                     break;
                 }
                 case MigrationStepType.DropColumn:
                 {
-                    var count = await CountAsync(connection, dialect, step.TableName, step.SchemaName, step.ColumnName);
+                    var schema = ResolveSchema(step, tableSchemas);
+                    var count = await CountAsync(connection, dialect, step.TableName, schema, step.ColumnName);
                     if (count > 0)
                         violations.Add(new Violation(step.StepType, step.TableName, step.ColumnName, count));
                     break;
@@ -55,6 +65,32 @@ internal static class DropGuard
         }
 
         return violations;
+    }
+
+    /// <summary>
+    /// Resolves the schema to qualify a drop step's table with: the step's own schema when set,
+    /// otherwise the schema recorded for that table in <paramref name="tableSchemas"/> (the live
+    /// database's real schema, which normalization stripped from the step).
+    /// </summary>
+    internal static string? ResolveSchema(MigrationStep step, IReadOnlyDictionary<string, string?>? tableSchemas)
+    {
+        if (step.SchemaName != null)
+            return step.SchemaName;
+        if (tableSchemas != null && tableSchemas.TryGetValue(step.TableName, out var schema))
+            return schema;
+        return null;
+    }
+
+    /// <summary>
+    /// Builds a case-insensitive table-name → schema lookup from a rich (un-normalized) snapshot,
+    /// so the guard can re-qualify drop steps whose schema a normalized diff cleared.
+    /// </summary>
+    internal static IReadOnlyDictionary<string, string?> BuildTableSchemaMap(SchemaSnapshot liveSchema)
+    {
+        var map = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var t in liveSchema.Tables)
+            map[t.TableName] = t.SchemaName;
+        return map;
     }
 
     private static async Task<long> CountAsync(
@@ -70,7 +106,7 @@ internal static class DropGuard
         return result is null or DBNull ? 0L : Convert.ToInt64(result);
     }
 
-    private static string FormatTable(SqlDialect dialect, string? schema, string table)
+    internal static string FormatTable(SqlDialect dialect, string? schema, string table)
     {
         var quotedTable = SqlFormatting.QuoteIdentifier(dialect, table);
         // SQLite ignores database-schema qualification; other dialects honor it.

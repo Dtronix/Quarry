@@ -75,7 +75,7 @@ internal static class MigrateCommands
             // Data-loss guard: when diffing against a live database, refuse to emit a migration
             // that would drop a populated column/table (a rename the differ missed) unless the
             // caller explicitly opts in with --allow-data-loss.
-            if (fromDatabase != null && !await GuardAgainstDataLossAsync(compilation, dialect, fromDatabase, steps, allowDataLoss))
+            if (fromDatabase != null && !await GuardAgainstDataLossAsync(compilation, dialect, fromDatabase, steps, allowDataLoss, previousSnapshot))
                 return;
 
             // Generate files
@@ -303,6 +303,17 @@ internal static class MigrateCommands
         var renameVersion = latestVersion + 2;
         var priorSnapshot = latestVersion > 0 ? FindAndBuildSnapshot(compilation, latestVersion) : null;
 
+        // adopt assumes the project's migration history matches the target database. When earlier
+        // migrations already exist, the baseline is recorded at latest+1 and versions 1..latest are
+        // neither reconciled nor marked applied — warn so a non-fresh adopt is not silent.
+        if (latestVersion > 0)
+        {
+            Console.Error.WriteLine(
+                $"WARNING: {latestVersion} existing migration(s) found. adopt records the baseline as version " +
+                $"{baselineVersion} and does not reconcile versions 1..{latestVersion}; ensure they are already " +
+                $"applied to the target database.");
+        }
+
         // 1. Introspect the live database.
         var dbTables = await DatabaseSchemaReader.ReadTablesAsync(resolvedDialect, connection, null, null);
         if (dbTables.Count == 0)
@@ -313,7 +324,35 @@ internal static class MigrateCommands
         var dbSnapshot = DatabaseSchemaReader.ToSnapshot(dbTables, resolvedDialect, baselineVersion, "InitialCreate",
             latestVersion > 0 ? latestVersion : null);
 
-        // 2. Baseline: generate a migration for the current DB state and record it applied (no DDL run).
+        // 2. Parse and validate the rename-map against the live DB and project schemas BEFORE writing
+        //    anything. An invalid map (unknown target, duplicate/colliding target) would otherwise
+        //    generate a spurious drop — or crash the data-loss guard by querying a column the live
+        //    database no longer has under that name — only AFTER the baseline was already recorded
+        //    as applied, leaving the DB in a half-adopted state.
+        var currentSnapshot = ProjectSchemaReader.ExtractSchemaSnapshot(compilation, renameVersion, name, baselineVersion);
+        RenameMap renameMap;
+        try
+        {
+            renameMap = RenameMap.Parse(renameMapSpec);
+        }
+        catch (Exception ex) when (ex is FormatException or FileNotFoundException)
+        {
+            Console.Error.WriteLine($"Invalid --rename-map: {ex.Message}");
+            return;
+        }
+
+        var validation = renameMap.Validate(dbSnapshot, currentSnapshot);
+        foreach (var w in validation.Warnings)
+            Console.Error.WriteLine($"  WARNING: {w}");
+        if (validation.HasErrors)
+        {
+            Console.Error.WriteLine("Refusing to adopt — the --rename-map is invalid:");
+            foreach (var e in validation.Errors)
+                Console.Error.WriteLine($"  ! {e}");
+            return;
+        }
+
+        // 3. Baseline: generate a migration for the current DB state and record it applied (no DDL run).
         var baselineSteps = SchemaDiffer.Diff(priorSnapshot, dbSnapshot);
         await WriteMigrationFilesAsync(baseOutputDir, output, ns, baselineVersion, "InitialCreate", baselineSteps, priorSnapshot, dbSnapshot);
 
@@ -325,13 +364,11 @@ internal static class MigrateCommands
         }
         Console.WriteLine($"Baseline {baselineVersion} 'InitialCreate' recorded as applied (existing DB state).");
 
-        // 3. Alignment: diff the (rename-map-adjusted) DB state against the project schemas. Explicit
+        // 4. Alignment: diff the (rename-map-adjusted) DB state against the project schemas. Explicit
         //    rename-map pairs are pre-applied to the DB snapshot and emitted as explicit renames;
         //    remaining convention renames are detected by the differ. Normalize both sides so only
         //    real structural changes surface.
-        var renameMap = RenameMap.Parse(renameMapSpec);
         var (patchedFrom, forced) = renameMap.ApplyForcedRenames(dbSnapshot);
-        var currentSnapshot = ProjectSchemaReader.ExtractSchemaSnapshot(compilation, renameVersion, name, baselineVersion);
 
         var steps = new List<MigrationStep>();
         foreach (var fr in forced)
@@ -349,12 +386,14 @@ internal static class MigrateCommands
             return;
         }
 
-        // 4. Data-loss guard against the live database.
+        // 5. Data-loss guard against the live database. The alignment steps come from a normalized
+        //    diff (schema stripped), so re-qualify each drop with the live table's real schema.
         if (!allowDataLoss)
         {
             await using var guardConn = CreateConnection(resolvedDialect, connection);
             await guardConn.OpenAsync();
-            var violations = await DropGuard.FindViolationsAsync(guardConn, sqlDialect, steps);
+            var tableSchemas = DropGuard.BuildTableSchemaMap(dbSnapshot);
+            var violations = await DropGuard.FindViolationsAsync(guardConn, sqlDialect, steps, tableSchemas);
             if (violations.Count > 0)
             {
                 Console.Error.WriteLine("Refusing to generate the alignment migration — these operations would lose data:");
@@ -365,7 +404,7 @@ internal static class MigrateCommands
             }
         }
 
-        // 5. Generate the alignment migration (pending — apply with MigrateAsync).
+        // 6. Generate the alignment migration (pending — apply with MigrateAsync).
         await WriteMigrationFilesAsync(baseOutputDir, output, ns, renameVersion, name, steps, dbSnapshot, currentSnapshot);
 
         Console.WriteLine();
@@ -1054,7 +1093,7 @@ internal static class MigrateCommands
     /// </summary>
     private static async Task<bool> GuardAgainstDataLossAsync(
         Microsoft.CodeAnalysis.Compilation compilation, string? dialect, string fromDatabase,
-        IReadOnlyList<MigrationStep> steps, bool allowDataLoss)
+        IReadOnlyList<MigrationStep> steps, bool allowDataLoss, SchemaSnapshot? liveSchema)
     {
         var resolvedDialect = DialectResolver.ResolveDialect(compilation, dialect);
         if (resolvedDialect == null)
@@ -1064,7 +1103,10 @@ internal static class MigrateCommands
         await using var conn = CreateConnection(resolvedDialect, fromDatabase);
         await conn.OpenAsync();
 
-        var violations = await DropGuard.FindViolationsAsync(conn, sqlDialect, steps);
+        // The steps come from a normalized diff (schema stripped); re-qualify each drop with the
+        // live database's real schema so multi-schema tables are counted against the right object.
+        var tableSchemas = liveSchema != null ? DropGuard.BuildTableSchemaMap(liveSchema) : null;
+        var violations = await DropGuard.FindViolationsAsync(conn, sqlDialect, steps, tableSchemas);
         if (violations.Count == 0 || allowDataLoss)
             return true;
 
@@ -1275,13 +1317,5 @@ internal static class MigrateCommands
         {
             // Column already exists — safe to ignore
         }
-    }
-
-    private static void AddParameter(DbCommand cmd, SqlDialect dialect, int index, object value)
-    {
-        var p = cmd.CreateParameter();
-        p.ParameterName = SqlFormatting.GetParameterName(dialect, index);
-        p.Value = value;
-        cmd.Parameters.Add(p);
     }
 }

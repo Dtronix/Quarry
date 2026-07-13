@@ -136,6 +136,111 @@ internal sealed class RenameMap
     }
 
     /// <summary>
+    /// The outcome of <see cref="Validate"/>: fatal <see cref="Errors"/> (the caller must abort)
+    /// and non-fatal <see cref="Warnings"/> (surfaced but processing continues).
+    /// </summary>
+    public sealed record ValidationResult(IReadOnlyList<string> Errors, IReadOnlyList<string> Warnings)
+    {
+        public bool HasErrors => Errors.Count > 0;
+    }
+
+    /// <summary>
+    /// Validates this map against the live-database snapshot (<paramref name="from"/>) and the
+    /// desired project snapshot (<paramref name="to"/>) BEFORE any forced rename is applied or any
+    /// baseline is written. Catches user mistakes that would otherwise cause a spurious drop, a
+    /// data-loss guard crash (querying a column that no longer exists under its live name), or an
+    /// invalid snapshot with duplicate columns:
+    /// <list type="bullet">
+    ///   <item>Two source columns in one table mapping to the same target (duplicate column) — error.</item>
+    ///   <item>A target colliding with an existing column that is not itself renamed away — error.</item>
+    ///   <item>A target absent from the project schema for that table — error (it would be dropped,
+    ///     losing the renamed data and breaking the drop guard).</item>
+    ///   <item>An entry that matches no column in any live table — warning (likely a typo; ignored).</item>
+    /// </list>
+    /// Tables are paired between the two snapshots by canonical name (case/separator-insensitive),
+    /// matching the differ's own rename detection.
+    /// </summary>
+    public ValidationResult Validate(SchemaSnapshot from, SchemaSnapshot to)
+    {
+        var errors = new List<string>();
+        var warnings = new List<string>();
+        if (IsEmpty)
+            return new ValidationResult(errors, warnings);
+
+        // Index desired (project) tables by canonical name for target-existence lookup.
+        var toByCanon = new Dictionary<string, TableDef>(StringComparer.Ordinal);
+        foreach (var t in to.Tables)
+            toByCanon[NamingConventions.Canonicalize(t.TableName)] = t;
+
+        var usedQualified = new HashSet<(string, string)>();
+        var usedBare = new HashSet<string>();
+
+        foreach (var table in from.Tables)
+        {
+            // Collect the renames that would apply to this table (old -> target).
+            var applied = new List<(string Old, string Target)>();
+            foreach (var col in table.Columns)
+            {
+                var target = Resolve(table.TableName, col.Name);
+                if (target == null || string.Equals(target, col.Name, StringComparison.Ordinal))
+                    continue;
+                applied.Add((col.Name, target));
+
+                var key = (table.TableName.ToLowerInvariant(), col.Name.ToLowerInvariant());
+                if (_qualified.ContainsKey(key))
+                    usedQualified.Add(key);
+                else
+                    usedBare.Add(col.Name.ToLowerInvariant());
+            }
+
+            if (applied.Count == 0)
+                continue;
+
+            var renamedAway = new HashSet<string>(applied.Select(a => a.Old), StringComparer.OrdinalIgnoreCase);
+            var existing = new HashSet<string>(table.Columns.Select(c => c.Name), StringComparer.OrdinalIgnoreCase);
+
+            // Duplicate targets within the table -> would produce two columns of the same name.
+            foreach (var g in applied.GroupBy(a => a.Target, StringComparer.OrdinalIgnoreCase).Where(g => g.Count() > 1))
+                errors.Add($"rename-map: table '{table.TableName}' maps multiple columns to '{g.Key}' ({string.Join(", ", g.Select(a => a.Old))}).");
+
+            foreach (var (old, target) in applied)
+            {
+                // Target collides with a column that stays (not renamed away) -> duplicate column.
+                if (existing.Contains(target) && !renamedAway.Contains(target))
+                    errors.Add($"rename-map: table '{table.TableName}' rename '{old}'->'{target}' collides with the existing column '{target}'.");
+            }
+
+            // Every target must exist in the project schema for this table; otherwise the alignment
+            // diff would DROP the renamed column (losing its data) and the guard would query a
+            // column the live database no longer has under that name.
+            if (toByCanon.TryGetValue(NamingConventions.Canonicalize(table.TableName), out var toTable))
+            {
+                var toCols = new HashSet<string>(toTable.Columns.Select(c => c.Name), StringComparer.OrdinalIgnoreCase);
+                foreach (var (old, target) in applied)
+                {
+                    if (!toCols.Contains(target))
+                        errors.Add($"rename-map: table '{table.TableName}' target '{target}' (from '{old}') is not a column in the project schema.");
+                }
+            }
+        }
+
+        // Entries that matched no live column at all are almost always typos; they are silent
+        // no-ops, so surface them as warnings.
+        foreach (var key in _qualified.Keys)
+        {
+            if (!usedQualified.Contains(key))
+                warnings.Add($"rename-map: entry '{key.Table}.{key.From}=…' matched no column in the live database (ignored).");
+        }
+        foreach (var from2 in _bare.Keys)
+        {
+            if (!usedBare.Contains(from2))
+                warnings.Add($"rename-map: entry '{from2}=…' matched no column in any live table (ignored).");
+        }
+
+        return new ValidationResult(errors, warnings);
+    }
+
+    /// <summary>
     /// A single forced column rename applied to a snapshot.
     /// </summary>
     public sealed record ForcedRename(string Table, string? Schema, string OldName, string NewName);

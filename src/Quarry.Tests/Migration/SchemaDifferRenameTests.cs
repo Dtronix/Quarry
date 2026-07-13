@@ -341,6 +341,50 @@ public class SchemaDifferRenameTests
         Assert.That(steps.Any(s => s.StepType == MigrationStepType.AddColumn), Is.True);
     }
 
+    [Test]
+    public void Diff_CanonicalTableRename_WithSchemaMove_TransfersSchema()
+    {
+        // A canonical name rename (order_items -> OrderItems) that ALSO moves schema (legacy -> dbo)
+        // must carry the schema transfer, not silently drop it.
+        var from = BuildSnapshot(1, new[]
+        {
+            BuildTable("order_items", "legacy", new[] { BuildColumn("id", "int", ColumnKind.PrimaryKey) })
+        });
+        var to = BuildSnapshot(2, new[]
+        {
+            BuildTable("OrderItems", "dbo", new[] { BuildColumn("id", "int", ColumnKind.PrimaryKey) })
+        });
+
+        var steps = SchemaDiffer.Diff(from, to);
+
+        var rename = steps.SingleOrDefault(s => s.StepType == MigrationStepType.RenameTable);
+        Assert.That(rename, Is.Not.Null);
+        Assert.That((string?)rename!.OldValue, Is.EqualTo("order_items"));
+        Assert.That((string?)rename.NewValue, Is.EqualTo("OrderItems"));
+        Assert.That(rename.OldSchemaName, Is.EqualTo("legacy"));   // schema move preserved
+        Assert.That(rename.SchemaName, Is.EqualTo("dbo"));
+        Assert.That(steps.Any(s => s.StepType == MigrationStepType.DropTable), Is.False);
+    }
+
+    [Test]
+    public void Diff_CanonicalTableRename_SameSchema_HasNoSchemaTransfer()
+    {
+        var from = BuildSnapshot(1, new[]
+        {
+            BuildTable("order_items", "sales", new[] { BuildColumn("id", "int", ColumnKind.PrimaryKey) })
+        });
+        var to = BuildSnapshot(2, new[]
+        {
+            BuildTable("OrderItems", "sales", new[] { BuildColumn("id", "int", ColumnKind.PrimaryKey) })
+        });
+
+        var steps = SchemaDiffer.Diff(from, to);
+
+        var rename = steps.Single(s => s.StepType == MigrationStepType.RenameTable);
+        Assert.That(rename.OldSchemaName, Is.Null);            // no spurious transfer when schema is unchanged
+        Assert.That(rename.SchemaName, Is.EqualTo("sales"));
+    }
+
     #region Helpers
 
     private static SchemaSnapshot BuildSnapshot(int version, IReadOnlyList<TableDef> tables)
@@ -351,6 +395,12 @@ public class SchemaDifferRenameTests
     private static TableDef BuildTable(string name, IReadOnlyList<ColumnDef> columns)
     {
         return new TableDef(name, null, NamingStyleKind.Exact, columns,
+            Array.Empty<ForeignKeyDef>(), Array.Empty<IndexDef>());
+    }
+
+    private static TableDef BuildTable(string name, string? schema, IReadOnlyList<ColumnDef> columns)
+    {
+        return new TableDef(name, schema, NamingStyleKind.Exact, columns,
             Array.Empty<ForeignKeyDef>(), Array.Empty<IndexDef>());
     }
 

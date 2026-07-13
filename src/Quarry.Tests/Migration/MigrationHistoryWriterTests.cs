@@ -119,6 +119,49 @@ public class MigrationHistoryWriterTests
     }
 
     [Test]
+    public async Task EnsureHistoryTableAsync_SchemaMatchesRuntimeHistoryTable_Sqlite()
+    {
+        // The tool hand-copies the runtime's __quarry_migrations DDL (the runtime's own
+        // EnsureHistoryTableAsync is private). Guard against the two drifting apart: create the
+        // table both ways and assert the resulting column schema is identical.
+        await using var runtimeConn = new SqliteConnection("Data Source=:memory:");
+        await runtimeConn.OpenAsync();
+        // MigrationRunner ensures the history table as its first step; an empty migration set
+        // creates it and does nothing else.
+        await MigrationRunner.RunAsync(runtimeConn, SqlDialect.SQLite,
+            Array.Empty<(int, string, Action<MigrationBuilder>, Action<MigrationBuilder>, Action<MigrationBuilder>)>());
+        var runtimeColumns = await ReadHistoryColumnsAsync(runtimeConn);
+
+        await using var writerConn = new SqliteConnection("Data Source=:memory:");
+        await writerConn.OpenAsync();
+        await MigrationHistoryWriter.EnsureHistoryTableAsync(writerConn, SqlDialect.SQLite);
+        var writerColumns = await ReadHistoryColumnsAsync(writerConn);
+
+        Assert.That(writerColumns, Is.Not.Empty);
+        Assert.That(writerColumns, Is.EqualTo(runtimeColumns));
+    }
+
+    private static async Task<System.Collections.Generic.List<string>> ReadHistoryColumnsAsync(SqliteConnection conn)
+    {
+        var columns = new System.Collections.Generic.List<string>();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "PRAGMA table_info(__quarry_migrations);";
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            // name | type | notnull | dflt_value | pk  (ordinals 1..5)
+            var name = reader.GetString(1);
+            var type = reader.GetString(2);
+            var notNull = reader.GetInt32(3);
+            var dflt = reader.IsDBNull(4) ? "" : reader.GetString(4);
+            var pk = reader.GetInt32(5);
+            columns.Add($"{name}|{type}|{notNull}|{dflt}|{pk}");
+        }
+        columns.Sort();
+        return columns;
+    }
+
+    [Test]
     public async Task MarkAppliedAsync_SquashFrom_WritesSquashBaselineRow()
     {
         await using var conn = new SqliteConnection(_connectionString);

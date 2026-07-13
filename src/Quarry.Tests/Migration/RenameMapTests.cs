@@ -141,4 +141,71 @@ public class RenameMapTests
         Assert.That(steps.Any(s => s.StepType == MigrationStepType.DropColumn), Is.False);
         Assert.That(steps.Any(s => s.StepType == MigrationStepType.AddColumn), Is.False);
     }
+
+    // --- Validation (F6/F7): reject invalid maps BEFORE the adopt baseline is written. ---
+
+    private static SchemaSnapshot Snap(int version, string table, params string[] columns) =>
+        new(version, $"v{version}", DateTimeOffset.UtcNow, null, new[]
+        {
+            new TableDef(table, null, NamingStyleKind.Exact,
+                columns.Select(c => new ColumnDef(c, "string", false, ColumnKind.Standard)).ToArray(),
+                Array.Empty<ForeignKeyDef>(), Array.Empty<IndexDef>())
+        });
+
+    [Test]
+    public void Validate_ValidMap_NoErrorsNoWarnings()
+    {
+        var from = Snap(1, "users", "id", "user_name");
+        var to = Snap(2, "users", "id", "UserName");
+        var result = RenameMap.Parse("users.user_name=UserName").Validate(from, to);
+
+        Assert.That(result.HasErrors, Is.False);
+        Assert.That(result.Warnings, Is.Empty);
+    }
+
+    [Test]
+    public void Validate_TargetNotInProjectSchema_IsError()
+    {
+        // Map renames usr_name -> UserName, but the project column is FullName. Left unchecked this
+        // would drop the renamed column (data loss) and crash the guard querying a missing column.
+        var from = Snap(1, "users", "id", "usr_name");
+        var to = Snap(2, "users", "id", "FullName");
+        var result = RenameMap.Parse("users.usr_name=UserName").Validate(from, to);
+
+        Assert.That(result.HasErrors, Is.True);
+        Assert.That(result.Errors.Any(e => e.Contains("UserName")), Is.True);
+    }
+
+    [Test]
+    public void Validate_DuplicateTargetsInTable_IsError()
+    {
+        var from = Snap(1, "users", "id", "a", "b");
+        var to = Snap(2, "users", "id", "X");
+        var result = RenameMap.Parse("users.a=X,users.b=X").Validate(from, to);
+
+        Assert.That(result.Errors.Any(e => e.Contains("multiple columns to 'X'")), Is.True);
+    }
+
+    [Test]
+    public void Validate_TargetCollidesWithKeptColumn_IsError()
+    {
+        // Renaming 'old' -> 'keep' while 'keep' also exists and is not renamed away = duplicate column.
+        var from = Snap(1, "users", "id", "old", "keep");
+        var to = Snap(2, "users", "id", "keep");
+        var result = RenameMap.Parse("users.old=keep").Validate(from, to);
+
+        Assert.That(result.Errors.Any(e => e.Contains("collides")), Is.True);
+    }
+
+    [Test]
+    public void Validate_UnmatchedEntry_IsWarningNotError()
+    {
+        var from = Snap(1, "users", "id", "user_name");
+        var to = Snap(2, "users", "id", "UserName");
+        // 'nonexistent' matches no live column -> a warning (silent no-op), not a hard error.
+        var result = RenameMap.Parse("users.nonexistent=Foo").Validate(from, to);
+
+        Assert.That(result.HasErrors, Is.False);
+        Assert.That(result.Warnings.Any(w => w.Contains("nonexistent")), Is.True);
+    }
 }

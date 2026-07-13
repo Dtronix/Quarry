@@ -318,15 +318,21 @@ static class SchemaDiffer
             var dropped = droppedTables[kvp.Value];
             var added = addedTables[addIdx];
 
+            // A canonical rename that also moves the table to another schema must carry the schema
+            // transfer (oldSchemaName), or the move is silently lost.
+            var schemasDiffer = !string.Equals(dropped.SchemaName, added.SchemaName, StringComparison.OrdinalIgnoreCase);
             steps.Add(new MigrationStep(
                 MigrationStepType.RenameTable,
                 StepClassification.Cautious,
-                dropped.TableName,
-                dropped.SchemaName,
+                added.TableName,
+                added.SchemaName,
                 null,
                 dropped.TableName,
                 added.TableName,
-                $"Rename table '{dropped.TableName}' to '{added.TableName}'"));
+                schemasDiffer
+                    ? $"Rename table '{dropped.TableName}' to '{added.TableName}' (schema '{dropped.SchemaName ?? "dbo"}' → '{added.SchemaName ?? "dbo"}')"
+                    : $"Rename table '{dropped.TableName}' to '{added.TableName}'",
+                oldSchemaName: schemasDiffer ? dropped.SchemaName : null));
 
             DiffColumns(dropped, added, added.TableName, added.SchemaName, steps, acceptRename);
             DiffForeignKeys(dropped, added, added.TableName, added.SchemaName, steps);

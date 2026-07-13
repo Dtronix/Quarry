@@ -3,7 +3,7 @@
 platform: github
 base-branch: master
 ## State
-phase: REVIEW
+phase: REMEDIATE
 status: active
 issue: discussion
 pr:
@@ -86,6 +86,10 @@ Shared refactor: extract introspection (connstring build + introspector factory 
 2. Drop guard default: BLOCK destructive drops unless --allow-data-loss (safe default) vs only WARN.
 3. `--rename-map` format: inline `table.col=new,...` and/or `@file`.
 
+## Remediation Notes
+- 2026-07-13: F10 scope call — added a REAL-PostgreSQL multi-schema drop-guard test (AdoptGuardPostgresTests: proves the F5 qualified query resolves a table in a non-default schema, plus a negative control). Did NOT add MySQL/SqlServer adopt integration tests: the schema-qualification logic is dialect-agnostic (DropGuard.FormatTable) and unit-tested for PG quoting, and MigrateCommands (the CLI method) isn't in the test project so only the composition is testable. Faithful status: cross-dialect adopt is validated on SQLite + PostgreSQL; MySQL/SqlServer remain covered by-composition, not by a live adopt integration test.
+- 2026-07-13: F6 required reordering MigrateAdopt so rename-map Parse+Validate happens BEFORE the baseline file write + MarkApplied — otherwise an invalid map aborts only after the DB was already half-adopted (baseline marked applied). RenameMap.Validate matches DB↔project tables by canonical name (mirrors the differ).
+
 ## Suspend State
 - **Phase/position:** IMPLEMENT COMPLETE — all 10 plan checkboxes done (1a,1b,2,3,4,5,6,7,8,9), committed+pushed. Transitioned to **REVIEW**; REVIEW work has NOT started yet.
 - **In progress:** nothing — working tree clean. No WIP commit.
@@ -109,4 +113,6 @@ Shared refactor: extract introspection (connstring build + introspector factory 
 | 2026-07-13 | PLAN, IMPLEMENT | Plan approved (10 steps). Implemented + committed steps 1a (extract DatabaseSchemaReader), 1b (metadata->snapshot adapter), 2 (always-on canonical rename pre-pass). Full suite green (3648). Suspended at 3-step context checkpoint; branch pushed. Resume at step 3. |
 | 2026-07-13 | IMPLEMENT (resume) | Implemented + committed steps 3 (--rename-map + forced-rename pre-transform), 4 (MigrationHistoryWriter + squash refactor), 5 (migrate baseline command). Full suite green (3662). Suspended at 3-step checkpoint; branch pushed (HEAD b8c0962). Resume at step 6. |
 | 2026-07-13 | IMPLEMENT (resume 2) | Implemented + committed steps 6 (--from-database), 7 (drop guard), 8 (adopt + NormalizeForDiff correctness fix), 9 (docs). IMPLEMENT COMPLETE (10/10). Full suite green (3671). Auto-transitioned to REVIEW; suspended before REVIEW work (rebase+analysis deserve fresh context). HEAD c6f1696. |
-| 2026-07-13 | REVIEW (resume) | Resumed from suspend. origin/master advanced by 1 commit (4fe287f runtime hot-path fixes). Rebasing branch, then analysis pass. |
+| 2026-07-13 | REVIEW (resume) | Resumed from suspend. origin/master advanced by 1 commit (4fe287f runtime hot-path fixes). Rebased branch (HEAD e61d05f), full suite green (3696), force-pushed. Analysis pass (agent) → review.md: 15 findings (0H/5M/10L), Security clean. |
+| 2026-07-13 | REVIEW→REMEDIATE | Classified 3A/6B/2C/4D; user override F10→A, F11→A + "implement all A,B,C now". Final 5A/6B/0C/4D. Remediating F1,F5,F10,F11,F12 (A) + F2,F6,F7,F8,F9,F13 (B); dismiss F3,F4,F14,F15 (D). |
+| 2026-07-13 | REMEDIATE | Fixed all 11 A/B findings: F5 schema-aware DropGuard (+PG multi-schema integration test), F6/F7 RenameMap.Validate (adopt reordered so validation precedes baseline write), F8 canonical table-rename schema transfer, F2 non-fresh adopt warning, F9 adopt guard E2E test, F10 PG multi-schema + FormatTable unit tests, F11 history-table DDL parity test, F12 dead helper removed, F1/F13 docs. Dismissed 4 D. Full suite GREEN 3714 (+18 tests: Analyzers 146, Migration 201, Quarry 3367). |

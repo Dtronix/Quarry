@@ -199,7 +199,9 @@ quarry migrate adopt AlignSchema -c "…" -d postgresql --rename-map "users.user
 | | `--rename-map` | | Explicit renames: `table.col=New,bare=New` or `@renames.csv` (rows `table,from,to` or `from,to`) |
 | | `--allow-data-loss` | `false` | Permit destructive drops of populated columns/tables |
 
-Renames are detected deterministically (canonical name match) and via `--rename-map`; a drop against populated data aborts unless `--allow-data-loss` is passed. Apply the alignment migration with `await db.MigrateAsync(connection)` — `InitialCreate` is skipped, the alignment runs, and column renames preserve data.
+Renames are detected deterministically (canonical name match) and via `--rename-map`; a drop against populated data aborts unless `--allow-data-loss` is passed. The `--rename-map` is validated up front against both the live database and your project schemas — an entry whose target is not a project column, collides with an existing column, or duplicates another target is rejected before anything is written. Apply the alignment migration with `await db.MigrateAsync(connection)` — `InitialCreate` is skipped, the alignment runs, and column renames preserve data.
+
+> **Note.** Prefer `adopt` (or `baseline`/`add`/`diff` **with** `--from-database`) over a `baseline --from-database` followed by a *plain* `migrate add`. The persisted baseline carries live-database metadata the project-schema reader does not, so a plain follow-up diff reports spurious `AlterColumn`s; the `--from-database` paths normalize both sides and avoid this.
 
 ---
 
