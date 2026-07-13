@@ -142,12 +142,15 @@ quarry migrate add AddUserEmail --ni   # non-interactive (CI mode)
 | `-p` | `--project` | `.` | Path to `.csproj` file or directory containing one |
 | `-o` | `--output` | `Migrations` | Output directory for generated files (relative to project) |
 | | `--ni` | `false` | Non-interactive mode — auto-accepts renames with score >= 0.8, skips prompts |
+| | `--from-database` | | Connection string: diff against a live database instead of the last snapshot |
+| `-d` | `--dialect` | | SQL dialect for `--from-database` (falls back to the context's declared dialect) |
+| | `--allow-data-loss` | `false` | With `--from-database`, permit destructive drops of populated objects |
 
 **What it does:**
 1. Opens your project via MSBuild/Roslyn and compiles it
 2. Finds the latest `[MigrationSnapshot]` version in your code
 3. Extracts the current schema from all `Schema` subclasses
-4. If a previous snapshot exists, compiles it in memory and invokes `Build()` to reconstruct it
+4. Builds the comparison snapshot: the previous snapshot's `Build()`, or — with `--from-database` — the live database's schema
 5. Diffs old vs. new schema (tables, columns, foreign keys, indexes)
 6. Prompts for rename confirmation if applicable (see [Rename Detection](#rename-detection))
 7. Generates snapshot and migration files in the output directory
@@ -156,6 +159,47 @@ quarry migrate add AddUserEmail --ni   # non-interactive (CI mode)
 Uses file locking (`.quarry-migrate.lock`) to prevent concurrent version conflicts.
 
 If no changes are detected, prints `No schema changes detected.` and generates nothing.
+
+---
+
+### `quarry migrate baseline <name>`
+
+Generates a migration for the current schema (or a live database's schema via `--from-database`) and records it as **already-applied** in `__quarry_migrations` **without executing its DDL**. Use it when adopting an existing database so the initial state is not re-created on the next `MigrateAsync`.
+
+```sh
+quarry migrate baseline InitialCreate --from-database "Data Source=app.db" -d sqlite
+quarry migrate baseline InitialCreate -c "Host=…;Database=…" -d postgresql   # snapshot from schemas, mark applied on DB
+```
+
+| Flag | Long | Default | Description |
+|------|------|---------|-------------|
+| `-p` | `--project` | `.` | Path to `.csproj` |
+| `-o` | `--output` | `Migrations` | Output directory |
+| | `--from-database` | | Connection string to introspect the schema from a live database |
+| `-d` | `--dialect` | | SQL dialect |
+| `-c` | `--connection` | | DB to record the baseline on (when not using `--from-database`) |
+
+---
+
+### `quarry migrate adopt <name>`
+
+Adopts an existing database into Quarry in one step. Introspects the live database, baselines its current state as an applied `InitialCreate` (no DDL run), then generates a single **pending** alignment migration that transforms the database to match your project schemas.
+
+```sh
+quarry migrate adopt AlignSchema -c "Host=…;Database=…" -d postgresql
+quarry migrate adopt AlignSchema -c "…" -d postgresql --rename-map "users.user_name=UserName,orders.qty=Quantity"
+```
+
+| Flag | Long | Default | Description |
+|------|------|---------|-------------|
+| `-c` | `--connection` | | Connection string of the existing database (**required**) |
+| `-d` | `--dialect` | | SQL dialect (falls back to the context's declared dialect) |
+| `-p` | `--project` | `.` | Path to `.csproj` |
+| `-o` | `--output` | `Migrations` | Output directory |
+| | `--rename-map` | | Explicit renames: `table.col=New,bare=New` or `@renames.csv` (rows `table,from,to` or `from,to`) |
+| | `--allow-data-loss` | `false` | Permit destructive drops of populated columns/tables |
+
+Renames are detected deterministically (canonical name match) and via `--rename-map`; a drop against populated data aborts unless `--allow-data-loss` is passed. Apply the alignment migration with `await db.MigrateAsync(connection)` — `InitialCreate` is skipped, the alignment runs, and column renames preserve data.
 
 ---
 
@@ -672,9 +716,15 @@ Inferred from `{ProjectName}.{OutputDir}`:
 
 ## Rename Detection
 
-When tables or columns are added and dropped, the tool attempts to detect whether this is a rename rather than a drop+add. The differ uses the **Hungarian algorithm** for optimal bipartite matching of rename candidates.
+When tables or columns are added and dropped, the tool attempts to detect whether this is a rename rather than a drop+add.
 
-### Scoring
+### Convention-aware matching (deterministic, always on)
+
+Before any scoring, the differ matches added/dropped tables and columns whose names are **equal under canonical normalization** — lowercased with `_`, `-`, and spaces removed. So `user_name`, `userName`, `UserName`, and `username` all canonicalize to `username` and are treated as a **certain** rename. These matches are emitted directly as `RENAME COLUMN`/`RENAME TABLE`, are never subject to the interactive/non-interactive accept callback, and therefore can never degrade to drop+add (which would lose data). A canonical form that is ambiguous (appears more than once on either side) falls through to scoring. This makes naming-convention migrations (e.g. snake_case → PascalCase) deterministic and data-preserving.
+
+### Scoring (heuristic fallback)
+
+For renames that are not a pure convention change, the differ falls back to the **Hungarian algorithm** for optimal bipartite matching of scored candidates.
 
 **Table rename score:**
 | Factor | Weight |
@@ -951,7 +1001,7 @@ src/Quarry.Tool/
   Program.cs                    # CLI entry point, command dispatch, option parsing
   Quarry.Tool.csproj            # PackAsTool, Roslyn/MSBuild dependencies
   Commands/
-    MigrateCommands.cs          # migrate add/add-empty/diff/list/validate/remove/script/status/squash
+    MigrateCommands.cs          # migrate add/baseline/adopt/add-empty/diff/list/validate/remove/script/status/squash
     BundleCommand.cs            # migrate bundle — self-contained executable generation
     ScaffoldCommand.cs          # scaffold — database reverse-engineering
     CommandHelpers.cs           # Shared option parsing and project resolution

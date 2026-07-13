@@ -58,7 +58,7 @@ Full "adopt existing database" bundle (6 features) in one PR. Steps are ordered 
   New `src/Quarry.Tool/Commands/AdoptCommand.cs`. Flow: (1) introspect DB → snapshot v1; write baseline files + mark applied (step 5 path). (2) diff v1 vs project schemas with convention-match (step 2), `--rename-map` forced renames (step 3), producing migration v2; (3) run drop guard (step 7). Requires `-c/--connection` + `-d/--dialect` (guard like `migrate status`). Options also: `-p`, `-o`, `--ni`, `--rename-map`, `--allow-data-loss`. `Program.cs` case + `PrintUsage`.
   *Tests:* `AdoptCommandTests.cs` — end-to-end against seeded SQLite (legacy snake_case + data): after adopt, v1 is applied, v2 rename migration exists, applying v2 via `MigrateAsync` renames columns and **preserves row data** (assert row counts + values before/after). Add a case where an unmapped column would drop → aborts without `--allow-data-loss`.
 
-- [ ] **9. Documentation.**
+- [x] **9. Documentation.**
   Update `src/Quarry.Tool/README.md`, `llm.md` (Migrations & Scaffolding section), and `llm-migrate.md` (Phase 6 — replace the manual A4 dance with the `adopt` workflow). Document `migrate adopt`, `migrate baseline`, `--from-database`, `--rename-map`, `--allow-data-loss`, and the always-on convention-aware rename behavior.
   *Tests:* none (docs); verify no code references broken.
 

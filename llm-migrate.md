@@ -959,9 +959,38 @@ quarry migrate bundle --project ... --context AppDb
 If the existing database has data and EF migrations were used previously:
 1. Scaffold produces schemas matching current DB state
 2. `InitialCreate` migration matches current DB state
-3. Mark `InitialCreate` as already applied if DB is already at that state
+3. Mark `InitialCreate` as already applied if DB is already at that state — use `quarry migrate baseline InitialCreate --connection "…" -d <dialect>` (records the row in `__quarry_migrations` without executing DDL); no manual SQL required
 4. Delete EF `Migrations/` folder and `__EFMigrationsHistory` table after cutover
 5. Quarry uses `__quarry_migrations` table for its own history
+
+### 6.7 Adopting an Existing Database (one command)
+
+When the target database already exists (data in place) and your Quarry schemas are at the *desired* names — commonly a legacy snake_case DB adopted under PascalCase schemas — prefer `quarry migrate adopt` over the manual scaffold-then-rename dance:
+
+```sh
+quarry migrate adopt AlignSchema \
+  --connection "Host=…;Database=…" \
+  --dialect PostgreSQL \
+  --rename-map "users.user_name=UserName,orders.qty=Quantity"   # optional; only for renames the differ can't infer
+```
+
+What it does, in order:
+1. **Introspects** the live database into a snapshot.
+2. **Baselines** that state as `InitialCreate` and records it *already-applied* in `__quarry_migrations` — the existing tables are never re-created.
+3. **Diffs** the database against your project schemas and generates one **pending** alignment migration (e.g. `AlignSchema`) containing the renames/changes.
+4. **Guards** against data loss: if the alignment would `DROP` a populated column or table (a rename it could not detect), it aborts and lists the objects — pass `--allow-data-loss` to override, or declare the intended rename with `--rename-map`.
+
+Then apply only the alignment migration at runtime:
+```csharp
+await db.MigrateAsync(connection, new MigrationOptions { RunBackups = true });
+// InitialCreate is skipped (already applied); AlignSchema runs, renaming columns in place — data preserved.
+```
+
+**Rename detection.** snake_case↔PascalCase↔camelCase↔lowercase differences are matched deterministically (canonical, case/separator-insensitive) and emitted as `RENAME COLUMN`/`RENAME TABLE`, so they never silently degrade to drop+add. Use `--rename-map` only for genuinely ambiguous renames (e.g. `qty`→`Quantity`). Review the generated alignment migration (`quarry migrate script`) and rehearse against a restored backup before applying to production.
+
+**Building blocks.** `migrate adopt` is `migrate baseline --from-database` followed by a `--from-database` diff. Those are also available standalone: `migrate baseline <name>` (record-as-applied), and `migrate add/diff --from-database "…"` (diff against a live database rather than the last snapshot).
+
+**Limitation.** The alignment diff focuses on columns (renames + type/nullability changes); it does not reconcile foreign keys or indexes captured only in the baseline. Add genuinely new indexes/constraints with a follow-up `quarry migrate add`.
 
 ---
 
