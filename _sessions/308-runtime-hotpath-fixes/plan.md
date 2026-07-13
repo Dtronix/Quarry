@@ -10,7 +10,7 @@ Each step is independently committable. All commits stage `_sessions/` (`git add
 - [x] Step 3 — Item 3: gate OpId.Next on logger
 - [x] Step 4 — Item 5: cache RawSql mapper instances
 - [x] Step 5 — Item 6a: skip ToList when already a list
-- [ ] Step 6 — Item 6b: widen ParameterNames cache
+- [x] Step 6 — Item 6b: widen ParameterNames cache
 - [ ] Step 7 — Item 6c: drop dead func.Target read
 - [ ] Step 8 — Item 6d: cached empty enumerator
 - [ ] Step 9 — Item 6e: materialize before log in First
