@@ -971,7 +971,11 @@ internal static class CarrierEmitter
         sb.AppendLine("        var __ctx = __c.Ctx!;");
         sb.AppendLine("        var __logger = LogsmithOutput.Logger;");
 
-        sb.AppendLine("        var __opId = OpId.Next();");
+        // Gate OpId generation on an enabled logger — OpId.Next() is an
+        // Interlocked.Increment on a shared static (cross-core cache-line
+        // contention per insert), and __opId is only ever observed when a
+        // logger is present. Matches the query preamble and batch-insert terminal.
+        sb.AppendLine("        var __opId = __logger != null ? OpId.Next() : 0;");
         EmitCarrierSqlDispatch(sb, carrier, chain);
 
         sb.AppendLine("        if (__logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)");

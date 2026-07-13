@@ -248,7 +248,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
     {
         ArgumentNullException.ThrowIfNull(sql);
 
-        var opId = OpId.Next();
+        var opId = LogsmithOutput.Logger != null ? OpId.Next() : 0;
 
         if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName) == true)
             RawSqlLog.SqlGenerated(opId, sql);
@@ -323,7 +323,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
     {
         ArgumentNullException.ThrowIfNull(sql);
 
-        var opId = OpId.Next();
+        var opId = LogsmithOutput.Logger != null ? OpId.Next() : 0;
 
         if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName) == true)
             RawSqlLog.SqlGenerated(opId, sql);
@@ -379,7 +379,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
     {
         ArgumentNullException.ThrowIfNull(sql);
 
-        var opId = OpId.Next();
+        var opId = LogsmithOutput.Logger != null ? OpId.Next() : 0;
 
         if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName) == true)
             RawSqlLog.SqlGenerated(opId, sql);
@@ -414,7 +414,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
     {
         ArgumentNullException.ThrowIfNull(sql);
 
-        var opId = OpId.Next();
+        var opId = LogsmithOutput.Logger != null ? OpId.Next() : 0;
 
         if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName) == true)
             RawSqlLog.SqlGenerated(opId, sql);
@@ -449,7 +449,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
     {
         ArgumentNullException.ThrowIfNull(sql);
 
-        var opId = OpId.Next();
+        var opId = LogsmithOutput.Logger != null ? OpId.Next() : 0;
 
         if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName) == true)
             RawSqlLog.SqlGenerated(opId, sql);
