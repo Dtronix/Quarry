@@ -6,7 +6,7 @@ base-branch: master
 
 ## State
 phase: IMPLEMENT
-status: suspended
+status: active
 issue: #311
 pr:
 
@@ -58,3 +58,4 @@ Test baseline (2026-07-13): 3388 passed, 0 failed, 0 skipped. No pre-existing fa
 | 2026-07-13 | INTAKE | Loaded issue #311, created worktree/branch, baseline 3388 tests green. |
 | 2026-07-14 | DESIGN, PLAN | Verified all 4 findings + found 4th unregistered ID (QRY063). Decisions: BindResult value pipeline, loud miss path, ThreadStatic removal, registry test skipped. Plan (6 steps) approved via fast path. |
 | 2026-07-14 | IMPLEMENT | Steps 1–3 committed (deferred registry + loud miss; BindStageResult pipeline, PipelineErrorBag deleted; TraceLines on AssembledPlan). 3395 tests green. Suspended by context check after 3 steps; branch pushed. |
+| 2026-07-14 | IMPLEMENT | Resumed from suspend. Baseline re-verified (3395 green). Continuing at Step 4. |

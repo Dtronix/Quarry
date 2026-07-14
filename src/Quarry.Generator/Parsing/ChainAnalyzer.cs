@@ -29,13 +29,6 @@ internal static class ChainAnalyzer
     internal static List<AnalyzedChain>? TestCapturedChains;
 
     /// <summary>
-    /// UniqueIds of sites that belong to lambda inner chains and should be excluded
-    /// from interceptor generation. Populated during Analyze() and read by PipelineOrchestrator.
-    /// </summary>
-    [ThreadStatic]
-    internal static HashSet<string>? ConsumedLambdaInnerSiteIds;
-
-    /// <summary>
     /// Maximum number of conditional bits for PrebuiltDispatch.
     /// 8 bits = up to 256 dispatch variants. Beyond this, classify as RuntimeBuild (compile error).
     /// </summary>
@@ -53,12 +46,21 @@ internal static class ChainAnalyzer
     /// Groups by ChainId, identifies execution terminals, classifies tiers,
     /// and builds QueryPlan instances.
     /// </summary>
+    /// <param name="consumedLambdaInnerSiteIds">
+    /// UniqueIds of sites that belong to lambda inner chains and should be excluded
+    /// from interceptor generation (their SQL is embedded in the outer chain). Returned
+    /// to the caller instead of being parked in a [ThreadStatic] (#311): a cancellation
+    /// between populate and consume used to leave stale UniqueIds that the NEXT run
+    /// would apply to its site filter.
+    /// </param>
     public static IReadOnlyList<AnalyzedChain> Analyze(
         ImmutableArray<TranslatedCallSite> sites,
         EntityRegistry registry,
         CancellationToken ct,
+        out HashSet<string>? consumedLambdaInnerSiteIds,
         List<DiagnosticInfo>? diagnostics = null)
     {
+        consumedLambdaInnerSiteIds = null;
         // Group sites by ChainId
         var chains = new Dictionary<string, List<TranslatedCallSite>>(StringComparer.Ordinal);
         var unchained = new List<TranslatedCallSite>();
@@ -155,11 +157,11 @@ internal static class ChainAnalyzer
         // them from interceptor generation (their SQL is embedded in the outer chain).
         if (lambdaInnerChainGroups.Count > 0)
         {
-            ConsumedLambdaInnerSiteIds ??= new HashSet<string>(StringComparer.Ordinal);
+            consumedLambdaInnerSiteIds = new HashSet<string>(StringComparer.Ordinal);
             foreach (var kvp in lambdaInnerChainGroups)
             {
                 foreach (var site in kvp.Value)
-                    ConsumedLambdaInnerSiteIds.Add(site.UniqueId);
+                    consumedLambdaInnerSiteIds.Add(site.UniqueId);
             }
         }
 

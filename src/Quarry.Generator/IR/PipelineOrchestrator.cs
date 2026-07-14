@@ -68,7 +68,8 @@ internal static class PipelineOrchestrator
         ct.ThrowIfCancellationRequested();
 
         // Chain analysis: TranslatedCallSite[] → AnalyzedChain[]
-        var analyzedChains = ChainAnalyzer.Analyze(translatedSites, registry, ct, diagnostics);
+        var analyzedChains = ChainAnalyzer.Analyze(
+            translatedSites, registry, ct, out var consumedLambdaInnerSiteIds, diagnostics);
 
         ct.ThrowIfCancellationRequested();
 
@@ -162,15 +163,14 @@ internal static class PipelineOrchestrator
         // in the outer chain's CTE/set-op clause at compile time. Passing them through to
         // file grouping would create interceptor files under wrong contexts (the entity type
         // may be registered in multiple contexts, and without a concrete chain root the
-        // pipeline can't disambiguate).
-        var consumedIds = Parsing.ChainAnalyzer.ConsumedLambdaInnerSiteIds;
+        // pipeline can't disambiguate). The set comes straight from this run's Analyze call
+        // (#311) — no cross-run state, so a cancellation can never poison the next filter.
         var filteredSites = updatedSites;
-        if (consumedIds != null && consumedIds.Count > 0)
+        if (consumedLambdaInnerSiteIds is { Count: > 0 })
         {
             filteredSites = updatedSites
-                .Where(s => !consumedIds.Contains(s.UniqueId))
+                .Where(s => !consumedLambdaInnerSiteIds.Contains(s.UniqueId))
                 .ToImmutableArray();
-            consumedIds.Clear(); // avoid stale state across incremental runs
         }
 
         // Group into files

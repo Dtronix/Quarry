@@ -37,8 +37,8 @@ Issue #311 identifies one root theme: diagnostics that travel through side-chann
 - Tests (acceptance criterion 3): incremental warm-run test (pattern from `IncrementalCachingTests.cs`) — run driver with a traced chain in file A, edit unrelated file B, re-run, assert file A's generated output still contains `// [Trace]` lines.
 
 ### Step 4 — F3b: consumed-lambda IDs returned from Analyze
-- [ ] Change `ChainAnalyzer.Analyze` to return the consumed-lambda-inner site IDs to the caller (out param or result object) instead of the `[ThreadStatic]` set; delete the ThreadStatic.
-- [ ] Update `PipelineOrchestrator.cs:135-143` (no more clear-after-use) and the test caller (`UsageSiteDiscoveryTests.cs:1467`).
+- [x] Change `ChainAnalyzer.Analyze` to return the consumed-lambda-inner site IDs to the caller (out param or result object) instead of the `[ThreadStatic]` set; delete the ThreadStatic. (Out param before the optional `diagnostics`.)
+- [x] Update `PipelineOrchestrator.cs:135-143` (no more clear-after-use) and the test caller (`UsageSiteDiscoveryTests.cs:1467`). (Added `ChainAnalyzer_LambdaInnerSites_ReturnedInConsumedSet` asserting the out-set contract and no cross-run carryover.)
 - Tests (acceptance criterion 4): existing lambda-inner filtering tests stay green; the poisoning hazard is gone by construction (no cross-run state to leak) — assert Analyze returns the expected set directly.
 
 ### Step 5 — F4: stale text sweep
