@@ -112,11 +112,10 @@ internal static class ChainAnalyzer
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     var first = opSites.Count > 0 ? opSites[0] : null;
-                    PipelineErrorBag.Report(
-                        first?.Bound.Raw.FilePath ?? "",
-                        first?.Bound.Raw.Line ?? 0,
-                        first?.Bound.Raw.Column ?? 0,
-                        $"Operand chain analysis failed: {ex.Message}");
+                    diagnostics?.Add(new DiagnosticInfo(
+                        Quarry.Generators.DiagnosticDescriptors.InternalError.Id,
+                        first?.Bound.Raw.Location ?? default,
+                        $"Operand chain analysis failed: {ex.Message}"));
                 }
             }
         }
@@ -205,11 +204,10 @@ internal static class ChainAnalyzer
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 var first = kvp.Value.Count > 0 ? kvp.Value[0] : null;
-                PipelineErrorBag.Report(
-                    first?.Bound.Raw.FilePath ?? "",
-                    first?.Bound.Raw.Line ?? 0,
-                    first?.Bound.Raw.Column ?? 0,
-                    $"CTE inner chain analysis failed: {ex.Message}");
+                diagnostics?.Add(new DiagnosticInfo(
+                    Quarry.Generators.DiagnosticDescriptors.InternalError.Id,
+                    first?.Bound.Raw.Location ?? default,
+                    $"CTE inner chain analysis failed: {ex.Message}"));
             }
         }
 
@@ -238,11 +236,10 @@ internal static class ChainAnalyzer
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 var first = chainSites.Count > 0 ? chainSites[0] : null;
-                PipelineErrorBag.Report(
-                    first?.Bound.Raw.FilePath ?? "",
-                    first?.Bound.Raw.Line ?? 0,
-                    first?.Bound.Raw.Column ?? 0,
-                    $"Chain analysis failed: {ex.Message}");
+                diagnostics?.Add(new DiagnosticInfo(
+                    Quarry.Generators.DiagnosticDescriptors.InternalError.Id,
+                    first?.Bound.Raw.Location ?? default,
+                    $"Chain analysis failed: {ex.Message}"));
             }
         }
 

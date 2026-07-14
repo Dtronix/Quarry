@@ -102,18 +102,47 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 DisplayClassEnricher.EnrichAll(data.Left.Left, data.Left.Right, data.Right, ct));
 
         // === Stage 3: Per-Site Binding (individually cached) ===
-        var boundCallSites = enrichedCallSites
+        // Bind exceptions produce a BindFailure value instead of vanishing: failures
+        // flow to their own report node below, so the diagnostic survives incremental
+        // caching, thread switches, and files whose only site failed to bind.
+        var bindResults = enrichedCallSites
             .Combine(entityRegistry)
             .SelectMany(static (pair, ct) =>
             {
-                try { return IR.CallSiteBinder.Bind(pair.Left, pair.Right, ct); }
-                catch (System.Exception ex)
+                try
+                {
+                    var sites = IR.CallSiteBinder.Bind(pair.Left, pair.Right, ct);
+                    var results = ImmutableArray.CreateBuilder<IR.BindStageResult>(sites.Length);
+                    foreach (var site in sites)
+                        results.Add(new IR.BindStageResult(site));
+                    return results.MoveToImmutable();
+                }
+                catch (System.Exception ex) when (ex is not System.OperationCanceledException)
                 {
                     System.Diagnostics.Debug.WriteLine($"[Quarry] Bind failed: {ex}");
                     var raw = pair.Left;
-                    IR.PipelineErrorBag.Report(raw.FilePath, raw.Line, raw.Column,
-                        $"Bind: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
-                    return ImmutableArray<IR.BoundCallSite>.Empty;
+                    return ImmutableArray.Create(new IR.BindStageResult(new IR.BindFailure(
+                        raw.FilePath, raw.Line, raw.Column,
+                        $"Bind: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}")));
+                }
+            });
+
+        var boundCallSites = bindResults
+            .Where(static r => r.Site != null)
+            .Select(static (r, _) => r.Site!);
+
+        // Bind-failure report node: build-time only, like all interceptor diagnostics.
+        context.RegisterImplementationSourceOutput(
+            bindResults.Where(static r => r.Failure != null).Collect(),
+            static (spc, failures) =>
+            {
+                foreach (var result in failures)
+                {
+                    var f = result.Failure!;
+                    spc.ReportDiagnostic(Diagnostic.Create(
+                        DiagnosticDescriptors.InternalError,
+                        CreateLineLocation(f.FilePath, f.Line, f.Column),
+                        f.Message));
                 }
             });
 
@@ -537,15 +566,6 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                     CreateLineLocation(site.FilePath, site.Line, site.Column),
                     site.PipelineError));
             }
-        }
-
-        // Drain side-channel errors from Stage 3 (Bind failures that couldn't attach to a site)
-        foreach (var err in IR.PipelineErrorBag.DrainErrors())
-        {
-            spc.ReportDiagnostic(Diagnostic.Create(
-                DiagnosticDescriptors.InternalError,
-                CreateLineLocation(err.SourceFilePath, err.Line, err.Column),
-                err.Error));
         }
 
         // Report all deferred diagnostics

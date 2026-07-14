@@ -22,12 +22,12 @@ Issue #311 identifies one root theme: diagnostics that travel through side-chann
 - Tests: registry-membership assertions for QRY900/QRY063 via internal access; unit test for the miss-path helper (unregistered ID in a `DiagnosticInfo` → QRY900 naming it, registered ID → normal report).
 
 ### Step 2 — F1: bind errors flow through the value pipeline (depends on Step 1)
-- [ ] Add equatable `BindStageResult` in `IR/` wrapping either `BoundCallSite` or a failure (FilePath, Line, Column, Message). Equality must include the failure fields so error-state changes invalidate caches (mirrors `TranslatedCallSite.PipelineError`).
-- [ ] Stage 3 (`QuarryGenerator.cs:105-118`): transform outputs `BindStageResult`s; the catch produces one failure result instead of `PipelineErrorBag.Report` + empty array. Split downstream: successes (`.Where`/`.Select`) feed Stage 4 unchanged; failures are `Collect()`ed into a new `RegisterImplementationSourceOutput` that reports QRY900 for each.
-- [ ] Remove the emission drain (`QuarryGenerator.cs:543-549`) and the orchestrator entry drain (`PipelineOrchestrator.cs:43`).
-- [ ] Reroute ChainAnalyzer's three catch sites (`:115/:208/:241`) from `PipelineErrorBag.Report` to `diagnostics?.Add(new DiagnosticInfo(DiagnosticDescriptors.InternalError.Id, …))` with the site's location — reliable now that QRY900 is registered (Step 1).
-- [ ] Delete `IR/PipelineErrorBag.cs`.
-- [ ] Add an internal test hook to force a bind exception (same pattern as `ChainAnalyzer.TestCapturedChains`).
+- [x] Add equatable `BindStageResult` in `IR/` wrapping either `BoundCallSite` or a failure (FilePath, Line, Column, Message). Equality must include the failure fields so error-state changes invalidate caches (mirrors `TranslatedCallSite.PipelineError`).
+- [x] Stage 3 (`QuarryGenerator.cs:105-118`): transform outputs `BindStageResult`s; the catch produces one failure result instead of `PipelineErrorBag.Report` + empty array. Split downstream: successes (`.Where`/`.Select`) feed Stage 4 unchanged; failures are `Collect()`ed into a new `RegisterImplementationSourceOutput` that reports QRY900 for each. (Also: the catch now excludes `OperationCanceledException` — previously a cancelled bind would have been recorded as an error.)
+- [x] Remove the emission drain (`QuarryGenerator.cs:543-549`) and the orchestrator entry drain (`PipelineOrchestrator.cs:43`).
+- [x] Reroute ChainAnalyzer's three catch sites (`:115/:208/:241`) from `PipelineErrorBag.Report` to `diagnostics?.Add(new DiagnosticInfo(DiagnosticDescriptors.InternalError.Id, …))` with the site's location — reliable now that QRY900 is registered (Step 1).
+- [x] Delete `IR/PipelineErrorBag.cs`. (ProjectionAnalyzer's doc-comment reference to it updated — its own ThreadStatic is drained within a single transform call and is out of scope.)
+- [x] Add an internal test hook to force a bind exception (same pattern as `ChainAnalyzer.TestCapturedChains`). (`CallSiteBinder.TestThrowOnMethodName`.)
 - Tests (acceptance criterion 1): forced bind exception → generator run surfaces a QRY900 compile diagnostic; also covers the group-less case (a file whose only site fails bind still reports).
 
 ### Step 3 — F3a: trace lines stored on the equatable model

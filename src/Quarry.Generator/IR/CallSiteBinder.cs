@@ -14,6 +14,15 @@ namespace Quarry.Generators.IR;
 internal static class CallSiteBinder
 {
     /// <summary>
+    /// Test hook: when non-null, Bind() throws for call sites whose MethodName matches,
+    /// simulating an internal binder defect. Set from test code before running the
+    /// generator (same pattern as <see cref="Parsing.ChainAnalyzer.TestCapturedChains"/>)
+    /// to exercise the QRY900 bind-failure reporting path end-to-end.
+    /// </summary>
+    [System.ThreadStatic]
+    internal static string? TestThrowOnMethodName;
+
+    /// <summary>
     /// Binds a raw call site against the entity registry to produce bound call sites.
     /// Returns one element for most sites; may return multiple for navigation joins
     /// that discover additional chain members.
@@ -24,6 +33,9 @@ internal static class CallSiteBinder
         CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
+
+        if (TestThrowOnMethodName != null && TestThrowOnMethodName == raw.MethodName)
+            throw new System.InvalidOperationException($"Test-forced bind failure for '{raw.MethodName}'");
 
         // Resolve entity from registry with ambiguity detection
         var entry = registry.Resolve(raw.EntityTypeName, raw.ContextClassName, out var isAmbiguous);
