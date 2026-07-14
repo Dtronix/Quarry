@@ -39,8 +39,26 @@ internal static class PipelineOrchestrator
         EntityRegistry registry,
         CancellationToken ct)
     {
+        // Trace state is produced (ChainAnalyzer, SqlAssembler) and consumed (captured
+        // onto AssembledPlan.TraceLines) entirely within this call, so the ThreadStatic
+        // never has to survive a pipeline-node or thread boundary (#311). The finally
+        // ensures a cancellation or failure cannot leak lines into a later run.
         TraceCapture.Clear();
+        try
+        {
+            return AnalyzeAndGroupTranslatedCore(translatedSites, registry, ct);
+        }
+        finally
+        {
+            TraceCapture.Clear();
+        }
+    }
 
+    private static ImmutableArray<FileInterceptorGroup> AnalyzeAndGroupTranslatedCore(
+        ImmutableArray<TranslatedCallSite> translatedSites,
+        EntityRegistry registry,
+        CancellationToken ct)
+    {
         ct.ThrowIfCancellationRequested();
 
         // Collect diagnostics from TranslatedCallSite properties
@@ -60,6 +78,20 @@ internal static class PipelineOrchestrator
         {
             var assembled = SqlAssembler.Assemble(chain, registry);
             assembledPlans.Add(assembled);
+        }
+
+        // Capture trace lines onto the plan itself so traced chains keep their
+        // .Trace() output when their file group is cached on incremental runs (#311).
+        // TraceLines is excluded from AssembledPlan equality (derived data), so this
+        // never churns the cache. All trace producers have run by this point:
+        // ChainAnalyzer's retroactive site/chain traces and SqlAssembler's per-mask
+        // assembly traces, both keyed by the execution site's UniqueId.
+        foreach (var assembled in assembledPlans)
+        {
+            if (!assembled.IsTraced) continue;
+            var trace = TraceCapture.Get(assembled.ExecutionSite.UniqueId);
+            if (trace is { Count: > 0 })
+                assembled.TraceLines = trace;
         }
 
         ct.ThrowIfCancellationRequested();

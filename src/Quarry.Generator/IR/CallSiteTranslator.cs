@@ -100,8 +100,10 @@ internal static class CallSiteTranslator
         }
         catch (Exception ex)
         {
-            // Translation failed — produce a failed clause so QRY019 is emitted.
-            TraceCapture.Log(raw.UniqueId, $"Translation failed: {ex.GetType().Name}: {ex.Message}");
+            // Translation failed — produce a failed clause so QRY019 is emitted. No
+            // TraceCapture log here: this transform is per-site cached, so a ThreadStatic
+            // line would be lost on warm runs anyway (#311); the failure text reaches the
+            // trace via Clause.ErrorMessage in ChainAnalyzer's retroactive LogSiteTrace.
             var clauseKind = raw.ClauseKind ?? ClauseKind.Where;
             var failedClause = new TranslatedClause(
                 clauseKind,

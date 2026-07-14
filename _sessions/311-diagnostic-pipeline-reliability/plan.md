@@ -31,9 +31,9 @@ Issue #311 identifies one root theme: diagnostics that travel through side-chann
 - Tests (acceptance criterion 1): forced bind exception → generator run surfaces a QRY900 compile diagnostic; also covers the group-less case (a file whose only site fails bind still reports).
 
 ### Step 3 — F3a: trace lines stored on the equatable model
-- [ ] In `AnalyzeAndGroupTranslated`, wrap the produce region in try/finally: after SQL assembly (and chain analysis), set `assembled.TraceLines = TraceCapture.Get(execUid)` for `IsTraced` plans; `TraceCapture.Clear()` in `finally` (keep the entry `Clear()` as defense).
-- [ ] `EmitFileInterceptors` (`QuarryGenerator.cs:647-654`): stop reading `TraceCapture`; gate emission of already-populated `TraceLines` on `hasQuarryTrace` (null them out or gate the consumer — decide against actual consumer code in FileEmitter/CarrierEmitter).
-- [ ] Delete the redundant Stage-4 trace log at `CallSiteTranslator.cs:104` (its content flows via `Clause.ErrorMessage` into the retroactive `LogSiteTrace`).
+- [x] In `AnalyzeAndGroupTranslated`, wrap the produce region in try/finally: after SQL assembly (and chain analysis), set `assembled.TraceLines = TraceCapture.Get(execUid)` for `IsTraced` plans; `TraceCapture.Clear()` in `finally` (keep the entry `Clear()` as defense). (Body extracted to `AnalyzeAndGroupTranslatedCore` to avoid re-indenting.)
+- [x] `EmitFileInterceptors` (`QuarryGenerator.cs:647-654`): stop reading `TraceCapture`; gate emission of already-populated `TraceLines` on `hasQuarryTrace` (null them out or gate the consumer — decide against actual consumer code in FileEmitter/CarrierEmitter). (Chose consumer gating: `FileEmitter` ctor takes `emitTraceComments`; the cached plan is never mutated, so defining QUARRY_TRACE later still finds the lines.)
+- [x] Delete the redundant Stage-4 trace log at `CallSiteTranslator.cs:104` (its content flows via `Clause.ErrorMessage` into the retroactive `LogSiteTrace`).
 - Tests (acceptance criterion 3): incremental warm-run test (pattern from `IncrementalCachingTests.cs`) — run driver with a traced chain in file A, edit unrelated file B, re-run, assert file A's generated output still contains `// [Trace]` lines.
 
 ### Step 4 — F3b: consumed-lambda IDs returned from Analyze

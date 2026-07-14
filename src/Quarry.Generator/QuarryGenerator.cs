@@ -661,14 +661,11 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 assembled.JoinedTableInfos = joinedTableInfos;
             }
 
-            // Collect trace lines from TraceCapture side-channel
-            if (assembled.IsTraced && hasQuarryTrace)
-            {
-                var execUid = assembled.ExecutionSite.UniqueId;
-                var execTrace = IR.TraceCapture.Get(execUid);
-                if (execTrace != null && execTrace.Count > 0)
-                    assembled.TraceLines = execTrace;
-            }
+            // Trace lines were captured onto AssembledPlan.TraceLines by
+            // PipelineOrchestrator (#311), so cached groups keep them on warm runs.
+            // QUARRY_TRACE gating happens at FileEmitter construction below — the
+            // plan is never mutated here, so defining the symbol later still finds
+            // the lines on the cached plan.
 
             // SQL post-processing (collection tokenization + MySQL bind-order extraction)
             // happens in PipelineOrchestrator.AnalyzeAndGroupTranslated — before file
@@ -791,7 +788,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 group.FileTag,
                 mergedSites,
                 filteredPlans,
-                filteredCarrierPlans);
+                filteredCarrierPlans,
+                emitTraceComments: hasQuarryTrace);
             var interceptorsSource = emitter.Emit();
             var fileName = $"{group.ContextClassName}.Interceptors.{group.FileTag}.g.cs";
             spc.AddSource(fileName, interceptorsSource);
