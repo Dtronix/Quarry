@@ -16,9 +16,9 @@ Issue #311 identifies one root theme: diagnostics that travel through side-chann
 ## Steps
 
 ### Step 1 — F2: register missing deferred IDs + loud miss path
-- [ ] Add `DiagnosticDescriptors.InternalError` (QRY900) and `DiagnosticDescriptors.NavigationTargetNotFound` (QRY063) to `s_deferredDescriptors` (`QuarryGenerator.cs:804-834`).
-- [ ] Change `ChainAnalyzer.cs:2531` to use `DiagnosticDescriptors.NavigationTargetNotFound.Id` instead of the raw string `"QRY063"`.
-- [ ] Replace the silent `continue` miss path in both deferred report loops (`QuarryGenerator.cs:555` and `:786`) with reporting a QRY900 `InternalError` that names the unregistered ID and carries the original location (factor a small internal helper so both loops share it). QRY900 itself is registered by this step, so the miss report cannot recurse.
+- [x] Add `DiagnosticDescriptors.InternalError` (QRY900) and `DiagnosticDescriptors.NavigationTargetNotFound` (QRY063) to `s_deferredDescriptors` (`QuarryGenerator.cs:804-834`).
+- [x] Change `ChainAnalyzer.cs:2531` to use `DiagnosticDescriptors.NavigationTargetNotFound.Id` instead of the raw string `"QRY063"`.
+- [x] Replace the silent `continue` miss path in both deferred report loops (`QuarryGenerator.cs:555` and `:786`) with reporting a QRY900 `InternalError` that names the unregistered ID and carries the original location (factor a small internal helper so both loops share it). QRY900 itself is registered by this step, so the miss report cannot recurse. (Helper: `ReportDeferredDiagnostic` + internal `TryGetDeferredDescriptor`; `GetDescriptorById` removed.)
 - Tests: registry-membership assertions for QRY900/QRY063 via internal access; unit test for the miss-path helper (unregistered ID in a `DiagnosticInfo` → QRY900 naming it, registered ID → normal report).
 
 ### Step 2 — F1: bind errors flow through the value pipeline (depends on Step 1)

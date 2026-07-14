@@ -2529,7 +2529,7 @@ internal static class ChainAnalyzer
             if (targetEntry == null)
             {
                 diagnostics?.Add(new DiagnosticInfo(
-                    "QRY063",
+                    Quarry.Generators.DiagnosticDescriptors.NavigationTargetNotFound.Id,
                     location,
                     hop, currentEntity.EntityName, nav.TargetEntityName));
                 return null;

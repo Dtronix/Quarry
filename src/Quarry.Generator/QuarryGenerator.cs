@@ -551,9 +551,6 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         // Report all deferred diagnostics
         foreach (var diag in group.Diagnostics)
         {
-            var descriptor = GetDescriptorById(diag.DiagnosticId);
-            if (descriptor == null) continue;
-
             Location location;
             if (syntaxTree != null && diag.Location.Span.Length > 0)
             {
@@ -564,7 +561,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 location = CreateLineLocation(diag.Location.FilePath, diag.Location.Line, diag.Location.Column);
             }
 
-            spc.ReportDiagnostic(Diagnostic.Create(descriptor, location, diag.MessageArgs));
+            ReportDeferredDiagnostic(spc, diag, location);
         }
 
         try
@@ -782,10 +779,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             // Report diagnostics collected during emission (e.g., QRY041 for unresolvable columns)
             foreach (var diag in emitter.EmitDiagnostics)
             {
-                var descriptor = GetDescriptorById(diag.DiagnosticId);
-                if (descriptor == null) continue;
                 var location = CreateLineLocation(diag.Location.FilePath, diag.Location.Line, diag.Location.Column);
-                spc.ReportDiagnostic(Diagnostic.Create(descriptor, location, diag.MessageArgs));
+                ReportDeferredDiagnostic(spc, diag, location);
             }
         }
         catch (Exception ex)
@@ -824,16 +819,49 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         DiagnosticDescriptors.ProjectionSubqueryUnresolved,
         DiagnosticDescriptors.ComputedColumnSetForbidden,
         // Set-operation diagnostics emitted by PipelineOrchestrator. Without these
-        // entries, GetDescriptorById would return null and the diagnostics would be
-        // silently dropped at QuarryGenerator.cs:524.
+        // entries, ReportDeferredDiagnostic would demote them to a QRY900
+        // unregistered-ID report instead of the real diagnostic.
         DiagnosticDescriptors.IntersectAllNotSupported,
         DiagnosticDescriptors.ExceptAllNotSupported,
         DiagnosticDescriptors.SetOperationProjectionMismatch,
         // MySQL bind-order fallback, also emitted by PipelineOrchestrator.
         DiagnosticDescriptors.MySqlBindOrderFallback,
+        // Navigation-hop target entity missing from every registered context.
+        DiagnosticDescriptors.NavigationTargetNotFound,
+        // Internal errors routed through the deferred channel (e.g., ChainAnalyzer
+        // catch handlers, SqlExprBinder exceptions during navigation-aggregate
+        // resolution). Also the descriptor ReportDeferredDiagnostic falls back to
+        // for unregistered IDs, so it must always be present.
+        DiagnosticDescriptors.InternalError,
     }.ToDictionary(d => d.Id);
 
-    private static DiagnosticDescriptor? GetDescriptorById(string id) =>
+    /// <summary>
+    /// Reports a deferred diagnostic, resolving its string ID against
+    /// <see cref="s_deferredDescriptors"/>. An unregistered ID is itself an internal
+    /// error — three separate diagnostics (QRY048, QRY900, QRY063) have shipped
+    /// unregistered and were silently dropped by the old <c>continue</c> miss path —
+    /// so it is reported loudly as QRY900 naming the ID instead of being discarded.
+    /// </summary>
+    private static void ReportDeferredDiagnostic(SourceProductionContext spc, DiagnosticInfo diag, Location location)
+    {
+        if (TryGetDeferredDescriptor(diag.DiagnosticId) is { } descriptor)
+        {
+            spc.ReportDiagnostic(Diagnostic.Create(descriptor, location, diag.MessageArgs));
+            return;
+        }
+
+        spc.ReportDiagnostic(Diagnostic.Create(
+            DiagnosticDescriptors.InternalError,
+            location,
+            $"Deferred diagnostic ID '{diag.DiagnosticId}' is not registered in s_deferredDescriptors — " +
+            $"the diagnostic would have been silently dropped. Original message args: [{string.Join(", ", diag.MessageArgs)}]"));
+    }
+
+    /// <summary>
+    /// Resolves a deferred diagnostic ID to its registered descriptor, or null when
+    /// unregistered. Internal for registry-membership assertions in tests.
+    /// </summary>
+    internal static DiagnosticDescriptor? TryGetDeferredDescriptor(string id) =>
         s_deferredDescriptors.TryGetValue(id, out var descriptor) ? descriptor : null;
 
     private static Location CreateLineLocation(string? filePath, int line, int column)
