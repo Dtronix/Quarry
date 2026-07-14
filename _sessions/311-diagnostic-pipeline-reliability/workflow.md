@@ -8,7 +8,7 @@ base-branch: master
 phase: REMEDIATE
 status: active
 issue: #311
-pr:
+pr: #326
 
 ## Problem Statement
 Issue #311 — Diagnostic pipeline reliability. Combined finding from the 2026-07-07 multi-agent deep review. Four items sharing one root theme: error/trace side-channels and the deferred-diagnostic registry can silently lose diagnostics.

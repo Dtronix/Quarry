@@ -15,10 +15,10 @@
 | F9 | A | A | L | Test Quality | Second assertion of ChainAnalyzer_LambdaInnerSites test is trivially true (out param unconditionally reassigned) | Fixed: trivially-true empty-run assertion removed from ChainAnalyzer_LambdaInnerSites test. |
 | F10 | A | A | L | Codebase Consistency | FileEmitter emitTraceComments defaults to true — future callers emit trace comments with no QUARRY_TRACE gate | Fixed: emitTraceComments default flipped to false (fail safe); QuarryGenerator opts in explicitly. |
 | F11 | A | A | L | Codebase Consistency | BindStageResult ctors lack null guards; both-null instance passes neither downstream filter (vanishing value) | Fixed: both BindStageResult ctors throw ArgumentNullException on null. |
-| F12 | A | A | M | Integration | QRY900 (Error) now surfaces where builds previously succeeded — needs explicit release-note callout | |
-| F13 | A | A | L | Integration | QRY019 messageFormat text changed — external log filters/tooling matching old text break (fold into F12 callout) | |
-| F14 | A | A | L | Integration | QRY063 emitted for the first time — new warning, build failure under TreatWarningsAsErrors (fold into F12 callout) | |
-| F15 | A | A | L | Integration | Bind cancellation no longer recorded as error — observable behavior change worth a changelog line (fold into F12 callout) | |
+| F12 | A | A | M | Integration | QRY900 (Error) now surfaces where builds previously succeeded — needs explicit release-note callout | Addressed: prominent Breaking Changes callout in PR #326 body (feeds next release notes; repo has no unreleased-notes file by convention). |
+| F13 | A | A | L | Integration | QRY019 messageFormat text changed — external log filters/tooling matching old text break (fold into F12 callout) | Addressed: covered in the PR #326 Breaking Changes callout. |
+| F14 | A | A | L | Integration | QRY063 emitted for the first time — new warning, build failure under TreatWarningsAsErrors (fold into F12 callout) | Addressed: covered in the PR #326 Breaking Changes callout. |
+| F15 | A | A | L | Integration | Bind cancellation no longer recorded as error — observable behavior change worth a changelog line (fold into F12 callout) | Addressed: covered in the PR #326 Breaking Changes callout (internal section). |
 
 ## Plan Compliance
 
