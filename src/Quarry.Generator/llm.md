@@ -66,8 +66,9 @@ Stage 1: Schema/Context    ContextParser + SchemaParser → ContextInfo[] + Enti
 Stage 2: Discovery         UsageSiteDiscovery → RawCallSite[]
                            ── .Collect() barrier: all sites gathered ──
 Stage 2.5: Enrichment      DisplayClassEnricher → enriched RawCallSite[] (display class names, captured variable types)
-Stage 3a: Bind             CallSiteBinder → BoundCallSite[] (entity refs, context resolved)
-                           Returns ImmutableArray (1:N for navigation joins). Errors → PipelineErrorBag side-channel.
+Stage 3a: Bind             CallSiteBinder → BindStageResult[] (BoundCallSite OR BindFailure)
+                           Returns ImmutableArray (1:N for navigation joins). Failures branch to a
+                           dedicated QRY900 report node; successes filter into Stage 3b.
 Stage 3b: Translate        CallSiteTranslator → TranslatedCallSite (SQL expression bound, parameters extracted)
                            Returns single site. Errors → TranslatedCallSite.PipelineError field.
                            ── .Collect() barrier: all translated sites gathered ──
@@ -141,26 +142,27 @@ Mechanism (correct by construction for any renderer — no per-renderer ordering
 1. **Marker emission** — when `SqlDialectConfig.EmitMySqlBindMarkers` is set (only by `SqlAssembler.Assemble`, MySQL only), placeholders render as `{__Q{globalIndex}__}` (`MySqlBindMarkers`) instead of bare `?`. Render paths outside variant assembly (diagnostics fragments, runtime column arrays, wrap-detection comparison renders) stay marker-free. Pagination markers use the plan's true slots (`PaginationPlan.LimitParamIndex`/`OffsetParamIndex`, allocated last by ChainAnalyzer) — the running render index lags the slot when projection params exist.
 2. **Rewrite + extraction** — `PipelineOrchestrator.RewriteMySqlBindMarkers` runs inside `AnalyzeAndGroupTranslated`, before file grouping, so both output actions (interceptor emission and the manifest) consume final SQL and incremental equality compares post-processed plans. One pass per variant rewrites markers to `?` (or `{__COL_P{n}__}` for carrier-eligible collection params — this replaced the Nth-`?` substitution and its literal-`?` miscount hazard), records the text-order slot sequence, and validates it against the mask's expected active set (marker-free variants are not exempt — a variant with active params and zero markers means a render surface missed marker emission). Per-variant sequences merge into one chain ranking via topological sort over pairwise order constraints (`TryMergeTextOrders`), smallest-slot-first among unconstrained slots (GlobalIndex tiebreak for mutually exclusive branch groups); a cycle = contradictory orders across variants. Do NOT merge incrementally with placement guesses — mask enumeration feeds singleton variants (`[0]`, `[1]`) before the combined one (`[0,1]`), and an anchor-insertion merge falsely reports a contradiction on that family. Extraction/validation failure ⇒ **QRY048 warning** + identity fallback (pre-#303 behavior). Stored as `AssembledPlan.MySqlBindOrder` (null = identity; excluded from equality — derived from `SqlVariants`).
 
-   QRY048 is a *deferred* diagnostic (emitted as `DiagnosticInfo` from the orchestrator, reported later at emission). Every deferred diagnostic ID MUST also be registered in `QuarryGenerator.s_deferredDescriptors` — `GetDescriptorById` returns null for unregistered IDs and the report loop silently drops them. This shipped once: review pass 2 of #304 found QRY048 emitted but unregistered, making all five fallback paths invisible. `MySqlBindOrderGenerationTests.MarkerShapedStringLiteral_MySQL_SurfacesQRY048_AsWarning` guards the registration end-to-end.
+   QRY048 is a *deferred* diagnostic (emitted as `DiagnosticInfo` from the orchestrator, reported later at emission). Every deferred diagnostic ID MUST be registered in `QuarryGenerator.s_deferredDescriptors` so the real descriptor (severity, message format) is used. Unregistered IDs are no longer silently dropped (#311): `ReportDeferredDiagnostic` reports a QRY900 naming the unregistered ID instead — this trap shipped three separate times (QRY048 in #304, then QRY900 and QRY063 found in #311). `MySqlBindOrderGenerationTests.MarkerShapedStringLiteral_MySQL_SurfacesQRY048_AsWarning` and `DeferredDiagnosticRegistryTests` guard the registrations.
 3. **Reordered binding** — `CarrierEmitter.EmitCarrierCommandBinding` iterates the ranking when present; identity emits byte-identical code to before. `ParameterName` needs no handling: on MySQL every name path emits the constant `"?"` — MySqlConnector binds purely by position and ignores names against bare `?` placeholders. Pagination slots are verified to rank last and keep their bind-after-loop position. Insert/batch-insert bind in column order by construction and never carry markers; Patch SET stays runtime-assembled and binds first (SET precedes WHERE textually).
 
 Parameter logging / `ToDiagnostics` lists remain in `GlobalIndex` order — a cosmetic divergence from text order on reordered MySQL chains.
 
 ### Error Propagation & QRY900
 
-Errors propagate through two channels due to the Bind/Translate return type asymmetry:
+Every error channel is a value in the incremental pipeline (#311) — nothing error-bearing lives in `[ThreadStatic]` state, so errors survive incremental caching, thread switches between pipeline nodes, and cancellation:
 
 | Stage | Return Type | Error Channel | Rationale |
 |-------|-------------|---------------|-----------|
-| 3a Bind | `ImmutableArray<BoundCallSite>` | `PipelineErrorBag.Report()` (ThreadStatic side-channel) | Returns empty array on failure — no site to attach error to. 1:N expansion for navigation joins prevents a single error-bearing return. |
+| 3a Bind | `ImmutableArray<BindStageResult>` | `BindStageResult.Failure` (`BindFailure`: file/line/column/message) | An exception produces no `BoundCallSite` to attach an error to, so the failure IS the stage output. Successes filter to Stage 3b; failures branch to a dedicated `Collect()` + report node. Equality includes the failure fields for cache invalidation. |
 | 3b Translate | `TranslatedCallSite` | `TranslatedCallSite.PipelineError` field | Scalar return allows natural error field. Equality includes PipelineError for incremental cache invalidation on error state changes. |
+| 4–5d Chain analysis | (inside orchestrator) | Deferred `DiagnosticInfo` with `InternalError.Id` added to the diagnostics list | ChainAnalyzer catch handlers route analysis exceptions through the same deferred channel as ordinary diagnostics; QRY900 is registered in `s_deferredDescriptors`. Caveat: deferred diagnostics reach the user via file groups, so an error attached to a file with no group is dropped — bind failures (which can zero out a file's sites) use the dedicated node above for exactly this reason. |
 
-**QRY900 has three source paths**, all drained in `EmitFileInterceptors()`:
-1. `site.PipelineError != null` on TranslatedCallSite → Translate-stage exceptions
-2. `PipelineErrorBag.DrainErrors()` → Bind-stage exceptions (side-channel)
-3. Exception catch in `EmitFileInterceptorsNewPipeline()` → Emission-stage exceptions
-
-**ThreadStatic lifecycle**: `PipelineOrchestrator.AnalyzeAndGroupTranslated()` calls `PipelineErrorBag.DrainErrors()` at entry to discard stale errors from prior compilations on the same thread. Safe because the incremental pipeline is single-threaded per compilation.
+**QRY900 source paths**:
+1. `site.PipelineError != null` on TranslatedCallSite → Translate-stage exceptions (reported in `EmitFileInterceptors()`)
+2. `BindStageResult.Failure` → Bind-stage exceptions (dedicated `RegisterImplementationSourceOutput` in `QuarryGenerator.Initialize`, independent of file groups)
+3. Deferred `DiagnosticInfo(InternalError.Id, …)` → ChainAnalyzer/SqlExprBinder exceptions (reported with the group's deferred diagnostics)
+4. Exception catch in `EmitFileInterceptorsNewPipeline()` → Emission-stage exceptions
+5. `ReportDeferredDiagnostic` miss path → a deferred diagnostic whose ID is missing from `s_deferredDescriptors` is reported as QRY900 naming the ID (never silently dropped)
 
 ### Caching Boundaries
 
@@ -349,9 +351,9 @@ For chains with N conditional terms (up to 8 bits = 256 variants), shared prefix
 | `EntityRegistry.cs` | Multi-key entity index (by type, name, accessor name). Built from all contexts. |
 | `EntityRef.cs` | Lightweight entity reference (avoids Location/indices). |
 | `PipelineOrchestrator.cs` | Stage 5. Chains: diagnostics → ChainAnalyzer → SqlAssembler → CarrierAnalyzer → file grouping. |
-| `PipelineErrorBag.cs` | [ThreadStatic] error side-channel for Stage 3 binding failures → drained as QRY900. |
+| `BindStageResult.cs` | Stage 3a output: BoundCallSite OR BindFailure. Failures reported as QRY900 by a dedicated output node. |
 | `FileOutputGroup.cs` | Legacy output container (superseded by FileInterceptorGroup). |
-| `TraceCapture.cs` | [ThreadStatic] debug trace collection for .Trace() chains. |
+| `TraceCapture.cs` | [ThreadStatic] trace accumulator for .Trace() chains. Produced AND consumed within one AnalyzeAndGroupTranslated call (captured onto AssembledPlan.TraceLines, cleared in finally) — never crosses a node/thread boundary. |
 
 ### Code Generation — `CodeGen/`
 | File | Purpose |
@@ -421,7 +423,7 @@ All pipeline models implement `IEquatable<T>` for incremental caching.
 | `QueryKind.cs` | `enum QueryKind` | Query routing: Select, Delete, Update, Insert, BatchInsert. |
 | `ClauseKind.cs` | `enum ClauseKind` | Clause types: Where, OrderBy, GroupBy, Having, Set. |
 | `RawSqlTypeInfo.cs` | `class RawSqlTypeInfo` | Resolved result type T for RawSqlAsync<T>/RawSqlScalarAsync<T>. |
-| `DiagnosticInfo.cs` | `class DiagnosticInfo` | Deferred diagnostic: ID, location, message args. Carried through pipeline for reporting in emission. The ID must be registered in `QuarryGenerator.s_deferredDescriptors` — unregistered IDs are silently dropped at report time. |
+| `DiagnosticInfo.cs` | `class DiagnosticInfo` | Deferred diagnostic: ID, location, message args. Carried through pipeline for reporting in emission. The ID must be registered in `QuarryGenerator.s_deferredDescriptors`; an unregistered ID is reported as a QRY900 naming the ID (#311) instead of the intended diagnostic. |
 | `DiagnosticLocation.cs` | `struct DiagnosticLocation` | Structural source location (file, line, column, span). Replaces Roslyn Location for IEquatable. |
 | `MigrationInfo.cs` | `class MigrationInfo` | Migration class metadata: version, name, flags (HasDestructiveSteps, HasBackup, etc). |
 | `SnapshotInfo.cs` | `class SnapshotInfo` | [MigrationSnapshot] metadata: version, name, schema hash. |
@@ -496,7 +498,7 @@ QRY073 was introduced then retired in v0.3.0 when cross-entity set operations be
 ## Key Design Decisions
 
 1. **Incremental caching**: All pipeline models implement `IEquatable<T>`. Equality on TranslatedCallSite includes PipelineError to detect error state changes.
-2. **[ThreadStatic] for side-channels**: PipelineErrorBag and TraceCapture use thread-static storage (not ConcurrentBag) because the incremental pipeline is single-threaded per compilation.
+2. **No cross-node ThreadStatic state** (#311): every error and trace channel is either a pipeline value (`BindStageResult`, `TranslatedCallSite.PipelineError`, deferred `DiagnosticInfo`, `AssembledPlan.TraceLines`) or ThreadStatic state produced and consumed within a single transform call (TraceCapture inside the orchestrator, ProjectionAnalyzer's Sql.Raw error list). Roslyn does not guarantee which thread runs which node, so state must never rely on surviving a node boundary. Test hooks (`ChainAnalyzer.TestCapturedChains`, `CallSiteBinder.TestThrowOnMethodName`) are the only cross-call ThreadStatics.
 3. **Display class prediction**: Generator predicts compiler-generated closure class names to emit [UnsafeAccessor] methods for captured variable extraction without reflection.
 4. **Supplemental compilation**: DisplayClassEnricher builds a supplemental compilation containing generated entity/context source before creating semantic models. This eliminates TypeKind.Error for generated types; remaining error types fall back to "object".
 5. **IsUnresolvedTypeName strict/lenient split**: Strict treats "object" as unresolved (chain analysis). Lenient allows "object" (projection analysis where it is a valid placeholder via fallbackToObject).

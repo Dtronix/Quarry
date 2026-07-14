@@ -48,8 +48,8 @@ Issue #311 identifies one root theme: diagnostics that travel through side-chann
 - Tests: update any tests asserting the old message text.
 
 ### Step 6 — docs: llm.md error-propagation section
-- [ ] Rewrite `Quarry.Generator/llm.md` "Error Propagation & QRY900" (~:149-163): channels are now (1) `TranslatedCallSite.PipelineError`, (2) `BindStageResult` failures → dedicated output node, (3) deferred `DiagnosticInfo` with loud miss path, (4) emission catch. Remove the ThreadStatic-lifecycle paragraph and the "single-threaded per compilation" claim.
-- [ ] Update the `DiagnosticInfo` table row (llm.md:424 "unregistered IDs are silently dropped") and any TraceCapture emission-read description.
+- [x] Rewrite `Quarry.Generator/llm.md` "Error Propagation & QRY900" (~:149-163): channels are now (1) `TranslatedCallSite.PipelineError`, (2) `BindStageResult` failures → dedicated output node, (3) deferred `DiagnosticInfo` with loud miss path, (4) emission catch. Remove the ThreadStatic-lifecycle paragraph and the "single-threaded per compilation" claim. (Also: pipeline diagram Stage 3a row, QRY048 registration note, Key Design Decisions #2.)
+- [x] Update the `DiagnosticInfo` table row (llm.md:424 "unregistered IDs are silently dropped") and any TraceCapture emission-read description. (File tables: PipelineErrorBag row → BindStageResult row; TraceCapture row rewritten.)
 - Tests: none (docs).
 
 ## Dependencies
