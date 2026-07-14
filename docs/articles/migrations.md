@@ -7,7 +7,7 @@ Code-first migration scaffolding via the `quarry` CLI tool. The tool reads C# sc
 The migration system operates in three layers:
 
 1. **Quarry.Tool (CLI)** -- Opens your `.csproj` via MSBuild/Roslyn, discovers all `Schema` subclasses, extracts table/column/index/FK metadata, diffs against the previous snapshot, and generates migration code.
-2. **Quarry.Shared (diffing and codegen)** -- `SchemaDiffer` computes structural differences between two `SchemaSnapshot` instances. `MigrationCodeGenerator` and `SnapshotCodeGenerator` emit the C# files. `BackupGenerator` produces backup/restore SQL for destructive steps. `RenameMatcher` uses Levenshtein distance to detect renames vs. drop+add.
+2. **Quarry.Shared (diffing and codegen)** -- `SchemaDiffer` computes structural differences between two `SchemaSnapshot` instances. `MigrationCodeGenerator` and `SnapshotCodeGenerator` emit the C# files. `BackupGenerator` produces backup/restore SQL for destructive steps. Rename detection runs a deterministic [convention-aware pass](#convention-aware-rename-detection) first, then falls back to `RenameMatcher` (Levenshtein distance) for the remainder.
 3. **Quarry runtime** -- `MigrationRunner.RunAsync()` executes migrations against a live `DbConnection`. `DdlRenderer` translates `MigrationBuilder` operations into dialect-specific DDL. The source generator emits a `MigrateAsync` method on each `QuarryContext` that wires everything together.
 
 The key design decision is that scaffolding never touches a database. The previous schema state is stored as a compilable C# snapshot class. When you run `quarry migrate add`, the tool compiles that snapshot in a collectible `AssemblyLoadContext`, invokes its `Build()` method to reconstruct a `SchemaSnapshot`, and diffs the result against your current schema classes. This means you can scaffold migrations in CI, on a developer laptop with no database server, or in any environment with the .NET SDK.
@@ -29,6 +29,8 @@ Requirements:
 quarry migrate add InitialCreate                # scaffold from schema changes
 quarry migrate add AddUserEmail -p src/MyApp    # specify project path
 quarry migrate add-empty SeedData               # empty migration for custom SQL
+quarry migrate adopt AlignSchema -c <conn> -d <dialect>       # adopt an existing database (baseline + alignment)
+quarry migrate baseline InitialCreate -c <conn> -d <dialect>  # record a migration as already-applied (no DDL)
 quarry migrate list                             # list all migrations
 quarry migrate validate                         # check version integrity
 quarry migrate remove                           # remove latest migration files
@@ -56,14 +58,17 @@ quarry migrate add AddUserEmail --ni   # non-interactive (CI mode)
 | `-p` | `--project` | `.` | Path to `.csproj` file or directory containing one |
 | `-o` | `--output` | `Migrations` | Output directory for generated files (relative to project) |
 | | `--ni` | `false` | Non-interactive mode -- auto-accepts renames with score >= 0.8, skips prompts |
+| | `--from-database` | | Connection string: diff against a live database instead of the last snapshot (see [Adopting an Existing Database](#adopting-an-existing-database)) |
+| `-d` | `--dialect` | *(auto)* | SQL dialect for `--from-database` |
+| | `--allow-data-loss` | `false` | With `--from-database`, permit destructive drops of populated objects |
 
 What it does:
 1. Opens your project via MSBuild/Roslyn and compiles it.
 2. Finds the latest `[MigrationSnapshot]` version in your code.
 3. Extracts the current schema from all `Schema` subclasses.
-4. If a previous snapshot exists, compiles it in memory and invokes `Build()` to reconstruct it.
+4. If a previous snapshot exists, compiles it in memory and invokes `Build()` to reconstruct it (or, with `--from-database`, introspects the live database instead).
 5. Diffs old vs. new schema (tables, columns, foreign keys, indexes).
-6. Prompts for rename confirmation when the differ detects a possible rename (Levenshtein distance matching).
+6. Detects renames -- convention-equal names deterministically, then Levenshtein matching (with a confirmation prompt) for the rest. See [Convention-Aware Rename Detection](#convention-aware-rename-detection).
 7. Generates snapshot and migration files in the output directory.
 8. Prints a summary with risk-classified steps.
 
@@ -86,9 +91,10 @@ Preview schema changes without generating migration files.
 ```sh
 quarry migrate diff
 quarry migrate diff -p src/MyApp
+quarry migrate diff --from-database "Host=...;Database=..." -d postgresql   # preview against a live database
 ```
 
-Performs the same diff logic as `migrate add` but only outputs the results to the console. No files are created.
+Performs the same diff logic as `migrate add` but only outputs the results to the console. No files are created. With `--from-database` (and `-d/--dialect`) the comparison snapshot is read from a live database instead of the last project snapshot -- a useful preview of how your schemas differ from a running database.
 
 ### `migrate list`
 
@@ -107,6 +113,92 @@ Checks the migration chain for integrity issues:
 ### `migrate remove`
 
 Removes the latest migration's files from disk. Supports both directory-based layout (`M0001_Name/`) and flat layout (`Migration_NNN_*` / `Snapshot_NNN_*`). This is a file-system operation -- it does not modify the database.
+
+## Adopting an Existing Database
+
+When a database already exists -- with data -- and you want to bring it under Quarry migrations, use `migrate adopt`. It introspects the live database, records its current state as an already-applied baseline (so the existing tables are never re-created), and generates a single pending "alignment" migration that reconciles the database with your project schemas -- typically renaming legacy `snake_case` columns to your `PascalCase` schema names. This replaces the older manual "scaffold, snapshot, hand-insert a history row, swap schemas, hand-author a rename migration" dance.
+
+### `migrate adopt <name>`
+
+```sh
+quarry migrate adopt AlignSchema -c "Host=localhost;Database=myapp" -d postgresql
+quarry migrate adopt AlignSchema -c "..." -d postgresql --rename-map "users.user_name=UserName,orders.qty=Quantity"
+```
+
+| Flag | Long | Default | Description |
+|------|------|---------|-------------|
+| `-c` | `--connection` | | Connection string of the existing database (**required**) |
+| `-d` | `--dialect` | *(auto)* | SQL dialect (falls back to the context's declared dialect) |
+| `-p` | `--project` | `.` | Path to `.csproj` |
+| `-o` | `--output` | `Migrations` | Output directory |
+| | `--rename-map` | | Explicit renames: `table.col=New,bare=New` or `@renames.csv` |
+| | `--allow-data-loss` | `false` | Permit destructive drops of populated columns/tables |
+
+What it does:
+1. Introspects the live database into a schema snapshot.
+2. Writes an `InitialCreate` baseline migration for that state and records it in `__quarry_migrations` with `status = 'applied'` -- **without executing any DDL**, so existing tables are left untouched.
+3. Diffs the database state against your project schemas, applying convention-aware and `--rename-map` renames, and writes one pending alignment migration.
+4. Refuses to generate the alignment migration if it would drop a populated column or table (see [Data-Loss Guard](#data-loss-guard)), unless `--allow-data-loss` is passed.
+
+Apply the alignment migration at runtime as usual:
+
+```csharp
+await db.MigrateAsync(connection);
+// InitialCreate is skipped (already applied); AlignSchema runs, renaming columns in place -- data preserved.
+```
+
+If the project already has migrations, `adopt` records the baseline at the next version and warns that earlier versions are not reconciled -- it assumes the project's history matches the target database.
+
+> The alignment diff focuses on columns (renames + type/nullability changes). It does not reconcile foreign keys or indexes captured only in the baseline; declare genuinely new ones with a follow-up `quarry migrate add`.
+
+### `migrate baseline <name>`
+
+Records a migration as **already-applied** without executing its DDL. `adopt` uses this internally, but it is also available standalone -- for example, to mark an initial schema as applied on a database that already matches it.
+
+```sh
+quarry migrate baseline InitialCreate --from-database "Data Source=app.db" -d sqlite
+quarry migrate baseline InitialCreate -c "Host=...;Database=..." -d postgresql   # snapshot from schemas, mark applied on DB
+```
+
+| Flag | Long | Default | Description |
+|------|------|---------|-------------|
+| `-p` | `--project` | `.` | Path to `.csproj` |
+| `-o` | `--output` | `Migrations` | Output directory |
+| | `--from-database` | | Connection string to introspect the schema from a live database |
+| `-d` | `--dialect` | *(auto)* | SQL dialect |
+| `-c` | `--connection` | | Database to record the baseline on (when not using `--from-database`) |
+| | `--ni` | `false` | Non-interactive mode |
+
+The snapshot is taken from your project schemas, or -- with `--from-database` -- from the live database. If a connection is provided, a `status = 'applied'` row is written to `__quarry_migrations` (the tool creates the table if it does not exist).
+
+> **Prefer `adopt`, or always pass `--from-database` on the follow-up diff.** A `baseline --from-database` persists a snapshot carrying live-database metadata (identity, lengths, defaults, foreign keys, indexes) that the project-schema reader does not populate. A subsequent *plain* `migrate add` would diff those against your schemas and report spurious `AlterColumn`s. The `--from-database` paths (and `adopt`) normalize both sides to the reliably-shared column subset and avoid this.
+
+### Convention-Aware Rename Detection
+
+Before the Levenshtein-based `RenameMatcher` runs, the differ performs a deterministic **canonical** pass: an added and a dropped column (or table) whose names are equal after canonicalization -- lower-cased, with `_`, `-`, and spaces removed -- are treated as a certain rename and emitted as `RenameColumn`/`RenameTable`. This makes `snake_case` ↔ `PascalCase` ↔ `camelCase` ↔ `lowercase` renames deterministic, so they never silently degrade to `DROP + ADD`.
+
+> **Behavior change.** This canonical pass is **always on** -- in every `migrate add`, not just `adopt` -- and is **not** subject to the interactive rename confirmation. A canonically-equal add/drop pair is always emitted as a rename. If you genuinely intend to drop a column and add a differently-cased one (discarding the old data), split it across two migrations, or use `--allow-data-loss` on a DB-sourced diff. Ambiguous canonical collisions (the same canonical form appears more than once on either side) fall back to Levenshtein scoring.
+
+### Data-Loss Guard
+
+On a DB-sourced diff (`migrate add --from-database` and `migrate adopt`), the tool checks every `DropColumn`/`DropTable` step against the live database with `SELECT COUNT(*)`. If the target holds data, the command aborts and lists the offending objects rather than generating a migration that would lose it:
+
+```
+Refusing to generate the alignment migration — these operations would lose data:
+  ! DROP COLUMN users.legacy_notes (2 non-null value(s))
+Declare intended renames with --rename-map, or pass --allow-data-loss to proceed.
+```
+
+Declare the intended rename with `--rename-map`, or pass `--allow-data-loss` to proceed. A `DropColumn` against an all-`NULL` column is not blocked. The guard qualifies each table with its real schema, so it counts correctly against non-default schemas on PostgreSQL and SQL Server.
+
+### `--rename-map`
+
+Provide explicit renames the differ cannot infer (e.g. `qty` → `Quantity`, which is not canonically equal). Accepted forms:
+
+- Inline: `table.col=NewName,bare=NewName` -- a bare `col=New` applies to that column in any table; `table.col=New` scopes to one table; a qualified entry wins over a bare one.
+- File: `@renames.csv` with rows `table,from,to` or `from,to` (a header row and `#` comments are skipped).
+
+Forced renames are trusted verbatim and bypass scoring, so a rename that would score below the detection floor still happens. `adopt` validates the map up front against both the live database and your project schemas: an entry whose target is not a project column, collides with an existing column, or duplicates another target is rejected before anything is written; an entry that matches no live column is reported as a warning.
 
 ## Generated Migration
 
@@ -254,7 +346,7 @@ When a migration contains destructive steps, the generated `Backup()` method inc
 
 ## Migration History Table
 
-The runtime creates a `__quarry_migrations` table to track which migrations have been applied. This table is created automatically by `MigrationRunner` (or the generated `MigrateAsync` method) the first time migrations run.
+The runtime creates a `__quarry_migrations` table to track which migrations have been applied. This table is created automatically by `MigrationRunner` (or the generated `MigrateAsync` method) the first time migrations run. The `migrate baseline`, `migrate adopt`, and `migrate squash` commands also ensure it exists before recording a row, so they work against a fresh database.
 
 ### Schema
 

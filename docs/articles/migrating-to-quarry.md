@@ -147,6 +147,24 @@ initial Quarry migration and set up the ongoing workflow:
 quarry migrate add InitialCreate --project ./src/MyApp.Data/MyApp.Data.csproj --context AppDb
 ```
 
+### Adopting a live, populated database
+
+When the database is already in production (with data) and your reviewed schema classes use
+different naming than the legacy tables -- for example, `PascalCase` properties over `snake_case`
+columns -- use `quarry migrate adopt` instead of a manual baseline. It records the current
+database state as an already-applied baseline (no DDL executed, so existing tables are untouched)
+and generates a single pending "alignment" migration that renames columns in place to match your
+schemas, preserving data:
+
+```sh
+quarry migrate adopt AlignSchema -c "Host=...;Database=..." -d postgresql
+```
+
+Convention renames (`snake_case` ↔ `PascalCase`) are detected automatically; use
+`--rename-map` for anything ambiguous. A drop against a populated column is refused unless you pass
+`--allow-data-loss`. See [Adopting an Existing Database](migrations.md#adopting-an-existing-database)
+for details.
+
 See [Migrations](migrations.md) for the full migration workflow and
 [Scaffolding](scaffolding.md) for scaffold options.
 
