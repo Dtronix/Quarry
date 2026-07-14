@@ -44,7 +44,7 @@ add/drop/rename steps instead of a no-op. Populating `MappedName` keeps the snap
   - No-MapTo / `Exact` → `Name == "PropertyName"`, `MappedName == null` (regression guard).
   - Depends on: Step 1.
 
-- [ ] **Step 3 — Diff coverage: add/remove `MapTo` is not a no-op.**
+- [x] **Step 3 — Diff coverage: add/remove `MapTo` is not a no-op.**
   - Extract v1 (column with `MapTo("credit_limit")`) and v2 (same column without `MapTo`) via
     `ProjectSchemaReader`; run `SchemaDiffer.Diff(v1, v2)` and assert the result is **non-empty** and
     contains a `RenameColumn` (or a drop+add) for that column — never zero steps. Assert the reverse

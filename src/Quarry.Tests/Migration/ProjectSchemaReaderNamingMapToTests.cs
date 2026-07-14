@@ -54,6 +54,88 @@ public class ProjectSchemaReaderNamingMapToTests
     private static ColumnDef Column(TableDef table, string name) =>
         table.Columns.Single(c => c.Name == name);
 
+    private static SchemaSnapshot ExtractSnapshot(string source, int version) =>
+        ProjectSchemaReader.ExtractSchemaSnapshot(CreateCompilation(source), version, "test", null);
+
+    // A mapping change must surface as either a single RenameColumn or a drop+add pair —
+    // never zero steps. Threshold-dependent rename scoring means we accept either shape.
+    private static void AssertColumnTransition(
+        IReadOnlyList<MigrationStep> steps, string oldName, string newName)
+    {
+        Assert.That(steps, Is.Not.Empty, "Expected a diff step for the mapping change, got a no-op");
+
+        var asRename = steps.Any(s =>
+            s.StepType == MigrationStepType.RenameColumn
+            && (s.OldValue as string) == oldName
+            && (s.NewValue as string) == newName);
+
+        var asDropAdd =
+            steps.Any(s => s.StepType == MigrationStepType.DropColumn && s.ColumnName == oldName)
+            && steps.Any(s => s.StepType == MigrationStepType.AddColumn && s.ColumnName == newName);
+
+        Assert.That(asRename || asDropAdd, Is.True,
+            $"Expected a rename {oldName}->{newName} or a drop+add, but got: "
+            + string.Join(", ", steps.Select(s => $"{s.StepType}({s.ColumnName})")));
+    }
+
+    [Test]
+    public void RemovingMapTo_ProducesDiffStep_NotNoOp()
+    {
+        const string withMapTo = @"
+using Quarry;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId { get; }
+    public Col<string> UserName => MapTo<string>(""user_name"");
+}";
+        const string withoutMapTo = @"
+using Quarry;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId { get; }
+    public Col<string> UserName { get; }
+}";
+        var v1 = ExtractSnapshot(withMapTo, 1);
+        var v2 = ExtractSnapshot(withoutMapTo, 2);
+
+        var steps = SchemaDiffer.Diff(v1, v2);
+
+        AssertColumnTransition(steps, "user_name", "UserName");
+    }
+
+    [Test]
+    public void AddingMapTo_ProducesDiffStep_NotNoOp()
+    {
+        const string withoutMapTo = @"
+using Quarry;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId { get; }
+    public Col<string> UserName { get; }
+}";
+        const string withMapTo = @"
+using Quarry;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId { get; }
+    public Col<string> UserName => MapTo<string>(""user_name"");
+}";
+        var v1 = ExtractSnapshot(withoutMapTo, 1);
+        var v2 = ExtractSnapshot(withMapTo, 2);
+
+        var steps = SchemaDiffer.Diff(v1, v2);
+
+        AssertColumnTransition(steps, "UserName", "user_name");
+    }
+
     [Test]
     public void NamingStyle_SnakeCase_StylesColumnNames_AndLeavesMappedNameNull()
     {
