@@ -34,7 +34,7 @@ add/drop/rename steps instead of a no-op. Populating `MappedName` keeps the snap
   - Tests: full existing suite stays green; the de-masked tests now exercise the real API.
   - Depends on: nothing.
 
-- [ ] **Step 2 — Unit coverage: `NamingStyle` and `MapTo` honored (new test file `ProjectSchemaReaderNamingMapToTests.cs`).**
+- [x] **Step 2 — Unit coverage: `NamingStyle` and `MapTo` honored (new test file `ProjectSchemaReaderNamingMapToTests.cs`).**
   - `NamingStyle.SnakeCase` via the real override → `TableDef.NamingStyle == SnakeCase`, columns styled
     (`UserName` → `user_name`), `MappedName == null`.
   - `MapTo` chained (`Col<T> X => Mapped<…>().MapTo("x")` and a plain `Identity().MapTo(...)`/`Length().MapTo(...)`)
