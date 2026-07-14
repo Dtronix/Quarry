@@ -6,7 +6,7 @@ base-branch: master
 
 ## State
 phase: IMPLEMENT
-status: active
+status: suspended
 issue: #313
 pr:
 
@@ -46,9 +46,15 @@ Green: Quarry.Tests 3388/3388 passed, Quarry.Migration.Tests 201/201 passed. No 
   - SnapshotCompiler in test context can't round-trip end-to-end: `typeof(SchemaSnapshotBuilder).Assembly` resolves to Quarry.Generator.dll where builders are internal → recompiled snapshot can't see them. Round-trip test should compile generated code against Quarry.dll (public, same single-sourced API).
 
 ## Suspend State
+- **Position:** IMPLEMENT, plan steps 1–3 of 6 complete and committed (cf81505, a8aac12, 34459af). Next: Step 4 — round-trip + whitelist-coverage regression tests.
+- **In progress:** nothing mid-flight; working tree clean, branch pushed to origin.
+- **Immediate next step:** write `src/Quarry.Tests/Migration/SnapshotRoundTripTests.cs` exactly per plan Step 4: full-featured shared-domain SchemaSnapshot → `SnapshotCodeGenerator.GenerateSnapshotClass` → compile against Quarry.dll (`typeof(Quarry.Migration.SchemaSnapshotBuilder).Assembly`, zero diagnostics) → load/invoke Build() → map runtime types back to shared via property-by-property test helper → `SchemaDiffer.Diff` no-op + `SchemaHasher.ComputeHash` equal. Plus whitelist-coverage guard in existing `SnapshotCompilerTests.cs` (parse full-featured generated source, every invoked method name ∈ `SnapshotCompiler.AllowedMethods` — both internal, accessible since SnapshotCompiler.cs is Compile-Included in Quarry.Tests).
+- **WIP commit:** none.
+- **Test status:** all passing — Quarry.Tests 3393/3393 (baseline 3388 + 5 new SnapshotCompilerTests), Quarry.Migration.Tests 201/201.
+- **Unrecorded context:** none beyond Working Notes. Reminder for Step 4: in Quarry.Tests, `Quarry.Shared.Migration.*` = Quarry.Generator internals via IVT; `Quarry.Migration.*` = Quarry.dll public — both resolvable side by side. Steps 5 (MigrationCompiler audit) and 6 (docs) remain after Step 4.
 
 ## Session Log
 | Date | Phases | Summary |
 |------|--------|---------|
 | 2026-07-13 | INTAKE, DESIGN | Worktree + branch created from issue #313; baseline green (3388+201). Explored duplication; user approved single-source approach, DefaultValue whitelist reconciliation, throw-on-failure. |
-| 2026-07-14 | PLAN, IMPLEMENT | Plan approved (6 steps). Implementation started. |
+| 2026-07-14 | PLAN, IMPLEMENT | Plan approved (6 steps). Steps 1–3 implemented, tested green, committed, pushed. Suspended via context check (≥3 steps this session); resume at Step 4. |
