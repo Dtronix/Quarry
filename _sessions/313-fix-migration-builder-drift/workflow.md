@@ -6,7 +6,7 @@ base-branch: master
 
 ## State
 phase: IMPLEMENT
-status: suspended
+status: active
 issue: #313
 pr:
 
@@ -58,3 +58,4 @@ Green: Quarry.Tests 3388/3388 passed, Quarry.Migration.Tests 201/201 passed. No 
 |------|--------|---------|
 | 2026-07-13 | INTAKE, DESIGN | Worktree + branch created from issue #313; baseline green (3388+201). Explored duplication; user approved single-source approach, DefaultValue whitelist reconciliation, throw-on-failure. |
 | 2026-07-14 | PLAN, IMPLEMENT | Plan approved (6 steps). Steps 1–3 implemented, tested green, committed, pushed. Suspended via context check (≥3 steps this session); resume at Step 4. |
+| 2026-07-14 | IMPLEMENT | Resumed at Step 4 (round-trip + whitelist-coverage tests). |

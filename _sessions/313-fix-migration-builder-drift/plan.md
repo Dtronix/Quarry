@@ -42,12 +42,12 @@ The fix, per approved design: unify the builder API on the runtime shape, fix th
 - Commit: `refactor: single-source migration model types via QUARRY_RUNTIME namespace gating (#313)`
 
 ### Step 4: Round-trip and whitelist-coverage regression tests
-- [ ] New `Quarry.Tests/Migration/SnapshotRoundTripTests.cs`:
+- [x] New `Quarry.Tests/Migration/SnapshotRoundTripTests.cs`:
   - Build a `Quarry.Shared.Migration.SchemaSnapshot` exercising **every** builder feature: PK, FK column + `AddForeignKey` with non-default actions, identity, client-generated, computed (with and without expression), nullable, length, precision/scale, `DefaultValue`, `HasDefault`, `MapTo`, `CustomTypeMapping`, `Collation`, table `Schema`, `NamingStyle`, `CharacterSet`, `AddIndex` (unique, filter, method, descendingColumns), `CompositeKey`.
   - Generate source via `SnapshotCodeGenerator.GenerateSnapshotClass`.
   - Compile it against Quarry.dll (`typeof(Quarry.Migration.SchemaSnapshotBuilder).Assembly`) with `using Quarry.Migration;` as generated — **zero diagnostics** (this alone catches the `DefaultValue`-class drift: generated code must compile against the builders user projects and the tool consume).
   - Load + invoke `Build()` → typed `Quarry.Migration.SchemaSnapshot`; map back to `Quarry.Shared.Migration.SchemaSnapshot` via test helper (property-by-property); assert `SchemaDiffer.Diff(roundTripped, original)` is empty and `SchemaHasher.ComputeHash` values match.
-- [ ] Whitelist-coverage guard (in `SnapshotCompilerTests`): parse the full-featured generated source, collect every invoked method name, assert all ∈ `SnapshotCompiler.AllowedMethods` — pins generator emissions to the whitelist so this drift class can never silently return.
+- [x] Whitelist-coverage guard (in `SnapshotCompilerTests`): parse the full-featured generated source, collect every invoked method name, assert all ∈ `SnapshotCompiler.AllowedMethods` — pins generator emissions to the whitelist so this drift class can never silently return.
 - Commit: `test: snapshot round-trip and whitelist-coverage regression tests (#313)`
 
 ### Step 5: Audit the other emit-then-recompile seam

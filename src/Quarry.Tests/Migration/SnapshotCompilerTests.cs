@@ -107,6 +107,20 @@ public class SnapshotCompilerTests
     }
 
     [Test]
+    public void AllowedMethods_CoverEverythingSnapshotCodeGeneratorEmits()
+    {
+        // The exact whitelist-drift class of bug from #313: SnapshotCodeGenerator emitted
+        // DefaultValue/Collation/CharacterSet, which AllowedMethods rejected. Validate the
+        // full-featured generated snapshot with the same scan the CLI runs.
+        var code = Quarry.Shared.Migration.SnapshotCodeGenerator.GenerateSnapshotClass(
+            SnapshotRoundTripTests.CreateFullFeaturedSnapshot(), "TestApp.Migrations");
+        var tree = CSharpSyntaxTree.ParseText(code);
+
+        Assert.That(SnapshotCompiler.FindDisallowedMethodCall(tree), Is.Null,
+            $"every method SnapshotCodeGenerator emits must be whitelisted. Generated code:\n{code}");
+    }
+
+    [Test]
     public void FindDisallowedMethodCall_CleanBuilderBody_ReturnsNull()
     {
         var tree = CSharpSyntaxTree.ParseText("""
