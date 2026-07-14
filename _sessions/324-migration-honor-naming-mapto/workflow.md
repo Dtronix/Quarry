@@ -6,7 +6,7 @@ base-branch: master
 phase: REMEDIATE
 status: active
 issue: #324
-pr:
+pr: #327
 ## Problem Statement
 Migration tooling (`quarry migrate add`/`diff` via `ProjectSchemaReader`) does not honor two
 column-naming mechanisms the runtime source generator honors:
