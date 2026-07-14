@@ -480,13 +480,13 @@ internal static class MigrateCommands
         {
             sb.AppendLine($"-- Migration {m.Version}: {m.Name}");
 
-            var sql = MigrationCompiler.CompileAndBuildSql(compilation, m.Version, sqlDialect);
-            if (sql == null)
-            {
-                sb.AppendLine($"-- ERROR: Could not compile migration {m.Version}");
-                Console.Error.WriteLine($"WARNING: Could not compile migration {m.Version}: {m.Name}");
-            }
-            else if (!string.IsNullOrWhiteSpace(sql))
+            // FindMigrations discovered this version, so a not-found result is an inconsistency —
+            // an incomplete script must never be emitted (#313).
+            var sql = MigrationCompiler.CompileAndBuildSql(compilation, m.Version, sqlDialect)
+                ?? throw new InvalidOperationException(
+                    $"Migration {m.Version} ({m.Name}) was discovered but could not be compiled. Aborting script generation.");
+
+            if (!string.IsNullOrWhiteSpace(sql))
             {
                 sb.AppendLine(sql);
             }

@@ -51,13 +51,13 @@ The fix, per approved design: unify the builder API on the runtime shape, fix th
 - Commit: `test: snapshot round-trip and whitelist-coverage regression tests (#313)`
 
 ### Step 5: Audit the other emit-then-recompile seam
-- [ ] `MigrationCompiler.CompileAndBuildSql` (no whitelist → no whitelist drift, compiles against Quarry.dll directly → no namespace drift): audit its null-return paths and callers (`MigrateScript`, `CreateScripts`, bundle paths) for the same silent-degradation pattern; where a discovered migration fails to compile/invoke, apply the same throw semantics. Record findings in workflow.md Working Notes.
-- [ ] Grep the tool/generator for any other Roslyn `CSharpCompilation.Create` recompile seams (exploration found exactly two: SnapshotCompiler, MigrationCompiler) — confirm and note.
+- [x] `MigrationCompiler.CompileAndBuildSql` (no whitelist → no whitelist drift, compiles against Quarry.dll directly → no namespace drift): audit its null-return paths and callers (`MigrateScript`, `CreateScripts`, bundle paths) for the same silent-degradation pattern; where a discovered migration fails to compile/invoke, apply the same throw semantics. Record findings in workflow.md Working Notes.
+- [x] Grep the tool/generator for any other Roslyn `CSharpCompilation.Create` recompile seams (exploration found exactly two: SnapshotCompiler, MigrationCompiler) — confirm and note.
 - Tests: as dictated by findings (at minimum, existing suite green).
 - Commit: `fix: MigrationCompiler failures abort loudly; audit recompile seams (#313)`
 
 ### Step 6: Documentation touch-up
-- [ ] Check `llm-migrate.md`, root `llm.md`, and `src/Quarry.Generator/llm.md` for descriptions of the duplicated model or the two-copy discipline; update to describe the single-source gating. Keep root llm.md usage-only per repo doc-split convention.
+- [x] Check `llm-migrate.md`, root `llm.md`, and `src/Quarry.Generator/llm.md` for descriptions of the duplicated model or the two-copy discipline; update to describe the single-source gating. Keep root llm.md usage-only per repo doc-split convention.
 - Commit: `docs: describe single-sourced migration model` (fold into Step 5's commit if trivial).
 
 ## Dependencies
