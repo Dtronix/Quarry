@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Quarry.Shared.Migration;
@@ -258,5 +259,51 @@ public class UserSchema : Schema
         Assert.That(Column(table, "UserName").MappedName, Is.Null);
         // A modifier chain without MapTo must not fabricate a mapped name.
         Assert.That(Column(table, "Email").MappedName, Is.Null);
+    }
+
+    // Loads a committed sample source file (sibling ../Samples of this test file) so the guard
+    // tracks the REAL AccountSchema, not a copy that could silently drift.
+    private static string ReadSampleSource(string fileName, [CallerFilePath] string thisFilePath = "")
+    {
+        var dir = Path.GetDirectoryName(thisFilePath)!;
+        return File.ReadAllText(Path.Combine(dir, "..", "Samples", fileName));
+    }
+
+    [Test]
+    public void AccountSchema_MapTo_YieldsPhysicalCreditLimit_MatchingRuntime()
+    {
+        // Real AccountSchema + real Money/MoneyMapping; UserSchema is stubbed to the minimum the
+        // Ref needs (the real one drags in the whole sample graph). AccountSchema itself is verbatim.
+        var accountSchema = ReadSampleSource("AccountSchema.cs");
+        var money = ReadSampleSource("Money.cs");
+        const string userSchemaStub = @"
+using Quarry;
+namespace Quarry.Tests.Samples;
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+}";
+        var compilation = CreateCompilation(accountSchema, money, userSchemaStub);
+        var snapshot = ProjectSchemaReader.ExtractSchemaSnapshot(compilation, 1, "AccountsInit", null);
+
+        var accounts = snapshot.Tables.Single(t => t.TableName == "accounts");
+
+        // CreditLimit => Mapped<Money, MoneyMapping>().MapTo("credit_limit")
+        var creditLimit = accounts.Columns.Single(c => c.Name == "credit_limit");
+        Assert.That(creditLimit.MappedName, Is.EqualTo("credit_limit"));
+        Assert.That(accounts.Columns.Any(c => c.Name == "CreditLimit"), Is.False,
+            "The property name must not survive; the runtime queries the physical 'credit_limit'.");
+
+        // Balance => Mapped<Money, MoneyMapping>() with no MapTo keeps its Exact property name.
+        Assert.That(accounts.Columns.Single(c => c.Name == "Balance").MappedName, Is.Null);
+
+        // The migration DDL is generated from col.Name, so it must carry the physical name —
+        // matching the runtime SQL asserted by CrossDialectSchemaTests.Select_MapToColumn_CreditLimit.
+        var steps = SchemaDiffer.Diff(null, snapshot);
+        var migration = MigrationCodeGenerator.GenerateMigrationClass(
+            1, "AccountsInit", steps, null, snapshot, "Test");
+        Assert.That(migration, Does.Contain("\"credit_limit\""));
+        Assert.That(migration, Does.Not.Contain("\"CreditLimit\""));
     }
 }

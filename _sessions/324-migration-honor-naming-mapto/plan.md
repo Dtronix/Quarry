@@ -51,7 +51,10 @@ add/drop/rename steps instead of a no-op. Populating `MappedName` keeps the snap
     direction (add a mapping) likewise produces steps.
   - Depends on: Step 1.
 
-- [ ] **Step 4 — End-to-end guard: `AccountSchema`/`credit_limit` physical-name parity.**
+- [x] **Step 4 — End-to-end guard: `AccountSchema`/`credit_limit` physical-name parity.**
+      Implemented by compiling the real `AccountSchema.cs` + real `Money.cs` (loaded via `[CallerFilePath]`
+      sibling `../Samples`) with a minimal `UserSchema` stub; asserts extracted `credit_limit`/`Balance`
+      and that `MigrationCodeGenerator` output contains `"credit_limit"` and not `"CreditLimit"`.
   - Extract the **real committed** `AccountSchema` via `ProjectSchemaReader` (compile its source with the
     minimal supporting types it needs — `Money`, `MoneyMapping`, `UserSchema`; prefer the real sample
     sources, fall back to inline stubs only if the dependency graph is impractical — decision recorded in
