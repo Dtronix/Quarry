@@ -1,6 +1,10 @@
 using System;
 
+#if QUARRY_RUNTIME
+namespace Quarry.Migration;
+#else
 namespace Quarry.Shared.Migration;
+#endif
 
 /// <summary>
 /// Immutable definition of a database column for snapshot comparison.

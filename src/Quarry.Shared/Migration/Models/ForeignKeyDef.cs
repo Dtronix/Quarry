@@ -1,6 +1,10 @@
 using System;
 
+#if QUARRY_RUNTIME
+namespace Quarry.Migration;
+#else
 namespace Quarry.Shared.Migration;
+#endif
 
 /// <summary>
 /// Captures a foreign key relationship definition.

@@ -34,10 +34,10 @@ The fix, per approved design: unify the builder API on the runtime shape, fix th
 - Commit: `fix: snapshot recompile failure aborts migrate add/diff/squash instead of degrading to empty baseline`
 
 ### Step 3: Single-source the migration model (structural fix)
-- [ ] Add namespace gating (`#if QUARRY_RUNTIME → namespace Quarry.Migration`) to the 11 shared files: `Models/{ColumnDef,ColumnKind,ForeignKeyAction,ForeignKeyDef,IndexDef,NamingStyleKind,SchemaSnapshot,TableDef}.cs` and `Builders/{ColumnDefBuilder,TableDefBuilder,SchemaSnapshotBuilder}.cs`.
-- [ ] `Quarry.csproj`: define `QUARRY_RUNTIME`; after the existing `Compile Remove`, re-include those 11 files with `LinkBase="Shared"`.
-- [ ] Delete the 11 runtime duplicates from `src/Quarry/Migration`: `ColumnDef.cs`, `ColumnDefBuilder.cs`, `ColumnKind.cs`, `ForeignKeyAction.cs`, `ForeignKeyDef.cs`, `IndexDef.cs`, `NamingStyleKind.cs`, `SchemaSnapshot.cs`, `SchemaSnapshotBuilder.cs`, `TableDef.cs`, `TableDefBuilder.cs`.
-- [ ] Build every project in the solution (runtime, generator, tool, both test projects, samples) — catches namespace/visibility mismatches at all consumption sites.
+- [x] Add namespace gating (`#if QUARRY_RUNTIME → namespace Quarry.Migration`) to the 11 shared files: `Models/{ColumnDef,ColumnKind,ForeignKeyAction,ForeignKeyDef,IndexDef,NamingStyleKind,SchemaSnapshot,TableDef}.cs` and `Builders/{ColumnDefBuilder,TableDefBuilder,SchemaSnapshotBuilder}.cs`.
+- [x] `Quarry.csproj`: define `QUARRY_RUNTIME`; after the existing `Compile Remove`, re-include those 11 files with `LinkBase="Shared"`.
+- [x] Delete the 11 runtime duplicates from `src/Quarry/Migration`: `ColumnDef.cs`, `ColumnDefBuilder.cs`, `ColumnKind.cs`, `ForeignKeyAction.cs`, `ForeignKeyDef.cs`, `IndexDef.cs`, `NamingStyleKind.cs`, `SchemaSnapshot.cs`, `SchemaSnapshotBuilder.cs`, `TableDef.cs`, `TableDefBuilder.cs`.
+- [x] Build every project in the solution (runtime, generator, tool, both test projects, samples) — catches namespace/visibility mismatches at all consumption sites.
 - Tests: full suite green. Existing `Quarry.Tests/Migration/*` (MigrationBuilder, DdlRenderer, MigrationRunner, EdgeCase tests incl. `.Nullable(false)`/`.DefaultValue(...)` call sites) now exercise the single-sourced types in the runtime domain; `SnapshotCodeGeneratorTests` exercise them in the generator domain.
 - Commit: `refactor: single-source migration model types via QUARRY_RUNTIME namespace gating (#313)`
 

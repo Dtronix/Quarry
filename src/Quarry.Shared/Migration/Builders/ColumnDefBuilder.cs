@@ -1,4 +1,8 @@
+#if QUARRY_RUNTIME
+namespace Quarry.Migration;
+#else
 namespace Quarry.Shared.Migration;
+#endif
 
 /// <summary>
 /// Fluent builder for constructing <see cref="ColumnDef"/> instances.
