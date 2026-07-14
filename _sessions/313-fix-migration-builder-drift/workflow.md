@@ -8,7 +8,7 @@ base-branch: master
 phase: REMEDIATE
 status: active
 issue: #313
-pr:
+pr: #325
 
 ## Problem Statement
 Issue #313: Migration model duplication drift — diverged builders + SnapshotCompiler whitelist silently degrade `migrate add`/`diff` to an empty baseline.
@@ -61,3 +61,4 @@ Green: Quarry.Tests 3388/3388 passed, Quarry.Migration.Tests 201/201 passed. No 
 | 2026-07-14 | PLAN, IMPLEMENT | Plan approved (6 steps). Steps 1–3 implemented, tested green, committed, pushed. Suspended via context check (≥3 steps this session); resume at Step 4. |
 | 2026-07-14 | IMPLEMENT | Resumed at Step 4 (round-trip + whitelist-coverage tests). |
 | 2026-07-14 | IMPLEMENT, REVIEW | Steps 4–6 done (round-trip tests; MigrationCompiler loud-failure + audit; docs). All 6 steps complete, suite green (3399+201). Entered REVIEW. |
+| 2026-07-14 | REVIEW, REMEDIATE | Agent analysis: 14 findings. User classified 6A/3B/0D→5D (C items promoted to A). All A+B fixed incl. FK named-args bug in both codegens, whitelist hardening, full success-path test via IVT. Suite 3402+201 green. PR #325 created. |
