@@ -110,19 +110,29 @@ internal sealed class ProjectSchemaReader
                             characterSet = literal2.Token.ValueText;
                     }
                 }
-                else if (prop.Name == "Naming")
+                else if (prop.Name == "NamingStyle")
                 {
+                    // Mirror the runtime SchemaParser: the real API is the overridable
+                    // Schema.NamingStyle property, e.g. `protected override NamingStyle NamingStyle => NamingStyle.SnakeCase;`.
                     var syntax = prop.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax();
                     if (syntax is PropertyDeclarationSyntax propSyntax)
                     {
                         var expr = propSyntax.Initializer?.Value ?? propSyntax.ExpressionBody?.Expression;
-                        if (expr != null)
+                        if (expr == null && propSyntax.AccessorList != null)
                         {
-                            var exprText = expr.ToString();
-                            if (exprText.Contains("SnakeCase")) namingStyle = NamingStyleKind.SnakeCase;
-                            else if (exprText.Contains("CamelCase")) namingStyle = NamingStyleKind.CamelCase;
-                            else if (exprText.Contains("LowerCase")) namingStyle = NamingStyleKind.LowerCase;
+                            var getter = propSyntax.AccessorList.Accessors
+                                .FirstOrDefault(a => a.IsKind(SyntaxKind.GetAccessorDeclaration));
+                            expr = getter?.ExpressionBody?.Expression;
                         }
+
+                        var valueName = (expr as MemberAccessExpressionSyntax)?.Name.Identifier.Text;
+                        namingStyle = valueName switch
+                        {
+                            "SnakeCase" => NamingStyleKind.SnakeCase,
+                            "CamelCase" => NamingStyleKind.CamelCase,
+                            "LowerCase" => NamingStyleKind.LowerCase,
+                            _ => NamingStyleKind.Exact
+                        };
                     }
                 }
             }
@@ -148,7 +158,9 @@ internal sealed class ProjectSchemaReader
                     {
                         var refEntityType = colType.TypeArguments[0] as INamedTypeSymbol;
                         var refEntity = refEntityType?.Name ?? colType.TypeArguments[0].Name;
-                        var colName = NamingConventions.ToColumnName(colProp.Name, namingStyle);
+                        // Use the resolved column name (honors MapTo/NamingStyle) so the FK
+                        // constraint column stays consistent with the actual column name.
+                        var colName = colDef?.Name ?? NamingConventions.ToColumnName(colProp.Name, namingStyle);
 
                         // Resolve PK column from referenced entity
                         var refPkColumn = ResolvePrimaryKeyColumn(refEntityType, namingStyle);
@@ -267,6 +279,7 @@ internal sealed class ProjectSchemaReader
         // Walk fluent chain for additional modifiers
         string? computedExpression = null;
         string? collation = null;
+        string? mappedName = null;
 
         var syntax = prop.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax();
         if (syntax is PropertyDeclarationSyntax propSyntax)
@@ -282,10 +295,13 @@ internal sealed class ProjectSchemaReader
             var current = expression;
             while (current is InvocationExpressionSyntax invocation)
             {
+                // GenericNameSyntax covers the standalone generic form `MapTo<T>("...")`;
+                // MemberAccess covers the chained `....MapTo("...")` form.
                 var methodName = invocation.Expression switch
                 {
                     MemberAccessExpressionSyntax ma => ma.Name.Identifier.Text,
                     IdentifierNameSyntax id => id.Identifier.Text,
+                    GenericNameSyntax gen => gen.Identifier.Text,
                     _ => null
                 };
 
@@ -301,6 +317,12 @@ internal sealed class ProjectSchemaReader
                     if (arg is LiteralExpressionSyntax literal)
                         collation = literal.Token.ValueText;
                 }
+                else if (methodName == "MapTo" && invocation.ArgumentList.Arguments.Count > 0)
+                {
+                    var arg = invocation.ArgumentList.Arguments[0].Expression;
+                    if (arg is LiteralExpressionSyntax literal)
+                        mappedName = literal.Token.ValueText;
+                }
 
                 if (invocation.Expression is MemberAccessExpressionSyntax memberAccess)
                     current = memberAccess.Expression;
@@ -309,11 +331,18 @@ internal sealed class ProjectSchemaReader
             }
         }
 
+        // A per-column MapTo("physical") overrides the naming-style-derived name. Mirrors the
+        // runtime SchemaParser (columnName = MappedName ?? ToColumnName(prop, style)) so the
+        // migration snapshot/DDL uses the same physical name the runtime queries.
+        if (mappedName != null)
+            columnName = mappedName;
+
         return new ColumnDef(
             name: columnName,
             clrType: clrType,
             isNullable: isNullable,
             kind: kind,
+            mappedName: mappedName,
             referencedEntityName: referencedEntity,
             computedExpression: computedExpression,
             collation: collation);
