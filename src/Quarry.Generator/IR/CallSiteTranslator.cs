@@ -110,7 +110,7 @@ internal static class CallSiteTranslator
                 new LiteralExpr("1", "int"),
                 Array.Empty<Translation.ParameterInfo>(),
                 isSuccess: false,
-                // No trailing punctuation: QRY019 messageFormat appends ". The original runtime method...".
+                // No trailing punctuation: QRY019 messageFormat appends ". The clause is not intercepted...".
                 errorMessage: $"{clauseKind} clause translation failed: {ex.Message}");
             return new TranslatedCallSite(bound, failedClause);
         }
@@ -130,7 +130,7 @@ internal static class CallSiteTranslator
                 new LiteralExpr("1", "int"),
                 Array.Empty<Translation.ParameterInfo>(),
                 isSuccess: false,
-                // No trailing punctuation: QRY019 messageFormat appends ". The original runtime method...".
+                // No trailing punctuation: QRY019 messageFormat appends ". The clause is not intercepted...".
                 errorMessage: $"{raw.ClauseKind ?? ClauseKind.Where} clause contains an expression that cannot be translated to SQL");
             return new TranslatedCallSite(bound, failedClause);
         }
@@ -153,7 +153,7 @@ internal static class CallSiteTranslator
                 new LiteralExpr("1", "int"),
                 Array.Empty<Translation.ParameterInfo>(),
                 isSuccess: false,
-                // No trailing punctuation: QRY019 messageFormat appends ". The original runtime method...".
+                // No trailing punctuation: QRY019 messageFormat appends ". The clause is not intercepted...".
                 errorMessage: $"{clauseKind} clause could not resolve entity metadata for column binding");
             return new TranslatedCallSite(bound, failedClause);
         }
@@ -256,7 +256,7 @@ internal static class CallSiteTranslator
                 new LiteralExpr("1", "int"),
                 Array.Empty<Translation.ParameterInfo>(),
                 isSuccess: false,
-                // No trailing punctuation: QRY019 messageFormat appends ". The original runtime method...".
+                // No trailing punctuation: QRY019 messageFormat appends ". The clause is not intercepted...".
                 errorMessage: $"{clauseKind} clause rendered to empty SQL");
             return new TranslatedCallSite(bound, failedClause);
         }

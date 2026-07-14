@@ -42,9 +42,9 @@ Issue #311 identifies one root theme: diagnostics that travel through side-chann
 - Tests (acceptance criterion 4): existing lambda-inner filtering tests stay green; the poisoning hazard is gone by construction (no cross-run state to leak) — assert Analyze returns the expected set directly.
 
 ### Step 5 — F4: stale text sweep
-- [ ] QRY001 description (`DiagnosticDescriptors.cs:23-25`): replace "The original runtime method will be used instead." with the carrier-only consequence (calls on the chain are not intercepted and throw `InvalidOperationException` at runtime).
-- [ ] QRY019 messageFormat + description (`:351-357`): same correction; honor the no-trailing-punctuation contract with `CallSiteTranslator` error messages.
-- [ ] `ShouldSkipNonTranslatableClause` doc comment (`InterceptorCodeGenerator.Utilities.cs:131-134`), `README.md:507`, and a repo-wide sweep for "runtime method"/"falls back to runtime" phrasing (QRY041's "runtime ordinal discovery" is legitimate and stays).
+- [x] QRY001 description (`DiagnosticDescriptors.cs:23-25`): replace "The original runtime method will be used instead." with the carrier-only consequence (calls on the chain are not intercepted and throw `InvalidOperationException` at runtime).
+- [x] QRY019 messageFormat + description (`:351-357`): same correction; honor the no-trailing-punctuation contract with `CallSiteTranslator` error messages. (4 comment references in CallSiteTranslator updated too.)
+- [x] `ShouldSkipNonTranslatableClause` doc comment (`InterceptorCodeGenerator.Utilities.cs:131-134`), `README.md:507`, and a repo-wide sweep for "runtime method"/"falls back to runtime" phrasing (QRY041's "runtime ordinal discovery" is legitimate and stays). (Also updated `docs/articles/analyzer-rules.md` QRY019 row and `ProjectionAnalyzer` comment. Discovered dead `TypeMappingRegistry` runtime-fallback machinery — recorded in Working Notes, deferred to REVIEW as separate-issue candidate. Release notes intentionally untouched.)
 - Tests: update any tests asserting the old message text.
 
 ### Step 6 — docs: llm.md error-propagation section

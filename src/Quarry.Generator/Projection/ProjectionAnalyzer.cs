@@ -3028,7 +3028,8 @@ internal static class ProjectionAnalyzer
     /// Resolves a scalar (non-column) argument expression to its SQL representation.
     /// For compile-time constants: returns the value formatted as a SQL literal.
     /// For runtime variables: creates a projection parameter with a placeholder.
-    /// Returns null if the expression cannot be resolved (triggers runtime fallback).
+    /// Returns null if the expression cannot be resolved (the projection fails to
+    /// resolve and the chain degrades to RuntimeBuild → QRY032 compile error).
     /// </summary>
     private static string? ResolveScalarArgSql(
         ExpressionSyntax expr,

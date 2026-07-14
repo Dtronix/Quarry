@@ -21,7 +21,8 @@ internal static class DiagnosticDescriptors
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true,
         description: "The query chain contains patterns that prevent compile-time analysis. " +
-                     "The original runtime method will be used instead. " +
+                     "Calls on this chain are not intercepted, and builder methods are compile-time-only " +
+                     "stubs, so executing the query will throw InvalidOperationException at runtime. " +
                      "Consider restructuring the query as a fluent chain without variable assignment or conditionals.");
 
     /// <summary>
@@ -348,12 +349,13 @@ internal static class DiagnosticDescriptors
         title: "Clause not translatable at compile time",
         // {0} must be a complete clause without trailing punctuation; see
         // CallSiteTranslator errorMessage callsites.
-        messageFormat: "{0}. The original runtime method will be used instead.",
+        messageFormat: "{0}. The clause is not intercepted and the call will throw InvalidOperationException at runtime.",
         category: Category,
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true,
         description: "The source generator could not translate this clause expression to SQL. " +
-                     "The query will use the original runtime method, which evaluates the expression tree at runtime. " +
+                     "The clause interceptor is skipped, and builder methods are compile-time-only stubs, " +
+                     "so executing this query will throw InvalidOperationException at runtime. " +
                      "Consider restructuring the expression for compile-time analysis.");
 
     // ─── Custom EntityReader diagnostics (QRY026–QRY027) ────────────────────

@@ -504,7 +504,7 @@ public Col<Money> Price => Mapped<MoneyMapping>();
 
 | ID | Title |
 |----|-------|
-| QRY001 | Query not fully analyzable (runtime fallback) |
+| QRY001 | Query not fully analyzable (calls are not intercepted and throw at runtime) |
 | QRY005 | Unmapped property in Select projection |
 | QRY008 | Potential SQL injection in Sql.Raw |
 | QRY015 | Ambiguous context resolution for entity |

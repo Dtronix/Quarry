@@ -50,7 +50,7 @@ No additional configuration is required. All QRA rules are enabled by default an
 | QRY014 | Error | Anonymous type unsupported in this context |
 | QRY015 | Warning | Ambiguous context resolution |
 | QRY016 | Error | Unbound parameter |
-| QRY019 | Warning | Clause not translatable. The message format is `"<clause-context>. The original runtime method will be used instead."` — the clause-context substitution is supplied complete by the call-site translator, so contributors adding new translator error messages must not include trailing punctuation in the substituted text |
+| QRY019 | Warning | Clause not translatable. The message format is `"<clause-context>. The clause is not intercepted and the call will throw InvalidOperationException at runtime."` — the clause-context substitution is supplied complete by the call-site translator, so contributors adding new translator error messages must not include trailing punctuation in the substituted text |
 
 ### Subquery (QRY020--QRY025)
 
