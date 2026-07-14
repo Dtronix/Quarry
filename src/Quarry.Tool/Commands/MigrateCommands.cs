@@ -599,11 +599,6 @@ internal static class MigrateCommands
 
         // Build the latest snapshot — this represents the full schema state
         var latestSnapshot = FindAndBuildSnapshot(compilation, latestVersion);
-        if (latestSnapshot == null)
-        {
-            Console.Error.WriteLine($"Failed to build snapshot for version {latestVersion}.");
-            return;
-        }
 
         var squashedFromVersion = migrations[^1].Version;
 
@@ -773,9 +768,13 @@ internal static class MigrateCommands
         return maxVersion;
     }
 
-    private static SchemaSnapshot? FindAndBuildSnapshot(Microsoft.CodeAnalysis.Compilation compilation, int version)
+    private static SchemaSnapshot FindAndBuildSnapshot(Microsoft.CodeAnalysis.Compilation compilation, int version)
     {
-        return SnapshotCompiler.CompileAndBuild(compilation, version);
+        // Callers only invoke this for versions discovered by FindLatestSnapshotVersion, so a
+        // not-found result here is an inconsistency — never a valid empty baseline to diff against.
+        return SnapshotCompiler.CompileAndBuild(compilation, version)
+            ?? throw new InvalidOperationException(
+                $"Snapshot version {version} was discovered in the project but could not be built. Aborting.");
     }
 
     private static string GuessNamespace(string csprojPath, string outputDir)

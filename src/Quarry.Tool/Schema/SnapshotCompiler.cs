@@ -14,7 +14,7 @@ namespace Quarry.Tool.Schema;
 internal static class SnapshotCompiler
 {
     // Allowed method names within Build() body — anything else is rejected.
-    private static readonly HashSet<string> AllowedMethods = new(StringComparer.Ordinal)
+    internal static readonly HashSet<string> AllowedMethods = new(StringComparer.Ordinal)
     {
         "SetVersion", "SetName", "SetTimestamp", "SetParentVersion",
         "AddTable", "Name", "Schema", "NamingStyle",
@@ -95,7 +95,9 @@ internal static class SnapshotCompiler
         }
 
         if (buildMethod == null || buildTree == null)
-            return null;
+            throw new InvalidOperationException(
+                $"Snapshot class '{snapshotClassName}' (version {targetVersion}) was found but no Build() method could be located. " +
+                "The generated snapshot file may be missing or corrupted.");
 
         snapshotTree = buildTree;
 
@@ -125,10 +127,11 @@ internal static class SnapshotCompiler
 
         // Validate that Build() only calls whitelisted builder methods.
         // This prevents arbitrary code execution via crafted snapshot files.
-        if (!ValidateBuildMethod(snapshotTree))
+        var disallowedMethod = FindDisallowedMethodCall(snapshotTree);
+        if (disallowedMethod != null)
         {
-            Console.Error.WriteLine("Snapshot Build() method contains disallowed method calls. Aborting compilation.");
-            return null;
+            throw new InvalidOperationException(
+                $"Snapshot Build() for version {targetVersion} contains a disallowed method call: '{disallowedMethod}'. Aborting.");
         }
 
         // 3. Build a new compilation with the snapshot source + required references
@@ -187,11 +190,13 @@ internal static class SnapshotCompiler
 
         if (!emitResult.Success)
         {
-            foreach (var diag in emitResult.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error))
-            {
-                Console.Error.WriteLine($"Snapshot compilation error: {diag.GetMessage()}");
-            }
-            return null;
+            var errors = string.Join(
+                Environment.NewLine,
+                emitResult.Diagnostics
+                    .Where(d => d.Severity == DiagnosticSeverity.Error)
+                    .Select(d => $"  {d.GetMessage()}"));
+            throw new InvalidOperationException(
+                $"Snapshot for version {targetVersion} failed to recompile:{Environment.NewLine}{errors}");
         }
 
         ms.Seek(0, SeekOrigin.Begin);
@@ -207,13 +212,19 @@ internal static class SnapshotCompiler
                 .FirstOrDefault(t => t.Name == snapshotClassName);
 
             if (snapshotType == null)
-                return null;
+                throw new InvalidOperationException(
+                    $"Recompiled snapshot assembly for version {targetVersion} does not contain type '{snapshotClassName}'.");
 
             var buildMethodInfo = snapshotType.GetMethod("Build", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
             if (buildMethodInfo == null)
-                return null;
+                throw new InvalidOperationException(
+                    $"Recompiled snapshot type '{snapshotClassName}' (version {targetVersion}) has no Build() method.");
 
-            return buildMethodInfo.Invoke(null, null) as SchemaSnapshot;
+            if (buildMethodInfo.Invoke(null, null) is not SchemaSnapshot snapshot)
+                throw new InvalidOperationException(
+                    $"Build() on snapshot '{snapshotClassName}' (version {targetVersion}) did not return a SchemaSnapshot.");
+
+            return snapshot;
         }
         finally
         {
@@ -222,10 +233,11 @@ internal static class SnapshotCompiler
     }
 
     /// <summary>
-    /// Validates that the Build() method body only contains whitelisted method invocations.
+    /// Scans the Build() method body for method invocations outside the whitelist.
+    /// Returns the first disallowed method name, or null if the body is clean.
     /// Rejects snapshots with arbitrary code (e.g., Process.Start, File.Delete).
     /// </summary>
-    private static bool ValidateBuildMethod(SyntaxTree tree)
+    internal static string? FindDisallowedMethodCall(SyntaxTree tree)
     {
         var root = tree.GetRoot();
         foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
@@ -238,11 +250,8 @@ internal static class SnapshotCompiler
             };
 
             if (methodName != null && !AllowedMethods.Contains(methodName))
-            {
-                Console.Error.WriteLine($"Disallowed method call in snapshot Build(): '{methodName}'");
-                return false;
-            }
+                return methodName;
         }
-        return true;
+        return null;
     }
 }

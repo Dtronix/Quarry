@@ -24,9 +24,9 @@ The fix, per approved design: unify the builder API on the runtime shape, fix th
 - Commit: `fix: unify shared ColumnDefBuilder API with runtime; whitelist DefaultValue/Collation/CharacterSet`
 
 ### Step 2: Make snapshot recompile failure loud
-- [ ] `SnapshotCompiler.CompileAndBuild`: after the snapshot class is discovered, every failure path throws `InvalidOperationException` with context (validation: the disallowed method name; emit: joined error diagnostics; load/invoke: what was missing) instead of `Console.Error` + `return null`. `null` remains only for "not found".
-- [ ] `MigrateCommands.FindAndBuildSnapshot`: throw if `CompileAndBuild` returns `null` (callers only invoke it for discovered versions — null is an internal inconsistency, never a valid empty baseline).
-- [ ] Remove the now-dead null-check in `MigrateSquash` (line ~602).
+- [x] `SnapshotCompiler.CompileAndBuild`: after the snapshot class is discovered, every failure path throws `InvalidOperationException` with context (validation: the disallowed method name; emit: joined error diagnostics; load/invoke: what was missing) instead of `Console.Error` + `return null`. `null` remains only for "not found".
+- [x] `MigrateCommands.FindAndBuildSnapshot`: throw if `CompileAndBuild` returns `null` (callers only invoke it for discovered versions — null is an internal inconsistency, never a valid empty baseline).
+- [x] Remove the now-dead null-check in `MigrateSquash` (line ~602).
 - Tests (new, in `Quarry.Tests/Migration/SnapshotCompilerTests.cs`; `SnapshotCompiler.cs` gets Compile-Included into Quarry.Tests like `ProjectSchemaReader.cs` already is; `ValidateBuildMethod` becomes `internal` for direct testing):
   - Snapshot containing a disallowed call (e.g. `File.Delete`) → `CompileAndBuild` throws, message names the method.
   - Snapshot whose Build() fails to compile (whitelisted name, bad arg type) → throws with compile diagnostics.
