@@ -6,7 +6,7 @@ base-branch: master
 
 ## State
 phase: IMPLEMENT
-status: active
+status: suspended
 issue: #311
 pr:
 
@@ -44,9 +44,17 @@ Test baseline (2026-07-13): 3388 passed, 0 failed, 0 skipped. No pre-existing fa
   - `BoundCallSite` ctor requires context/entity — a bind-failure sentinel site would need nullability relaxation; a wrapper result type (site-or-failure) at Stage 3 is cleaner.
 
 ## Suspend State
+- **Position**: IMPLEMENT, plan steps 1–3 of 6 complete and committed (see plan.md checkboxes). Next: Step 4 — F3b: change `ChainAnalyzer.Analyze` to return the consumed-lambda-inner site IDs (out param or result object) instead of the `[ThreadStatic]` `ConsumedLambdaInnerSiteIds`; update `PipelineOrchestrator.cs` (~line 150, the `consumedIds` filter block — no more clear-after-use) and the test caller `UsageSiteDiscoveryTests.cs:1467`; delete the ThreadStatic (`ChainAnalyzer.cs:35-36` region, populated at ~:159-163).
+- **In progress**: nothing uncommitted; working tree clean at commit 668cc51.
+- **Immediate next step**: implement Step 4, then Step 5 (text sweep — replacement wording basis: non-intercepted builder calls hit default-interface throw stubs in `IEntityAccessor.cs`; failed clauses are skipped at plan build `ChainAnalyzer.cs:1014` and their interceptor is skipped via `ShouldSkipNonTranslatableClause`, so calls throw `InvalidOperationException` at runtime — there is no runtime fallback), then Step 6 (llm.md rewrite).
+- **WIP commit**: none.
+- **Test status**: all 3395 passing (baseline 3388 + 7 new: 4 DeferredDiagnosticRegistryTests, 2 BindFailureDiagnosticTests, 1 TraceIncrementalCachingTests).
+- **Branch**: pushed to origin (668cc51).
+- **Unrecorded context**: none — Decisions and Working Notes are complete. Suspend triggered by the IMPLEMENT context check (3 steps completed this session), not by a problem.
 
 ## Session Log
 | Date | Phases | Summary |
 |------|--------|---------|
 | 2026-07-13 | INTAKE | Loaded issue #311, created worktree/branch, baseline 3388 tests green. |
 | 2026-07-14 | DESIGN, PLAN | Verified all 4 findings + found 4th unregistered ID (QRY063). Decisions: BindResult value pipeline, loud miss path, ThreadStatic removal, registry test skipped. Plan (6 steps) approved via fast path. |
+| 2026-07-14 | IMPLEMENT | Steps 1–3 committed (deferred registry + loud miss; BindStageResult pipeline, PipelineErrorBag deleted; TraceLines on AssembledPlan). 3395 tests green. Suspended by context check after 3 steps; branch pushed. |
