@@ -768,7 +768,7 @@ internal static class MigrateCommands
         return maxVersion;
     }
 
-    private static SchemaSnapshot FindAndBuildSnapshot(Microsoft.CodeAnalysis.Compilation compilation, int version)
+    internal static SchemaSnapshot FindAndBuildSnapshot(Microsoft.CodeAnalysis.Compilation compilation, int version)
     {
         // Callers only invoke this for versions discovered by FindLatestSnapshotVersion, so a
         // not-found result here is an inconsistency — never a valid empty baseline to diff against.

@@ -187,7 +187,16 @@ internal static class MigrationCompiler
                     $"Recompiled migration type '{migrationClassName}' (version {targetVersion}) has no Upgrade() method.");
 
             var builder = new Quarry.Migration.MigrationBuilder();
-            upgradeMethodInfo.Invoke(null, new object[] { builder });
+            try
+            {
+                upgradeMethodInfo.Invoke(null, new object[] { builder });
+            }
+            catch (TargetInvocationException tie) when (tie.InnerException != null)
+            {
+                throw new InvalidOperationException(
+                    $"Upgrade() on migration '{migrationClassName}' (version {targetVersion}) threw: {tie.InnerException.Message}",
+                    tie.InnerException);
+            }
 
             return builder.BuildSql(dialect);
         }

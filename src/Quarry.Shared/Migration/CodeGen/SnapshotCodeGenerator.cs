@@ -205,9 +205,9 @@ static class SnapshotCodeGenerator
         sb.Append(", \"").Append(EscapeString(fk.ReferencedTable)).Append("\"");
         sb.Append(", \"").Append(EscapeString(fk.ReferencedColumn)).Append("\"");
         if (fk.OnDelete != ForeignKeyAction.NoAction)
-            sb.Append(", ").Append("ForeignKeyAction.").Append(fk.OnDelete);
+            sb.Append(", onDelete: ").Append("ForeignKeyAction.").Append(fk.OnDelete);
         if (fk.OnUpdate != ForeignKeyAction.NoAction)
-            sb.Append(", ").Append("ForeignKeyAction.").Append(fk.OnUpdate);
+            sb.Append(", onUpdate: ").Append("ForeignKeyAction.").Append(fk.OnUpdate);
         sb.AppendLine(")");
     }
 

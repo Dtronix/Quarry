@@ -66,6 +66,10 @@ public class SnapshotRoundTripTests
             {
                 new SharedMig.ForeignKeyDef("fk_orders_users", "user_id", "users", "user_id",
                     SharedMig.ForeignKeyAction.Cascade, SharedMig.ForeignKeyAction.SetNull),
+                // OnDelete default + OnUpdate non-default: the mixed case where positional
+                // action emission silently swapped actions (review F4/F10).
+                new SharedMig.ForeignKeyDef("fk_orders_users_upd", "user_id", "users", "user_id",
+                    SharedMig.ForeignKeyAction.NoAction, SharedMig.ForeignKeyAction.Cascade),
             },
             Array.Empty<SharedMig.IndexDef>());
 

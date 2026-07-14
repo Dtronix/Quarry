@@ -103,7 +103,58 @@ public class SnapshotCompilerTests
 
         Assert.That(
             () => SnapshotCompiler.CompileAndBuild(compilation, 3),
-            Throws.InvalidOperationException.With.Message.Contains("failed to recompile"));
+            Throws.InvalidOperationException
+                .With.Message.Contains("failed to recompile")
+                .And.Message.Contains("cannot convert"));
+    }
+
+    [Test]
+    public void CompileAndBuild_ValidGeneratedSnapshot_RoundTripsThroughFullProductionPath()
+    {
+        // End-to-end through the real production path: discovery, whitelist validation, the
+        // using-rewrite, minimal-reference compile, load, and Build() invocation. (Works in
+        // the test harness via the generator's QuarrySnapshotCompilation IVT; in the tool the
+        // builders are public.)
+        var original = SnapshotRoundTripTests.CreateFullFeaturedSnapshot();
+        var code = Quarry.Shared.Migration.SnapshotCodeGenerator.GenerateSnapshotClass(
+            original, "TestApp.Migrations");
+        var compilation = CreateCompilation(code);
+
+        var rebuilt = SnapshotCompiler.CompileAndBuild(compilation, 7);
+
+        Assert.That(rebuilt, Is.Not.Null);
+        Assert.That(rebuilt!.Tables, Has.Count.EqualTo(original.Tables.Count));
+        Assert.That(Quarry.Shared.Migration.SchemaHasher.ComputeHash(rebuilt.Tables),
+            Is.EqualTo(Quarry.Shared.Migration.SchemaHasher.ComputeHash(original.Tables)));
+    }
+
+    [Test]
+    public void CompileAndBuild_DisallowedConstructor_ThrowsNamingTheType()
+    {
+        // Object creations other than SchemaSnapshotBuilder are rejected — arbitrary
+        // constructors would execute when Build() is invoked in-process (review F6).
+        var compilation = CreateCompilation("""
+            using System;
+            using Quarry;
+            using Quarry.Migration;
+
+            namespace TestApp.Migrations;
+
+            [MigrationSnapshot(Version = 9, Name = "Ctor", Timestamp = "2026-01-01T00:00:00Z")]
+            internal static partial class S0009_Ctor
+            {
+                internal static SchemaSnapshot Build()
+                {
+                    var fs = new System.IO.FileStream("x", System.IO.FileMode.Create);
+                    var builder = new SchemaSnapshotBuilder().SetVersion(9).SetName("Ctor");
+                    return builder.Build();
+                }
+            }
+            """);
+
+        Assert.That(
+            () => SnapshotCompiler.CompileAndBuild(compilation, 9),
+            Throws.InvalidOperationException.With.Message.Contains("new FileStream"));
     }
 
     [Test]
@@ -116,12 +167,12 @@ public class SnapshotCompilerTests
             SnapshotRoundTripTests.CreateFullFeaturedSnapshot(), "TestApp.Migrations");
         var tree = CSharpSyntaxTree.ParseText(code);
 
-        Assert.That(SnapshotCompiler.FindDisallowedMethodCall(tree), Is.Null,
+        Assert.That(SnapshotCompiler.FindDisallowedCall(tree), Is.Null,
             $"every method SnapshotCodeGenerator emits must be whitelisted. Generated code:\n{code}");
     }
 
     [Test]
-    public void FindDisallowedMethodCall_CleanBuilderBody_ReturnsNull()
+    public void FindDisallowedCall_CleanBuilderBody_ReturnsNull()
     {
         var tree = CSharpSyntaxTree.ParseText("""
             internal static class S0001_Clean
@@ -142,11 +193,11 @@ public class SnapshotCompilerTests
             }
             """);
 
-        Assert.That(SnapshotCompiler.FindDisallowedMethodCall(tree), Is.Null);
+        Assert.That(SnapshotCompiler.FindDisallowedCall(tree), Is.Null);
     }
 
     [Test]
-    public void FindDisallowedMethodCall_DisallowedInvocation_ReturnsMethodName()
+    public void FindDisallowedCall_DisallowedInvocation_ReturnsMethodName()
     {
         var tree = CSharpSyntaxTree.ParseText("""
             internal static class S0001_Evil
@@ -159,6 +210,6 @@ public class SnapshotCompilerTests
             }
             """);
 
-        Assert.That(SnapshotCompiler.FindDisallowedMethodCall(tree), Is.EqualTo("Start"));
+        Assert.That(SnapshotCompiler.FindDisallowedCall(tree), Is.EqualTo("Start"));
     }
 }

@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.Reflection;
 using System.Runtime.Loader;
 using Microsoft.CodeAnalysis;
@@ -14,7 +15,7 @@ namespace Quarry.Tool.Schema;
 internal static class SnapshotCompiler
 {
     // Allowed method names within Build() body — anything else is rejected.
-    internal static readonly HashSet<string> AllowedMethods = new(StringComparer.Ordinal)
+    private static readonly FrozenSet<string> AllowedMethods = new[]
     {
         "SetVersion", "SetName", "SetTimestamp", "SetParentVersion",
         "AddTable", "Name", "Schema", "NamingStyle",
@@ -24,7 +25,7 @@ internal static class SnapshotCompiler
         "Collation", "CharacterSet",
         "AddForeignKey", "AddIndex", "CompositeKey",
         "Build", "Parse",
-    };
+    }.ToFrozenSet(StringComparer.Ordinal);
 
     public static SchemaSnapshot? CompileAndBuild(Compilation compilation, int targetVersion)
     {
@@ -127,15 +128,17 @@ internal static class SnapshotCompiler
 
         // Validate that Build() only calls whitelisted builder methods.
         // This prevents arbitrary code execution via crafted snapshot files.
-        var disallowedMethod = FindDisallowedMethodCall(snapshotTree);
-        if (disallowedMethod != null)
+        var disallowed = FindDisallowedCall(snapshotTree);
+        if (disallowed != null)
         {
             throw new InvalidOperationException(
-                $"Snapshot Build() for version {targetVersion} contains a disallowed method call: '{disallowedMethod}'. Aborting.");
+                $"Snapshot Build() for version {targetVersion} contains a disallowed call: '{disallowed}'. Aborting.");
         }
 
-        // 3. Build a new compilation with the snapshot source + required references
-        var references = new List<MetadataReference>(compilation.References);
+        // 3. Build a new compilation with a MINIMAL reference set — deliberately not the user
+        // project's reference graph, so types outside core runtime + the builders cannot
+        // resolve even if a crafted snapshot slips past the syntax whitelist.
+        var references = new List<MetadataReference>();
 
         // Add reference to the Tool's own assembly for shared types (SchemaSnapshotBuilder, etc.)
         var sharedAssembly = typeof(SchemaSnapshotBuilder).Assembly;
@@ -220,7 +223,19 @@ internal static class SnapshotCompiler
                 throw new InvalidOperationException(
                     $"Recompiled snapshot type '{snapshotClassName}' (version {targetVersion}) has no Build() method.");
 
-            if (buildMethodInfo.Invoke(null, null) is not SchemaSnapshot snapshot)
+            object? result;
+            try
+            {
+                result = buildMethodInfo.Invoke(null, null);
+            }
+            catch (TargetInvocationException tie) when (tie.InnerException != null)
+            {
+                throw new InvalidOperationException(
+                    $"Build() on snapshot '{snapshotClassName}' (version {targetVersion}) threw: {tie.InnerException.Message}",
+                    tie.InnerException);
+            }
+
+            if (result is not SchemaSnapshot snapshot)
                 throw new InvalidOperationException(
                     $"Build() on snapshot '{snapshotClassName}' (version {targetVersion}) did not return a SchemaSnapshot.");
 
@@ -233,24 +248,42 @@ internal static class SnapshotCompiler
     }
 
     /// <summary>
-    /// Scans the Build() method body for method invocations outside the whitelist.
-    /// Returns the first disallowed method name, or null if the body is clean.
-    /// Rejects snapshots with arbitrary code (e.g., Process.Start, File.Delete).
+    /// Scans the Build() method body for method invocations outside the whitelist and for
+    /// object creations other than the snapshot builder (arbitrary constructors execute when
+    /// Build() is invoked in-process). Returns a description of the first disallowed call,
+    /// or null if the body is clean.
     /// </summary>
-    internal static string? FindDisallowedMethodCall(SyntaxTree tree)
+    internal static string? FindDisallowedCall(SyntaxTree tree)
     {
         var root = tree.GetRoot();
-        foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
+        foreach (var node in root.DescendantNodes())
         {
-            var methodName = invocation.Expression switch
+            switch (node)
             {
-                MemberAccessExpressionSyntax ma => ma.Name.Identifier.Text,
-                IdentifierNameSyntax id => id.Identifier.Text,
-                _ => null
-            };
+                case InvocationExpressionSyntax invocation:
+                    var methodName = invocation.Expression switch
+                    {
+                        MemberAccessExpressionSyntax ma => ma.Name.Identifier.Text,
+                        IdentifierNameSyntax id => id.Identifier.Text,
+                        _ => null
+                    };
+                    if (methodName != null && !AllowedMethods.Contains(methodName))
+                        return methodName;
+                    break;
 
-            if (methodName != null && !AllowedMethods.Contains(methodName))
-                return methodName;
+                case BaseObjectCreationExpressionSyntax creation:
+                    var typeName = creation is ObjectCreationExpressionSyntax oc
+                        ? oc.Type switch
+                        {
+                            IdentifierNameSyntax id => id.Identifier.Text,
+                            QualifiedNameSyntax qn => qn.Right.Identifier.Text,
+                            _ => null
+                        }
+                        : null; // implicit new() — the generator never emits it
+                    if (typeName != "SchemaSnapshotBuilder")
+                        return $"new {typeName ?? "(unrecognized)"}";
+                    break;
+            }
         }
         return null;
     }
