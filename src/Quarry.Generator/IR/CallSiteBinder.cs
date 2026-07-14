@@ -14,10 +14,12 @@ namespace Quarry.Generators.IR;
 internal static class CallSiteBinder
 {
     /// <summary>
-    /// Test hook: when non-null, Bind() throws for call sites whose MethodName matches,
-    /// simulating an internal binder defect. Set from test code before running the
-    /// generator (same pattern as <see cref="Parsing.ChainAnalyzer.TestCapturedChains"/>)
-    /// to exercise the QRY900 bind-failure reporting path end-to-end.
+    /// Test hook: when non-null, Bind() throws for call sites whose MethodName matches
+    /// ("*" matches every site), simulating an internal binder defect. Set from test
+    /// code before running the generator (same pattern as
+    /// <see cref="Parsing.ChainAnalyzer.TestCapturedChains"/>) to exercise the QRY900
+    /// bind-failure reporting path end-to-end — "*" produces the group-less shape where
+    /// a file has no surviving sites and therefore no FileInterceptorGroup.
     /// </summary>
     [System.ThreadStatic]
     internal static string? TestThrowOnMethodName;
@@ -34,7 +36,7 @@ internal static class CallSiteBinder
     {
         ct.ThrowIfCancellationRequested();
 
-        if (TestThrowOnMethodName != null && TestThrowOnMethodName == raw.MethodName)
+        if (TestThrowOnMethodName != null && (TestThrowOnMethodName == "*" || TestThrowOnMethodName == raw.MethodName))
             throw new System.InvalidOperationException($"Test-forced bind failure for '{raw.MethodName}'");
 
         // Resolve entity from registry with ambiguity detection

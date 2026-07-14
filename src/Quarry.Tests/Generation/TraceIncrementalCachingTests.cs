@@ -141,9 +141,19 @@ public static class Helper
         Assert.That(coldSource, Does.Contain("// [Trace] ChainAnalysis"));
         Assert.That(coldSource, Does.Contain("// [Trace] Assembly"));
 
-        // Simulate the emission node running on a thread that never observed the
-        // orchestrator's ThreadStatic writes (the pre-#311 loss mode). The orchestrator
-        // also clears this state in a finally now, so this is belt and braces.
+        // The discriminating assertion for the #311 lifecycle: the orchestrator now
+        // captures trace lines onto AssembledPlan.TraceLines and clears the
+        // ThreadStatic in a finally, so nothing may linger after a run. The pre-#311
+        // code left the buffer populated for the emission node to read — this
+        // assertion fails on that code.
+        Assert.That(Generators.IR.TraceCapture.IsEmpty, Is.True,
+            "TraceCapture must be empty after a run — trace state may not survive the orchestrator call");
+
+        // Belt and braces for the warm-run check below: even if a future change leaks
+        // state again, the warm run must not depend on it. (Note: the warm-run check
+        // alone would NOT catch a revert to emission-time TraceCapture reads in this
+        // single-threaded driver — the cold run's plan mutation would satisfy it. The
+        // IsEmpty assertion above is what pins the lifecycle.)
         Generators.IR.TraceCapture.Clear();
 
         // Warm run: edit a file with no Quarry call sites. The compilation changes (so

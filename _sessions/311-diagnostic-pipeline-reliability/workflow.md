@@ -5,7 +5,7 @@ platform: github
 base-branch: master
 
 ## State
-phase: IMPLEMENT
+phase: REMEDIATE
 status: active
 issue: #311
 pr:
@@ -32,6 +32,7 @@ Test baseline (2026-07-13): 3388 passed, 0 failed, 0 skipped. No pre-existing fa
 - 2026-07-13 **F2 test**: User chose to SKIP the registry-membership test (source-scan / ctor assert both declined). The loud miss path is the sole guard; issue acceptance criterion 2's test portion is intentionally dropped.
 - 2026-07-13 **F3**: Remove ThreadStatic side-channels. TraceCapture is populated and consumed within the orchestrator (results stored on `AssembledPlan.TraceLines`, already equality-excluded → cached groups keep traces). `ConsumedLambdaInnerSiteIds` returned from `Analyze` instead of ThreadStatic. Drop `CallSiteTranslator.cs:104`'s redundant trace log.
 - 2026-07-13 **F4**: Sweep QRY001/QRY019 text + README + comments to match carrier-only reality; exact wording verified against actual behavior during implementation.
+- 2026-07-14 **REVIEW classification**: 15 findings, user override `F3→C-to-A` — final 11A/3B/0C/1D. All A and B items implemented in REMEDIATE now (including the two formerly-deferred items: QRY001/QRY019 severity resolution and dead TypeMappingRegistry machinery removal). F7 dismissed: QRY900 stack traces are intentional bug-report payload.
 
 ## Working Notes
 - 2026-07-13 DESIGN exploration findings (all verified against source):

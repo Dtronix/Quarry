@@ -155,7 +155,7 @@ Every error channel is a value in the incremental pipeline (#311) — nothing er
 |-------|-------------|---------------|-----------|
 | 3a Bind | `ImmutableArray<BindStageResult>` | `BindStageResult.Failure` (`BindFailure`: file/line/column/message) | An exception produces no `BoundCallSite` to attach an error to, so the failure IS the stage output. Successes filter to Stage 3b; failures branch to a dedicated `Collect()` + report node. Equality includes the failure fields for cache invalidation. |
 | 3b Translate | `TranslatedCallSite` | `TranslatedCallSite.PipelineError` field | Scalar return allows natural error field. Equality includes PipelineError for incremental cache invalidation on error state changes. |
-| 4–5d Chain analysis | (inside orchestrator) | Deferred `DiagnosticInfo` with `InternalError.Id` added to the diagnostics list | ChainAnalyzer catch handlers route analysis exceptions through the same deferred channel as ordinary diagnostics; QRY900 is registered in `s_deferredDescriptors`. Caveat: deferred diagnostics reach the user via file groups, so an error attached to a file with no group is dropped — bind failures (which can zero out a file's sites) use the dedicated node above for exactly this reason. |
+| 4–5d Chain analysis | (inside orchestrator) | Deferred `DiagnosticInfo` with `InternalError.Id` added to the diagnostics list | ChainAnalyzer catch handlers route analysis exceptions through the same deferred channel as ordinary diagnostics; QRY900 is registered in `s_deferredDescriptors`. Deferred diagnostics reach the user via file groups; ones whose file has no group are collected into a synthetic site-less "OrphanDiagnostics" group by `GroupTranslatedIntoFiles` so they still report. Bind failures (which can zero out a file's sites) use the dedicated node above. |
 
 **QRY900 source paths**:
 1. `site.PipelineError != null` on TranslatedCallSite → Translate-stage exceptions (reported in `EmitFileInterceptors()`)
@@ -450,7 +450,7 @@ All pipeline models implement `IEquatable<T>` for incremental caching.
 
 | Code | Severity | Meaning |
 |------|----------|---------|
-| QRY001 | Warning | Query not fully analyzable (non-analyzable receiver/lambda) |
+| QRY001 | Error | Query not fully analyzable (non-analyzable receiver/lambda — site gets no interceptor, call would throw at runtime) |
 | QRY002 | Error | Missing Table property on schema |
 | QRY003 | Error | Invalid column type / no TypeMapping |
 | QRY006 | Error | Unsupported Where operation |
@@ -459,7 +459,7 @@ All pipeline models implement `IEquatable<T>` for incremental caching.
 | QRY011 | Error | Select required before execution |
 | QRY014 | Error | Anonymous type projection not supported |
 | QRY015 | Warning | Ambiguous context resolution |
-| QRY019 | Warning | Clause not translatable |
+| QRY019 | Error | Clause not translatable (clause interceptor skipped, call would throw at runtime) |
 | QRY020 | Error | All() requires predicate |
 | QRY029 | Error | Sql.Raw placeholder mismatch |
 | QRY031 | Error | Unresolvable RawSqlAsync\<T\> generic type parameter |

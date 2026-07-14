@@ -85,7 +85,7 @@ internal sealed class FileEmitter
         IReadOnlyList<TranslatedCallSite> sites,
         IReadOnlyList<AssembledPlan>? chains = null,
         IReadOnlyList<CarrierPlan>? carrierPlans = null,
-        bool emitTraceComments = true)
+        bool emitTraceComments = false)
     {
         _contextClassName = contextClassName;
         _contextNamespace = contextNamespace;
@@ -95,7 +95,9 @@ internal sealed class FileEmitter
         _carrierPlans = carrierPlans;
         // AssembledPlan.TraceLines is populated for every traced chain regardless of
         // the QUARRY_TRACE symbol (the orchestrator has no compilation access), so the
-        // symbol gate is applied here instead of by mutating the cached plan.
+        // symbol gate is applied here instead of by mutating the cached plan. Default
+        // is false (fail safe): only the QuarryGenerator caller, which has the
+        // compilation to check the symbol, opts in.
         _emitTraceComments = emitTraceComments;
     }
 

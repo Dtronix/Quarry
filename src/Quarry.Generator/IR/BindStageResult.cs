@@ -14,12 +14,14 @@ internal sealed class BindStageResult : IEquatable<BindStageResult>
 {
     public BindStageResult(BoundCallSite site)
     {
-        Site = site;
+        // A both-null instance would pass neither downstream filter and vanish from
+        // the pipeline — the exact failure shape this type exists to eliminate.
+        Site = site ?? throw new ArgumentNullException(nameof(site));
     }
 
     public BindStageResult(BindFailure failure)
     {
-        Failure = failure;
+        Failure = failure ?? throw new ArgumentNullException(nameof(failure));
     }
 
     public BoundCallSite? Site { get; }

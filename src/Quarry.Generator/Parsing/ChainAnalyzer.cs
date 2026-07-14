@@ -58,8 +58,11 @@ internal static class ChainAnalyzer
         EntityRegistry registry,
         CancellationToken ct,
         out HashSet<string>? consumedLambdaInnerSiteIds,
-        List<DiagnosticInfo>? diagnostics = null)
+        List<DiagnosticInfo> diagnostics)
     {
+        // diagnostics is required (not optional/nullable): the catch handlers below
+        // route analysis exceptions through it as QRY900 — a null list would be the
+        // last remaining way a ChainAnalyzer exception could vanish without a trace.
         consumedLambdaInnerSiteIds = null;
         // Group sites by ChainId
         var chains = new Dictionary<string, List<TranslatedCallSite>>(StringComparer.Ordinal);
@@ -114,7 +117,7 @@ internal static class ChainAnalyzer
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     var first = opSites.Count > 0 ? opSites[0] : null;
-                    diagnostics?.Add(new DiagnosticInfo(
+                    diagnostics.Add(new DiagnosticInfo(
                         Quarry.Generators.DiagnosticDescriptors.InternalError.Id,
                         first?.Bound.Raw.Location ?? default,
                         $"Operand chain analysis failed: {ex.Message}"));
@@ -206,7 +209,7 @@ internal static class ChainAnalyzer
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 var first = kvp.Value.Count > 0 ? kvp.Value[0] : null;
-                diagnostics?.Add(new DiagnosticInfo(
+                diagnostics.Add(new DiagnosticInfo(
                     Quarry.Generators.DiagnosticDescriptors.InternalError.Id,
                     first?.Bound.Raw.Location ?? default,
                     $"CTE inner chain analysis failed: {ex.Message}"));
@@ -238,7 +241,7 @@ internal static class ChainAnalyzer
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 var first = chainSites.Count > 0 ? chainSites[0] : null;
-                diagnostics?.Add(new DiagnosticInfo(
+                diagnostics.Add(new DiagnosticInfo(
                     Quarry.Generators.DiagnosticDescriptors.InternalError.Id,
                     first?.Bound.Raw.Location ?? default,
                     $"Chain analysis failed: {ex.Message}"));

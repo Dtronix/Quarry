@@ -467,6 +467,7 @@ public Col<Money> Price => Mapped<MoneyMapping>();
 
 | ID | Title |
 |----|-------|
+| QRY001 | Query not fully analyzable (site gets no interceptor; the call would throw at runtime) |
 | QRY002 | Missing `Table` property on schema class |
 | QRY003 | Invalid column type with no TypeMapping |
 | QRY004 | Navigation references unknown entity |
@@ -480,6 +481,7 @@ public Col<Money> Price => Mapped<MoneyMapping>();
 | QRY014 | Anonymous type projection not supported |
 | QRY017 | TypeMapping type mismatch |
 | QRY018 | Duplicate TypeMapping for same type |
+| QRY019 | Clause not translatable at compile time (clause interceptor skipped; the call would throw at runtime) |
 | QRY020 | All() requires a predicate |
 | QRY021 | Subquery entity not found in context |
 | QRY022 | Subquery FK column not found |
@@ -504,12 +506,10 @@ public Col<Money> Price => Mapped<MoneyMapping>();
 
 | ID | Title |
 |----|-------|
-| QRY001 | Query not fully analyzable (calls are not intercepted and throw at runtime) |
 | QRY005 | Unmapped property in Select projection |
 | QRY008 | Potential SQL injection in Sql.Raw |
 | QRY015 | Ambiguous context resolution for entity |
 | QRY016 | Unbound parameter placeholder in generated SQL |
-| QRY019 | Clause not translatable at compile time |
 | QRY023 | Subquery FK-to-PK correlation ambiguous |
 | QRY028 | Redundant unique constraint (column + index) |
 | QRY034 | .Trace() requires QUARRY_TRACE define |

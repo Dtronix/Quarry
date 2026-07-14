@@ -152,8 +152,12 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             .Select(static (pair, ct) =>
             {
                 try { return IR.CallSiteTranslator.Translate(pair.Left, pair.Right, ct); }
-                catch (System.Exception ex)
+                catch (System.Exception ex) when (ex is not System.OperationCanceledException)
                 {
+                    // The OCE filter matters here more than most places: PipelineError
+                    // participates in TranslatedCallSite equality, so a swallowed
+                    // cancellation would become a sticky cached QRY900 that persists
+                    // until this site's inputs change.
                     System.Diagnostics.Debug.WriteLine($"[Quarry] Translate failed: {ex}");
                     return new IR.TranslatedCallSite(pair.Left, pipelineError: $"{ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
                 }
@@ -862,17 +866,26 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     /// </summary>
     private static void ReportDeferredDiagnostic(SourceProductionContext spc, DiagnosticInfo diag, Location location)
     {
-        if (TryGetDeferredDescriptor(diag.DiagnosticId) is { } descriptor)
-        {
-            spc.ReportDiagnostic(Diagnostic.Create(descriptor, location, diag.MessageArgs));
-            return;
-        }
+        var (descriptor, messageArgs) = ResolveDeferredReport(diag);
+        spc.ReportDiagnostic(Diagnostic.Create(descriptor, location, messageArgs));
+    }
 
-        spc.ReportDiagnostic(Diagnostic.Create(
-            DiagnosticDescriptors.InternalError,
-            location,
+    /// <summary>
+    /// Resolves what a deferred diagnostic will report: the registered descriptor with
+    /// the original args, or the QRY900 fallback naming an unregistered ID. Pure —
+    /// internal so the miss path itself is unit-testable without a
+    /// SourceProductionContext.
+    /// </summary>
+    internal static (DiagnosticDescriptor Descriptor, object[] MessageArgs) ResolveDeferredReport(DiagnosticInfo diag)
+    {
+        if (TryGetDeferredDescriptor(diag.DiagnosticId) is { } descriptor)
+            return (descriptor, diag.MessageArgs);
+
+        return (DiagnosticDescriptors.InternalError, new object[]
+        {
             $"Deferred diagnostic ID '{diag.DiagnosticId}' is not registered in s_deferredDescriptors — " +
-            $"the diagnostic would have been silently dropped. Original message args: [{string.Join(", ", diag.MessageArgs)}]"));
+            $"the diagnostic would have been silently dropped. Original message args: [{string.Join(", ", diag.MessageArgs)}]",
+        });
     }
 
     /// <summary>

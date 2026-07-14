@@ -30,4 +30,35 @@ public class DeferredDiagnosticRegistryTests
         // QRY900 itself is registered (asserted above), so that fallback cannot recurse.
         Assert.That(QuarryGenerator.TryGetDeferredDescriptor("QRY999"), Is.Null);
     }
+
+    [Test]
+    public void ResolveDeferredReport_RegisteredId_ReturnsRealDescriptorWithOriginalArgs()
+    {
+        var diag = new Generators.Models.DiagnosticInfo(
+            "QRY063", default, "NavProp", "SomeEntity", "MissingTarget");
+
+        var (descriptor, args) = QuarryGenerator.ResolveDeferredReport(diag);
+
+        Assert.That(descriptor.Id, Is.EqualTo("QRY063"));
+        Assert.That(args, Is.EqualTo(new object[] { "NavProp", "SomeEntity", "MissingTarget" }));
+    }
+
+    [Test]
+    public void ResolveDeferredReport_UnregisteredId_FallsBackToQRY900NamingTheId()
+    {
+        var diag = new Generators.Models.DiagnosticInfo("QRY999", default, "arg1", "arg2");
+
+        var (descriptor, args) = QuarryGenerator.ResolveDeferredReport(diag);
+
+        Assert.That(descriptor.Id, Is.EqualTo("QRY900"),
+            "an unregistered deferred ID must be reported as an internal error, never dropped");
+        Assert.That(args, Has.Length.EqualTo(1));
+        var message = (string)args[0];
+        Assert.That(message, Does.Contain("QRY999"), "the fallback must name the unregistered ID");
+        Assert.That(message, Does.Contain("arg1, arg2"), "the fallback must preserve the original message args");
+        // The composed diagnostic must format without throwing (QRY900's format has one placeholder).
+        var formatted = string.Format(System.Globalization.CultureInfo.InvariantCulture,
+            descriptor.MessageFormat.ToString(), args);
+        Assert.That(formatted, Does.Contain("QRY999"));
+    }
 }

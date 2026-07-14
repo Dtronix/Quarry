@@ -116,4 +116,37 @@ public class Svc
         Assert.That(diags.Where(d => d.Id == "QRY900"), Is.Empty,
             "a clean run must not report QRY900");
     }
+
+    [Test]
+    public void AllSitesFailBind_GroupLessFile_StillSurfacesQRY900()
+    {
+        // The group-less hazard: when EVERY site in a file fails bind, no
+        // TranslatedCallSite exists for the file, so no FileInterceptorGroup is created
+        // and nothing group-driven can report. The dedicated bind-failure output node
+        // must still surface QRY900 — the pre-#311 ThreadStatic bag could not (its only
+        // drain ran inside group emission).
+        var compilation = CreateCompilation(SharedSchema + QueryCode);
+        var generator = new QuarryGenerator();
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(new[] { generator.AsSourceGenerator() });
+        try
+        {
+            Generators.IR.CallSiteBinder.TestThrowOnMethodName = "*";
+            driver = driver.RunGeneratorsAndUpdateCompilation(compilation, out _, out var diags);
+
+            var qry900 = diags.Where(d => d.Id == "QRY900").ToList();
+            Assert.That(qry900, Is.Not.Empty,
+                "bind failures must surface even when the file produces no interceptor group");
+
+            // Prove the run really was group-less: no interceptor file was generated.
+            var interceptorTrees = driver.GetRunResult().GeneratedTrees
+                .Where(t => t.FilePath.Contains(".Interceptors."))
+                .ToList();
+            Assert.That(interceptorTrees, Is.Empty,
+                "with every site failing bind, no interceptor group (and no file) should exist");
+        }
+        finally
+        {
+            Generators.IR.CallSiteBinder.TestThrowOnMethodName = null;
+        }
+    }
 }

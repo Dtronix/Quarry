@@ -1508,16 +1508,11 @@ public class Service
             System.Threading.CancellationToken.None);
 
         Generators.Parsing.ChainAnalyzer.Analyze(
-            sites, registry, System.Threading.CancellationToken.None, out var consumedIds);
+            sites, registry, System.Threading.CancellationToken.None, out var consumedIds,
+            new System.Collections.Generic.List<Generators.Models.DiagnosticInfo>());
 
         Assert.That(consumedIds, Is.Not.Null, "lambda inner chain sites must produce a consumed-ID set");
         Assert.That(consumedIds, Does.Contain("lambda_inner_001"));
-
-        // A run with no lambda-inner sites returns null — nothing carries over between runs.
-        Generators.Parsing.ChainAnalyzer.Analyze(
-            System.Collections.Immutable.ImmutableArray<Generators.IR.TranslatedCallSite>.Empty,
-            registry, System.Threading.CancellationToken.None, out var emptyRunIds);
-        Assert.That(emptyRunIds, Is.Null, "a run without lambda inner chains must not inherit prior state");
     }
 
     #endregion

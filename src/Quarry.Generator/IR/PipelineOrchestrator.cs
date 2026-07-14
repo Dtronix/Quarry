@@ -514,6 +514,36 @@ internal static class PipelineOrchestrator
                 fileCarrierPlans));
         }
 
+        // Deferred diagnostics reach the user through file groups, so a diagnostic
+        // whose file produced no group — every site context-less or consumed as a
+        // lambda-inner, or a location with no file path at all — would silently
+        // vanish (#311 F4). Collect the unclaimed ones into a synthetic site-less
+        // group: EmitFileInterceptors reports a group's diagnostics before it checks
+        // for sites, and adds no source for an empty group.
+        var claimedFiles = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var group in fileGroups)
+            claimedFiles.Add(group.Key.FilePath);
+
+        List<DiagnosticInfo>? orphanDiagnostics = null;
+        foreach (var diag in diagnostics)
+        {
+            if (diag.Location.FilePath == null || !claimedFiles.Contains(diag.Location.FilePath))
+                (orphanDiagnostics ??= new List<DiagnosticInfo>()).Add(diag);
+        }
+        if (orphanDiagnostics != null)
+        {
+            result.Add(new FileInterceptorGroup(
+                contextClassName: string.Empty,
+                contextNamespace: null,
+                sourceFilePath: string.Empty,
+                fileTag: "OrphanDiagnostics",
+                sites: new List<TranslatedCallSite>(),
+                assembledPlans: new List<AssembledPlan>(),
+                chainMemberSites: new List<TranslatedCallSite>(),
+                diagnostics: orphanDiagnostics,
+                carrierPlans: new List<CarrierPlan>()));
+        }
+
         return result.ToImmutable();
     }
 
