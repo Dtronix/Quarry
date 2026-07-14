@@ -3,7 +3,7 @@
 platform: github
 base-branch: master
 ## State
-phase: IMPLEMENT
+phase: REVIEW
 status: active
 issue: #324
 pr:
@@ -51,3 +51,4 @@ Full suite green: Quarry.Tests 3388, Quarry.Migration.Tests 201, Quarry.Analyzer
 |------|--------|---------|
 | 2026-07-14 | INTAKE→DESIGN | Loaded issue #324, created worktree/branch, clean test baseline. |
 | 2026-07-14 | DESIGN→PLAN→IMPLEMENT | Verified full migration pipeline + 3 schema readers; fast-path design+plan approved (all 4 steps). |
+| 2026-07-14 | IMPLEMENT→REVIEW | All 4 steps committed (f594cc1, 41c6659, 72d6865, 6ac9148); full suite green (3397/201/146). |
