@@ -79,7 +79,8 @@ internal static class MigrationCompiler
         }
 
         if (upgradeMethod == null || upgradeTree == null)
-            return null;
+            throw new InvalidOperationException(
+                $"Migration class '{migrationClassName}' (version {targetVersion}) was found but no Upgrade() method could be located.");
 
         // 3. Rebuild minimal source: usings + namespace + class with Upgrade() + stub hooks
         var root = upgradeTree.GetRoot();
@@ -159,9 +160,13 @@ internal static class MigrationCompiler
 
         if (!emitResult.Success)
         {
-            foreach (var diag in emitResult.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error))
-                Console.Error.WriteLine($"Migration compilation error: {diag.GetMessage()}");
-            return null;
+            var errors = string.Join(
+                Environment.NewLine,
+                emitResult.Diagnostics
+                    .Where(d => d.Severity == DiagnosticSeverity.Error)
+                    .Select(d => $"  {d.GetMessage()}"));
+            throw new InvalidOperationException(
+                $"Migration {targetVersion} failed to recompile:{Environment.NewLine}{errors}");
         }
 
         ms.Seek(0, SeekOrigin.Begin);
@@ -172,13 +177,26 @@ internal static class MigrationCompiler
         {
             var assembly = context.LoadFromStream(ms);
             var migrationType = assembly.GetTypes().FirstOrDefault(t => t.Name == migrationClassName);
-            if (migrationType == null) return null;
+            if (migrationType == null)
+                throw new InvalidOperationException(
+                    $"Recompiled migration assembly for version {targetVersion} does not contain type '{migrationClassName}'.");
 
             var upgradeMethodInfo = migrationType.GetMethod("Upgrade", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
-            if (upgradeMethodInfo == null) return null;
+            if (upgradeMethodInfo == null)
+                throw new InvalidOperationException(
+                    $"Recompiled migration type '{migrationClassName}' (version {targetVersion}) has no Upgrade() method.");
 
             var builder = new Quarry.Migration.MigrationBuilder();
-            upgradeMethodInfo.Invoke(null, new object[] { builder });
+            try
+            {
+                upgradeMethodInfo.Invoke(null, new object[] { builder });
+            }
+            catch (TargetInvocationException tie) when (tie.InnerException != null)
+            {
+                throw new InvalidOperationException(
+                    $"Upgrade() on migration '{migrationClassName}' (version {targetVersion}) threw: {tie.InnerException.Message}",
+                    tie.InnerException);
+            }
 
             return builder.BuildSql(dialect);
         }

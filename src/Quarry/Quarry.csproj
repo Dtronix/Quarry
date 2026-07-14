@@ -43,6 +43,26 @@
     <Compile Remove="..\Quarry.Shared\Sql\Parser\**\*.cs" />
   </ItemGroup>
 
+  <!-- Migration model types are single-sourced from Quarry.Shared; QUARRY_RUNTIME gates them
+       into the public Quarry.Migration namespace here (generator/tool compile the same files
+       as Quarry.Shared.Migration). See #313. -->
+  <PropertyGroup>
+    <DefineConstants>$(DefineConstants);QUARRY_RUNTIME</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\Quarry.Shared\Migration\Models\ColumnDef.cs" LinkBase="Shared" />
+    <Compile Include="..\Quarry.Shared\Migration\Models\ColumnKind.cs" LinkBase="Shared" />
+    <Compile Include="..\Quarry.Shared\Migration\Models\ForeignKeyAction.cs" LinkBase="Shared" />
+    <Compile Include="..\Quarry.Shared\Migration\Models\ForeignKeyDef.cs" LinkBase="Shared" />
+    <Compile Include="..\Quarry.Shared\Migration\Models\IndexDef.cs" LinkBase="Shared" />
+    <Compile Include="..\Quarry.Shared\Migration\Models\NamingStyleKind.cs" LinkBase="Shared" />
+    <Compile Include="..\Quarry.Shared\Migration\Models\SchemaSnapshot.cs" LinkBase="Shared" />
+    <Compile Include="..\Quarry.Shared\Migration\Models\TableDef.cs" LinkBase="Shared" />
+    <Compile Include="..\Quarry.Shared\Migration\Builders\ColumnDefBuilder.cs" LinkBase="Shared" />
+    <Compile Include="..\Quarry.Shared\Migration\Builders\TableDefBuilder.cs" LinkBase="Shared" />
+    <Compile Include="..\Quarry.Shared\Migration\Builders\SchemaSnapshotBuilder.cs" LinkBase="Shared" />
+  </ItemGroup>
+
   <ItemGroup Condition="'$(BuildingDocs)' != 'true'">
     <ProjectReference Include="../Quarry.Generator/Quarry.Generator.csproj"
                       IncludeAssets="analyzers"

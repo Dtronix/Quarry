@@ -224,9 +224,9 @@ static class MigrationCodeGenerator
                 sb.Append("\", \"").Append(EscapeString(fk.ReferencedTable));
                 sb.Append("\", \"").Append(EscapeString(fk.ReferencedColumn)).Append("\"");
                 if (fk.OnDelete != ForeignKeyAction.NoAction)
-                    sb.Append(", ForeignKeyAction.").Append(fk.OnDelete);
+                    sb.Append(", onDelete: ForeignKeyAction.").Append(fk.OnDelete);
                 if (fk.OnUpdate != ForeignKeyAction.NoAction)
-                    sb.Append(", ForeignKeyAction.").Append(fk.OnUpdate);
+                    sb.Append(", onUpdate: ForeignKeyAction.").Append(fk.OnUpdate);
                 sb.AppendLine(");");
                 break;
 

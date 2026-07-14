@@ -510,7 +510,7 @@ QRY073 was introduced then retired in v0.3.0 when cross-entity set operations be
 |---------|--------|------|
 | `Quarry.Generator` | netstandard2.0 | Roslyn source generator. Compile-time analysis and code generation. |
 | `Quarry` | net10.0 | Runtime library. QuarryContext, IEntityAccessor<T>, QueryBuilder<T>, execution, type mappings. |
-| `Quarry.Shared` | shared projitems | Shared code compiled into both Generator and Runtime. Contains Migration/ (schema diffing, builders, DDL), Scaffold/ (database introspection for 4 dialects), and Sql/ (dialect enum, formatting). Generator excludes Migration/ and Scaffold/ directories. |
+| `Quarry.Shared` | shared projitems | Shared code compiled into Generator, Runtime, and Tool. Contains Migration/ (schema models + builders, diffing, snapshot codegen), Scaffold/ (database introspection for 4 dialects), and Sql/ (dialect enum, formatting). Generator excludes only Scaffold/. The migration model types (Migration/Models + Migration/Builders) are single-sourced: `QUARRY_RUNTIME` (defined by Quarry.csproj) gates them into the public `Quarry.Migration` namespace, while Generator (internal) and Tool (public) compile them as `Quarry.Shared.Migration` — never edit one namespace's copy, there is only one file (#313). |
 
 ## Testing
 

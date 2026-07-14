@@ -1,4 +1,8 @@
+#if QUARRY_RUNTIME
+namespace Quarry.Migration;
+#else
 namespace Quarry.Shared.Migration;
+#endif
 
 /// <summary>
 /// Represents the naming convention for column name mapping.

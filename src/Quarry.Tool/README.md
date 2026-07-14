@@ -994,7 +994,7 @@ src/Quarry.Shared/Migration/    # Shared code (linked into Tool project)
     TableDefBuilder.cs          # Fluent builder for TableDef
     ColumnDefBuilder.cs         # Fluent builder for ColumnDef
 
-src/Quarry/Migration/           # Runtime types (referenced by generated code)
+src/Quarry/Migration/           # Runtime-only types (referenced by generated code)
   MigrationBuilder.cs           # Fluent DDL operation builder
   MigrationRunner.cs            # Runtime migration executor with hooks, checksums, recovery
   MigrationOptions.cs           # Runner configuration (timeouts, hooks, large table warnings)
@@ -1006,17 +1006,12 @@ src/Quarry/Migration/           # Runtime types (referenced by generated code)
   SqlTypeMapper.cs              # CLR type to SQL type mapping per dialect
   TableBuilder.cs               # Table definition within CreateTable
   ColumnBuilder.cs              # Column configuration with collation support
-  SchemaSnapshot.cs             # Public snapshot type for generated code
-  SchemaSnapshotBuilder.cs      # Public builder for generated snapshot code
-  TableDef.cs                   # Public table definition for generated code
-  TableDefBuilder.cs            # Public builder for generated snapshot code
-  ColumnDef.cs                  # Public column definition for generated code
-  ColumnDefBuilder.cs           # Public builder for generated snapshot code
-  ForeignKeyDef.cs              # Public FK definition for generated code
-  IndexDef.cs                   # Public index definition for generated code
-  ColumnKind.cs                 # Public enum for generated code
-  ForeignKeyAction.cs           # Public enum for generated code
-  NamingStyleKind.cs            # Public enum for generated code
+
+  # The schema model types (SchemaSnapshot, TableDef, ColumnDef, ForeignKeyDef, IndexDef,
+  # ColumnKind, ForeignKeyAction, NamingStyleKind + their builders) are single-sourced from
+  # src/Quarry.Shared/Migration/Models + Builders: QUARRY_RUNTIME gates them into the public
+  # Quarry.Migration namespace for Quarry.dll, while the generator (internal) and this tool
+  # (public) compile the same files as Quarry.Shared.Migration. See issue #313.
 ```
 
 ## Limitations

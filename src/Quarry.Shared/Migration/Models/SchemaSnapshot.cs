@@ -1,7 +1,11 @@
 using System;
 using System.Collections.Generic;
 
+#if QUARRY_RUNTIME
+namespace Quarry.Migration;
+#else
 namespace Quarry.Shared.Migration;
+#endif
 
 /// <summary>
 /// A complete point-in-time capture of all tables in the schema.

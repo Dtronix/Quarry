@@ -1,7 +1,11 @@
 using System;
 using System.Collections.Generic;
 
+#if QUARRY_RUNTIME
+namespace Quarry.Migration;
+#else
 namespace Quarry.Shared.Migration;
+#endif
 
 /// <summary>
 /// Aggregates a complete table definition for snapshot comparison.

@@ -27,9 +27,13 @@
     <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.11.0" PrivateAssets="all" />
   </ItemGroup>
 
-  <!-- Allow test projects to access internal types -->
+  <!-- Allow test projects to access internal types.
+       QuarrySnapshotCompilation is the in-memory assembly SnapshotCompiler emits when
+       recompiling snapshots; the IVT lets Quarry.Tests exercise that path end-to-end
+       (in the tool the builders are public, so no IVT is needed in production). -->
   <ItemGroup>
     <InternalsVisibleTo Include="Quarry.Tests" />
+    <InternalsVisibleTo Include="QuarrySnapshotCompilation" />
   </ItemGroup>
 
   <!-- Ship build props so CompilerVisibleProperty items are registered for consumers -->

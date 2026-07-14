@@ -480,13 +480,13 @@ internal static class MigrateCommands
         {
             sb.AppendLine($"-- Migration {m.Version}: {m.Name}");
 
-            var sql = MigrationCompiler.CompileAndBuildSql(compilation, m.Version, sqlDialect);
-            if (sql == null)
-            {
-                sb.AppendLine($"-- ERROR: Could not compile migration {m.Version}");
-                Console.Error.WriteLine($"WARNING: Could not compile migration {m.Version}: {m.Name}");
-            }
-            else if (!string.IsNullOrWhiteSpace(sql))
+            // FindMigrations discovered this version, so a not-found result is an inconsistency —
+            // an incomplete script must never be emitted (#313).
+            var sql = MigrationCompiler.CompileAndBuildSql(compilation, m.Version, sqlDialect)
+                ?? throw new InvalidOperationException(
+                    $"Migration {m.Version} ({m.Name}) was discovered but could not be compiled. Aborting script generation.");
+
+            if (!string.IsNullOrWhiteSpace(sql))
             {
                 sb.AppendLine(sql);
             }
@@ -599,11 +599,6 @@ internal static class MigrateCommands
 
         // Build the latest snapshot — this represents the full schema state
         var latestSnapshot = FindAndBuildSnapshot(compilation, latestVersion);
-        if (latestSnapshot == null)
-        {
-            Console.Error.WriteLine($"Failed to build snapshot for version {latestVersion}.");
-            return;
-        }
 
         var squashedFromVersion = migrations[^1].Version;
 
@@ -773,9 +768,13 @@ internal static class MigrateCommands
         return maxVersion;
     }
 
-    private static SchemaSnapshot? FindAndBuildSnapshot(Microsoft.CodeAnalysis.Compilation compilation, int version)
+    internal static SchemaSnapshot FindAndBuildSnapshot(Microsoft.CodeAnalysis.Compilation compilation, int version)
     {
-        return SnapshotCompiler.CompileAndBuild(compilation, version);
+        // Callers only invoke this for versions discovered by FindLatestSnapshotVersion, so a
+        // not-found result here is an inconsistency — never a valid empty baseline to diff against.
+        return SnapshotCompiler.CompileAndBuild(compilation, version)
+            ?? throw new InvalidOperationException(
+                $"Snapshot version {version} was discovered in the project but could not be built. Aborting.");
     }
 
     private static string GuessNamespace(string csprojPath, string outputDir)
