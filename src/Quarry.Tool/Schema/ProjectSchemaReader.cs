@@ -110,23 +110,18 @@ internal sealed class ProjectSchemaReader
                             characterSet = literal2.Token.ValueText;
                     }
                 }
-                else if (prop.Name == "NamingStyle")
+                else if (prop.Name == "NamingStyle" && !prop.IsStatic && prop.IsOverride)
                 {
-                    // Mirror the runtime SchemaParser: the real API is the overridable
-                    // Schema.NamingStyle property, e.g. `protected override NamingStyle NamingStyle => NamingStyle.SnakeCase;`.
+                    // Mirror the runtime SchemaParser.ExtractNamingStyle EXACTLY: only an override of
+                    // the virtual Schema.NamingStyle property, expressed as an expression body with a
+                    // member access (`protected override NamingStyle NamingStyle => NamingStyle.SnakeCase;`).
+                    // Honoring any looser form here than the runtime does would let the migration and the
+                    // runtime disagree on column names again (the #324 bug, inverted).
                     var syntax = prop.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax();
-                    if (syntax is PropertyDeclarationSyntax propSyntax)
+                    if (syntax is PropertyDeclarationSyntax propSyntax
+                        && propSyntax.ExpressionBody?.Expression is MemberAccessExpressionSyntax memberAccess)
                     {
-                        var expr = propSyntax.Initializer?.Value ?? propSyntax.ExpressionBody?.Expression;
-                        if (expr == null && propSyntax.AccessorList != null)
-                        {
-                            var getter = propSyntax.AccessorList.Accessors
-                                .FirstOrDefault(a => a.IsKind(SyntaxKind.GetAccessorDeclaration));
-                            expr = getter?.ExpressionBody?.Expression;
-                        }
-
-                        var valueName = (expr as MemberAccessExpressionSyntax)?.Name.Identifier.Text;
-                        namingStyle = valueName switch
+                        namingStyle = memberAccess.Name.Identifier.Text switch
                         {
                             "SnakeCase" => NamingStyleKind.SnakeCase,
                             "CamelCase" => NamingStyleKind.CamelCase,

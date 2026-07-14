@@ -3,7 +3,7 @@
 platform: github
 base-branch: master
 ## State
-phase: REVIEW
+phase: REMEDIATE
 status: active
 issue: #324
 pr:
@@ -45,6 +45,8 @@ Full suite green: Quarry.Tests 3388, Quarry.Migration.Tests 201, Quarry.Analyzer
 - **3 masking tests**, not 2: `ProjectSchemaReaderIndexTests.cs` lines 90, 377, 397 declare fictional `public NamingStyle Naming => …`. `SchemaTests.cs:30` already uses the real `protected override NamingStyle NamingStyle =>` (tests runtime `Schema` property — unaffected).
 - **MapTo API forms** (verified): `Schema.MapTo<T>(string)` standalone (`Col<string> X => MapTo<string>("x")`), and `.MapTo(string)` on `ColumnBuilder<T>`/`RefBuilder` chained (`… .Mapped<…>().MapTo("x")`). AccountSchema.CreditLimit uses the chained form.
 - **Round-trip is consistent** either way (with/without MappedName), but MappedName is populated per Decision above.
+- **Step 4 sample-compilation decision (F1)**: the real `UserSchema.cs` drags in the whole sample graph (OrderSchema, UserAddressSchema, AddressSchema, `HasMany`/`HasManyThrough`), so the E2E guard compiles the **real** `AccountSchema.cs` + real `Money.cs` (loaded via `[CallerFilePath]` from `../Samples`) with a **minimal `UserSchema` stub** (just `Table` + `Key<int> UserId`). AccountSchema itself — the drift-guard target — stays verbatim.
+- **REVIEW remediation (F2/F7)**: the first NamingStyle fix was *more* permissive than the runtime (read initializer + getter-arrow, no override guard). That is itself a divergence bug (migration would style names the runtime leaves Exact). Tightened to mirror `SchemaParser.ExtractNamingStyle` exactly: `!IsStatic && IsOverride` + expression-body-with-member-access only. F5 tests lock this parity in.
 ## Suspend State
 ## Session Log
 | Date | Phases | Summary |

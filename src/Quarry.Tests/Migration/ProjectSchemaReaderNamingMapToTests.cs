@@ -261,6 +261,93 @@ public class UserSchema : Schema
         Assert.That(Column(table, "Email").MappedName, Is.Null);
     }
 
+    [Test]
+    public void NamingStyle_SnakeCase_MigrationCodeUsesStyledColumnNames()
+    {
+        // Symmetry with the MapTo end-to-end guard: drive a snake_case schema through the DDL-bound
+        // MigrationCodeGenerator (which emits col.Name) and confirm the styled physical name lands there.
+        var source = @"
+using Quarry;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    protected override NamingStyle NamingStyle => NamingStyle.SnakeCase;
+    public Key<int> UserId { get; }
+    public Col<string> UserName { get; }
+}";
+        var snapshot = ExtractSnapshot(source, 1);
+        var steps = SchemaDiffer.Diff(null, snapshot);
+        var migration = MigrationCodeGenerator.GenerateMigrationClass(
+            1, "UsersInit", steps, null, snapshot, "Test");
+
+        Assert.That(migration, Does.Contain("\"user_name\""));
+        Assert.That(migration, Does.Not.Contain("\"UserName\""));
+    }
+
+    [Test]
+    public void NamingStyle_GetterArrowBody_IgnoredExactly_LikeRuntime()
+    {
+        // The runtime SchemaParser honors ONLY an expression-bodied override; a getter-arrow body
+        // yields Exact. The tool must match, or the migration would style names the runtime does not.
+        var source = @"
+using Quarry;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    protected override NamingStyle NamingStyle { get => NamingStyle.SnakeCase; }
+    public Key<int> UserId { get; }
+    public Col<string> UserName { get; }
+}";
+        var table = ExtractSingleTable(source);
+
+        Assert.That(table.NamingStyle, Is.EqualTo(NamingStyleKind.Exact));
+        Assert.That(table.Columns.Any(c => c.Name == "user_name"), Is.False);
+    }
+
+    [Test]
+    public void NamingStyle_NonOverrideProperty_Ignored_LikeRuntime()
+    {
+        // A same-named property that is not an override must not be treated as the naming style
+        // (the runtime requires IsOverride).
+        var source = @"
+using Quarry;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public new NamingStyle NamingStyle => NamingStyle.SnakeCase;
+    public Key<int> UserId { get; }
+    public Col<string> UserName { get; }
+}";
+        var table = ExtractSingleTable(source);
+
+        Assert.That(table.NamingStyle, Is.EqualTo(NamingStyleKind.Exact));
+        Assert.That(table.Columns.Any(c => c.Name == "user_name"), Is.False);
+    }
+
+    [Test]
+    public void MapTo_NonLiteralArgument_NotExtracted_LikeRuntime()
+    {
+        // Only string literals are extracted (matching runtime); a non-literal MapTo argument leaves
+        // the column on its property/styled name, so tool and runtime still agree.
+        var source = @"
+using Quarry;
+
+public class UserSchema : Schema
+{
+    private const string ColName = ""user_name"";
+    public static string Table => ""users"";
+    public Key<int> UserId { get; }
+    public Col<string> UserName => MapTo<string>(ColName);
+}";
+        var table = ExtractSingleTable(source);
+
+        Assert.That(Column(table, "UserName").MappedName, Is.Null);
+        Assert.That(table.Columns.Any(c => c.Name == "user_name"), Is.False);
+    }
+
     // Loads a committed sample source file (sibling ../Samples of this test file) so the guard
     // tracks the REAL AccountSchema, not a copy that could silently drift.
     private static string ReadSampleSource(string fileName, [CallerFilePath] string thisFilePath = "")
