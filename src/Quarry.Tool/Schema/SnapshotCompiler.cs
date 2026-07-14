@@ -20,7 +20,8 @@ internal static class SnapshotCompiler
         "AddTable", "Name", "Schema", "NamingStyle",
         "AddColumn", "ClrType", "PrimaryKey", "ForeignKey",
         "Nullable", "Identity", "ClientGenerated", "Computed",
-        "Length", "Precision", "Default", "HasDefault", "MapTo", "CustomTypeMapping", "NotNull",
+        "Length", "Precision", "DefaultValue", "HasDefault", "MapTo", "CustomTypeMapping", "NotNull",
+        "Collation", "CharacterSet",
         "AddForeignKey", "AddIndex", "CompositeKey",
         "Build", "Parse",
     };
