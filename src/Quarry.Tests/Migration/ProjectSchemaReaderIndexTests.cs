@@ -87,7 +87,7 @@ using Quarry;
 public class UserSchema : Schema
 {
     public static string Table => ""users"";
-    public NamingStyle Naming => NamingStyle.SnakeCase;
+    protected override NamingStyle NamingStyle => NamingStyle.SnakeCase;
     public Key<int> UserId { get; }
     public Col<string> UserName { get; }
 }";
@@ -374,7 +374,7 @@ using Quarry;
 public class UserSchema : Schema
 {
     public static string Table => ""users"";
-    public NamingStyle Naming => NamingStyle.SnakeCase;
+    protected override NamingStyle NamingStyle => NamingStyle.SnakeCase;
     public Key<int> UserId { get; }
     public Col<string> UserName { get; }
 
@@ -394,7 +394,7 @@ using Quarry;
 public class UserSchema : Schema
 {
     public static string Table => ""users"";
-    public NamingStyle Naming => NamingStyle.SnakeCase;
+    protected override NamingStyle NamingStyle => NamingStyle.SnakeCase;
     public Key<int> UserId { get; }
     public Col<string> Email { get; }
     public Col<bool> IsActive { get; }
