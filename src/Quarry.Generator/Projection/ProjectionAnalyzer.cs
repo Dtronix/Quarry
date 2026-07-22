@@ -23,8 +23,9 @@ internal static class ProjectionAnalyzer
 {
     /// <summary>
     /// Thread-static accumulator for Sql.Raw template validation errors encountered during
-    /// projection analysis. Mirrors the <see cref="PipelineErrorBag"/> pattern: the incremental
-    /// pipeline is single-threaded per compilation, so thread-static storage is safe.
+    /// projection analysis. Unlike the removed PipelineErrorBag side-channel (#311), this
+    /// state never crosses a pipeline-node boundary: it is drained at the same public entry
+    /// point that populated it, on the same thread, within a single transform call.
     ///
     /// Projection-path Sql.Raw validation failures surface here because
     /// <see cref="BuildSqlRawInfo"/> is reached via a deep chain of private static helpers that
@@ -3027,7 +3028,8 @@ internal static class ProjectionAnalyzer
     /// Resolves a scalar (non-column) argument expression to its SQL representation.
     /// For compile-time constants: returns the value formatted as a SQL literal.
     /// For runtime variables: creates a projection parameter with a placeholder.
-    /// Returns null if the expression cannot be resolved (triggers runtime fallback).
+    /// Returns null if the expression cannot be resolved (the projection fails to
+    /// resolve and the chain degrades to RuntimeBuild → QRY032 compile error).
     /// </summary>
     private static string? ResolveScalarArgSql(
         ExpressionSyntax expr,

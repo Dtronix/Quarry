@@ -1464,12 +1464,55 @@ public class Service
             System.Threading.CancellationToken.None);
 
         var diagnostics = new System.Collections.Generic.List<Generators.Models.DiagnosticInfo>();
-        var chains = Generators.Parsing.ChainAnalyzer.Analyze(sites, registry, System.Threading.CancellationToken.None, diagnostics);
+        var chains = Generators.Parsing.ChainAnalyzer.Analyze(sites, registry, System.Threading.CancellationToken.None, out _, diagnostics);
 
         Assert.That(chains, Has.Count.EqualTo(0), "Chain with no terminals should not produce an analyzed chain");
         var qry036 = diagnostics.Where(d => d.DiagnosticId == "QRY036").ToList();
         Assert.That(qry036, Has.Count.EqualTo(1), "Should emit QRY036 for Prepare with no terminals");
         Assert.That(qry036[0].MessageArgs[0], Does.Contain("Test.cs"));
+    }
+
+    [Test]
+    public void ChainAnalyzer_LambdaInnerSites_ReturnedInConsumedSet()
+    {
+        // #311: the consumed-lambda-inner site set is returned from Analyze instead of
+        // being parked in a [ThreadStatic] the orchestrator had to consume-then-clear —
+        // a cancellation between populate and clear used to leak the set into the NEXT
+        // run's site filter. Directly assert the functional contract: a site whose
+        // ChainId carries the :lambda-inner: marker comes back in the out set.
+        var innerSiteRaw = new Generators.IR.RawCallSite(
+            methodName: "Where",
+            filePath: "Test.cs",
+            line: 20, column: 30,
+            uniqueId: "lambda_inner_001",
+            kind: Generators.Models.InterceptorKind.Where,
+            builderKind: Generators.Models.BuilderKind.Query,
+            entityTypeName: "TestApp.User",
+            resultTypeName: null,
+            isAnalyzable: false,
+            nonAnalyzableReason: "lambda parameter receiver",
+            interceptableLocationData: "fake",
+            interceptableLocationVersion: 1,
+            location: new Generators.Models.DiagnosticLocation("Test.cs", 20, 30, default),
+            chainId: "Test.cs:200:q:lambda-inner:456");
+
+        var innerSiteBound = new Generators.IR.BoundCallSite(
+            innerSiteRaw, "TestDbContext", "TestApp",
+            new Generators.Sql.SqlDialectConfig(Generators.Sql.SqlDialect.SQLite), "users", null,
+            Generators.IR.EntityRef.Empty("TestApp.User"));
+
+        var sites = System.Collections.Immutable.ImmutableArray.Create(
+            new Generators.IR.TranslatedCallSite(innerSiteBound));
+        var registry = Generators.IR.EntityRegistry.Build(
+            System.Collections.Immutable.ImmutableArray<Generators.Models.ContextInfo>.Empty,
+            System.Threading.CancellationToken.None);
+
+        Generators.Parsing.ChainAnalyzer.Analyze(
+            sites, registry, System.Threading.CancellationToken.None, out var consumedIds,
+            new System.Collections.Generic.List<Generators.Models.DiagnosticInfo>());
+
+        Assert.That(consumedIds, Is.Not.Null, "lambda inner chain sites must produce a consumed-ID set");
+        Assert.That(consumedIds, Does.Contain("lambda_inner_001"));
     }
 
     #endregion

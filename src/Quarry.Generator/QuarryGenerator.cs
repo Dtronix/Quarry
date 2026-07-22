@@ -102,18 +102,47 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 DisplayClassEnricher.EnrichAll(data.Left.Left, data.Left.Right, data.Right, ct));
 
         // === Stage 3: Per-Site Binding (individually cached) ===
-        var boundCallSites = enrichedCallSites
+        // Bind exceptions produce a BindFailure value instead of vanishing: failures
+        // flow to their own report node below, so the diagnostic survives incremental
+        // caching, thread switches, and files whose only site failed to bind.
+        var bindResults = enrichedCallSites
             .Combine(entityRegistry)
             .SelectMany(static (pair, ct) =>
             {
-                try { return IR.CallSiteBinder.Bind(pair.Left, pair.Right, ct); }
-                catch (System.Exception ex)
+                try
+                {
+                    var sites = IR.CallSiteBinder.Bind(pair.Left, pair.Right, ct);
+                    var results = ImmutableArray.CreateBuilder<IR.BindStageResult>(sites.Length);
+                    foreach (var site in sites)
+                        results.Add(new IR.BindStageResult(site));
+                    return results.MoveToImmutable();
+                }
+                catch (System.Exception ex) when (ex is not System.OperationCanceledException)
                 {
                     System.Diagnostics.Debug.WriteLine($"[Quarry] Bind failed: {ex}");
                     var raw = pair.Left;
-                    IR.PipelineErrorBag.Report(raw.FilePath, raw.Line, raw.Column,
-                        $"Bind: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
-                    return ImmutableArray<IR.BoundCallSite>.Empty;
+                    return ImmutableArray.Create(new IR.BindStageResult(new IR.BindFailure(
+                        raw.FilePath, raw.Line, raw.Column,
+                        $"Bind: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}")));
+                }
+            });
+
+        var boundCallSites = bindResults
+            .Where(static r => r.Site != null)
+            .Select(static (r, _) => r.Site!);
+
+        // Bind-failure report node: build-time only, like all interceptor diagnostics.
+        context.RegisterImplementationSourceOutput(
+            bindResults.Where(static r => r.Failure != null).Collect(),
+            static (spc, failures) =>
+            {
+                foreach (var result in failures)
+                {
+                    var f = result.Failure!;
+                    spc.ReportDiagnostic(Diagnostic.Create(
+                        DiagnosticDescriptors.InternalError,
+                        CreateLineLocation(f.FilePath, f.Line, f.Column),
+                        f.Message));
                 }
             });
 
@@ -123,8 +152,12 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             .Select(static (pair, ct) =>
             {
                 try { return IR.CallSiteTranslator.Translate(pair.Left, pair.Right, ct); }
-                catch (System.Exception ex)
+                catch (System.Exception ex) when (ex is not System.OperationCanceledException)
                 {
+                    // The OCE filter matters here more than most places: PipelineError
+                    // participates in TranslatedCallSite equality, so a swallowed
+                    // cancellation would become a sticky cached QRY900 that persists
+                    // until this site's inputs change.
                     System.Diagnostics.Debug.WriteLine($"[Quarry] Translate failed: {ex}");
                     return new IR.TranslatedCallSite(pair.Left, pipelineError: $"{ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
                 }
@@ -539,21 +572,9 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             }
         }
 
-        // Drain side-channel errors from Stage 3 (Bind failures that couldn't attach to a site)
-        foreach (var err in IR.PipelineErrorBag.DrainErrors())
-        {
-            spc.ReportDiagnostic(Diagnostic.Create(
-                DiagnosticDescriptors.InternalError,
-                CreateLineLocation(err.SourceFilePath, err.Line, err.Column),
-                err.Error));
-        }
-
         // Report all deferred diagnostics
         foreach (var diag in group.Diagnostics)
         {
-            var descriptor = GetDescriptorById(diag.DiagnosticId);
-            if (descriptor == null) continue;
-
             Location location;
             if (syntaxTree != null && diag.Location.Span.Length > 0)
             {
@@ -564,7 +585,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 location = CreateLineLocation(diag.Location.FilePath, diag.Location.Line, diag.Location.Column);
             }
 
-            spc.ReportDiagnostic(Diagnostic.Create(descriptor, location, diag.MessageArgs));
+            ReportDeferredDiagnostic(spc, diag, location);
         }
 
         try
@@ -644,14 +665,11 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 assembled.JoinedTableInfos = joinedTableInfos;
             }
 
-            // Collect trace lines from TraceCapture side-channel
-            if (assembled.IsTraced && hasQuarryTrace)
-            {
-                var execUid = assembled.ExecutionSite.UniqueId;
-                var execTrace = IR.TraceCapture.Get(execUid);
-                if (execTrace != null && execTrace.Count > 0)
-                    assembled.TraceLines = execTrace;
-            }
+            // Trace lines were captured onto AssembledPlan.TraceLines by
+            // PipelineOrchestrator (#311), so cached groups keep them on warm runs.
+            // QUARRY_TRACE gating happens at FileEmitter construction below — the
+            // plan is never mutated here, so defining the symbol later still finds
+            // the lines on the cached plan.
 
             // SQL post-processing (collection tokenization + MySQL bind-order extraction)
             // happens in PipelineOrchestrator.AnalyzeAndGroupTranslated — before file
@@ -774,7 +792,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 group.FileTag,
                 mergedSites,
                 filteredPlans,
-                filteredCarrierPlans);
+                filteredCarrierPlans,
+                emitTraceComments: hasQuarryTrace);
             var interceptorsSource = emitter.Emit();
             var fileName = $"{group.ContextClassName}.Interceptors.{group.FileTag}.g.cs";
             spc.AddSource(fileName, interceptorsSource);
@@ -782,10 +801,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             // Report diagnostics collected during emission (e.g., QRY041 for unresolvable columns)
             foreach (var diag in emitter.EmitDiagnostics)
             {
-                var descriptor = GetDescriptorById(diag.DiagnosticId);
-                if (descriptor == null) continue;
                 var location = CreateLineLocation(diag.Location.FilePath, diag.Location.Line, diag.Location.Column);
-                spc.ReportDiagnostic(Diagnostic.Create(descriptor, location, diag.MessageArgs));
+                ReportDeferredDiagnostic(spc, diag, location);
             }
         }
         catch (Exception ex)
@@ -824,16 +841,58 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         DiagnosticDescriptors.ProjectionSubqueryUnresolved,
         DiagnosticDescriptors.ComputedColumnSetForbidden,
         // Set-operation diagnostics emitted by PipelineOrchestrator. Without these
-        // entries, GetDescriptorById would return null and the diagnostics would be
-        // silently dropped at QuarryGenerator.cs:524.
+        // entries, ReportDeferredDiagnostic would demote them to a QRY900
+        // unregistered-ID report instead of the real diagnostic.
         DiagnosticDescriptors.IntersectAllNotSupported,
         DiagnosticDescriptors.ExceptAllNotSupported,
         DiagnosticDescriptors.SetOperationProjectionMismatch,
         // MySQL bind-order fallback, also emitted by PipelineOrchestrator.
         DiagnosticDescriptors.MySqlBindOrderFallback,
+        // Navigation-hop target entity missing from every registered context.
+        DiagnosticDescriptors.NavigationTargetNotFound,
+        // Internal errors routed through the deferred channel (e.g., ChainAnalyzer
+        // catch handlers, SqlExprBinder exceptions during navigation-aggregate
+        // resolution). Also the descriptor ReportDeferredDiagnostic falls back to
+        // for unregistered IDs, so it must always be present.
+        DiagnosticDescriptors.InternalError,
     }.ToDictionary(d => d.Id);
 
-    private static DiagnosticDescriptor? GetDescriptorById(string id) =>
+    /// <summary>
+    /// Reports a deferred diagnostic, resolving its string ID against
+    /// <see cref="s_deferredDescriptors"/>. An unregistered ID is itself an internal
+    /// error — three separate diagnostics (QRY048, QRY900, QRY063) have shipped
+    /// unregistered and were silently dropped by the old <c>continue</c> miss path —
+    /// so it is reported loudly as QRY900 naming the ID instead of being discarded.
+    /// </summary>
+    private static void ReportDeferredDiagnostic(SourceProductionContext spc, DiagnosticInfo diag, Location location)
+    {
+        var (descriptor, messageArgs) = ResolveDeferredReport(diag);
+        spc.ReportDiagnostic(Diagnostic.Create(descriptor, location, messageArgs));
+    }
+
+    /// <summary>
+    /// Resolves what a deferred diagnostic will report: the registered descriptor with
+    /// the original args, or the QRY900 fallback naming an unregistered ID. Pure —
+    /// internal so the miss path itself is unit-testable without a
+    /// SourceProductionContext.
+    /// </summary>
+    internal static (DiagnosticDescriptor Descriptor, object[] MessageArgs) ResolveDeferredReport(DiagnosticInfo diag)
+    {
+        if (TryGetDeferredDescriptor(diag.DiagnosticId) is { } descriptor)
+            return (descriptor, diag.MessageArgs);
+
+        return (DiagnosticDescriptors.InternalError, new object[]
+        {
+            $"Deferred diagnostic ID '{diag.DiagnosticId}' is not registered in s_deferredDescriptors — " +
+            $"the diagnostic would have been silently dropped. Original message args: [{string.Join(", ", diag.MessageArgs)}]",
+        });
+    }
+
+    /// <summary>
+    /// Resolves a deferred diagnostic ID to its registered descriptor, or null when
+    /// unregistered. Internal for registry-membership assertions in tests.
+    /// </summary>
+    internal static DiagnosticDescriptor? TryGetDeferredDescriptor(string id) =>
         s_deferredDescriptors.TryGetValue(id, out var descriptor) ? descriptor : null;
 
     private static Location CreateLineLocation(string? filePath, int line, int column)

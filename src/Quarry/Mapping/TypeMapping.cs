@@ -20,16 +20,8 @@ namespace Quarry;
 /// </code>
 /// </para>
 /// </remarks>
-public abstract class TypeMapping<TCustom, TDb> : ITypeMappingConverter
+public abstract class TypeMapping<TCustom, TDb>
 {
-    /// <summary>
-    /// Creates a new TypeMapping instance and registers it for runtime fallback conversion.
-    /// </summary>
-    protected TypeMapping()
-    {
-        TypeMappingRegistry.Register(typeof(TCustom), this);
-    }
-
     /// <summary>
     /// Converts a custom type value to its database representation.
     /// </summary>
@@ -43,7 +35,4 @@ public abstract class TypeMapping<TCustom, TDb> : ITypeMappingConverter
     /// <param name="value">The database value to convert.</param>
     /// <returns>The custom type value.</returns>
     public abstract TCustom FromDb(TDb value);
-
-    /// <inheritdoc />
-    object ITypeMappingConverter.ConvertToDb(object value) => ToDb((TCustom)value)!;
 }

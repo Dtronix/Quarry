@@ -9,7 +9,7 @@ namespace Quarry;
 /// <remarks>
 /// <para>
 /// Implement this interface on your TypeMapping to provide per-dialect customization.
-/// The compile-time interceptor and runtime fallback paths both check for this interface.
+/// Generated interceptor code checks for this interface when binding parameters.
 /// </para>
 /// <para>
 /// Example — PostgreSQL jsonb support:

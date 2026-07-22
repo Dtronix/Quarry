@@ -39,9 +39,26 @@ internal static class PipelineOrchestrator
         EntityRegistry registry,
         CancellationToken ct)
     {
+        // Trace state is produced (ChainAnalyzer, SqlAssembler) and consumed (captured
+        // onto AssembledPlan.TraceLines) entirely within this call, so the ThreadStatic
+        // never has to survive a pipeline-node or thread boundary (#311). The finally
+        // ensures a cancellation or failure cannot leak lines into a later run.
         TraceCapture.Clear();
-        PipelineErrorBag.DrainErrors(); // discard stale errors from prior compilations on this thread
+        try
+        {
+            return AnalyzeAndGroupTranslatedCore(translatedSites, registry, ct);
+        }
+        finally
+        {
+            TraceCapture.Clear();
+        }
+    }
 
+    private static ImmutableArray<FileInterceptorGroup> AnalyzeAndGroupTranslatedCore(
+        ImmutableArray<TranslatedCallSite> translatedSites,
+        EntityRegistry registry,
+        CancellationToken ct)
+    {
         ct.ThrowIfCancellationRequested();
 
         // Collect diagnostics from TranslatedCallSite properties
@@ -51,7 +68,8 @@ internal static class PipelineOrchestrator
         ct.ThrowIfCancellationRequested();
 
         // Chain analysis: TranslatedCallSite[] → AnalyzedChain[]
-        var analyzedChains = ChainAnalyzer.Analyze(translatedSites, registry, ct, diagnostics);
+        var analyzedChains = ChainAnalyzer.Analyze(
+            translatedSites, registry, ct, out var consumedLambdaInnerSiteIds, diagnostics);
 
         ct.ThrowIfCancellationRequested();
 
@@ -61,6 +79,20 @@ internal static class PipelineOrchestrator
         {
             var assembled = SqlAssembler.Assemble(chain, registry);
             assembledPlans.Add(assembled);
+        }
+
+        // Capture trace lines onto the plan itself so traced chains keep their
+        // .Trace() output when their file group is cached on incremental runs (#311).
+        // TraceLines is excluded from AssembledPlan equality (derived data), so this
+        // never churns the cache. All trace producers have run by this point:
+        // ChainAnalyzer's retroactive site/chain traces and SqlAssembler's per-mask
+        // assembly traces, both keyed by the execution site's UniqueId.
+        foreach (var assembled in assembledPlans)
+        {
+            if (!assembled.IsTraced) continue;
+            var trace = TraceCapture.Get(assembled.ExecutionSite.UniqueId);
+            if (trace is { Count: > 0 })
+                assembled.TraceLines = trace;
         }
 
         ct.ThrowIfCancellationRequested();
@@ -131,15 +163,14 @@ internal static class PipelineOrchestrator
         // in the outer chain's CTE/set-op clause at compile time. Passing them through to
         // file grouping would create interceptor files under wrong contexts (the entity type
         // may be registered in multiple contexts, and without a concrete chain root the
-        // pipeline can't disambiguate).
-        var consumedIds = Parsing.ChainAnalyzer.ConsumedLambdaInnerSiteIds;
+        // pipeline can't disambiguate). The set comes straight from this run's Analyze call
+        // (#311) — no cross-run state, so a cancellation can never poison the next filter.
         var filteredSites = updatedSites;
-        if (consumedIds != null && consumedIds.Count > 0)
+        if (consumedLambdaInnerSiteIds is { Count: > 0 })
         {
             filteredSites = updatedSites
-                .Where(s => !consumedIds.Contains(s.UniqueId))
+                .Where(s => !consumedLambdaInnerSiteIds.Contains(s.UniqueId))
                 .ToImmutableArray();
-            consumedIds.Clear(); // avoid stale state across incremental runs
         }
 
         // Group into files
@@ -481,6 +512,36 @@ internal static class PipelineOrchestrator
                 fileChainMemberSites,
                 fileDiagnostics,
                 fileCarrierPlans));
+        }
+
+        // Deferred diagnostics reach the user through file groups, so a diagnostic
+        // whose file produced no group — every site context-less or consumed as a
+        // lambda-inner, or a location with no file path at all — would silently
+        // vanish (#311 F4). Collect the unclaimed ones into a synthetic site-less
+        // group: EmitFileInterceptors reports a group's diagnostics before it checks
+        // for sites, and adds no source for an empty group.
+        var claimedFiles = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var group in fileGroups)
+            claimedFiles.Add(group.Key.FilePath);
+
+        List<DiagnosticInfo>? orphanDiagnostics = null;
+        foreach (var diag in diagnostics)
+        {
+            if (diag.Location.FilePath == null || !claimedFiles.Contains(diag.Location.FilePath))
+                (orphanDiagnostics ??= new List<DiagnosticInfo>()).Add(diag);
+        }
+        if (orphanDiagnostics != null)
+        {
+            result.Add(new FileInterceptorGroup(
+                contextClassName: string.Empty,
+                contextNamespace: null,
+                sourceFilePath: string.Empty,
+                fileTag: "OrphanDiagnostics",
+                sites: new List<TranslatedCallSite>(),
+                assembledPlans: new List<AssembledPlan>(),
+                chainMemberSites: new List<TranslatedCallSite>(),
+                diagnostics: orphanDiagnostics,
+                carrierPlans: new List<CarrierPlan>()));
         }
 
         return result.ToImmutable();

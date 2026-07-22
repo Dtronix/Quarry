@@ -29,13 +29,6 @@ internal static class ChainAnalyzer
     internal static List<AnalyzedChain>? TestCapturedChains;
 
     /// <summary>
-    /// UniqueIds of sites that belong to lambda inner chains and should be excluded
-    /// from interceptor generation. Populated during Analyze() and read by PipelineOrchestrator.
-    /// </summary>
-    [ThreadStatic]
-    internal static HashSet<string>? ConsumedLambdaInnerSiteIds;
-
-    /// <summary>
     /// Maximum number of conditional bits for PrebuiltDispatch.
     /// 8 bits = up to 256 dispatch variants. Beyond this, classify as RuntimeBuild (compile error).
     /// </summary>
@@ -53,12 +46,24 @@ internal static class ChainAnalyzer
     /// Groups by ChainId, identifies execution terminals, classifies tiers,
     /// and builds QueryPlan instances.
     /// </summary>
+    /// <param name="consumedLambdaInnerSiteIds">
+    /// UniqueIds of sites that belong to lambda inner chains and should be excluded
+    /// from interceptor generation (their SQL is embedded in the outer chain). Returned
+    /// to the caller instead of being parked in a [ThreadStatic] (#311): a cancellation
+    /// between populate and consume used to leave stale UniqueIds that the NEXT run
+    /// would apply to its site filter.
+    /// </param>
     public static IReadOnlyList<AnalyzedChain> Analyze(
         ImmutableArray<TranslatedCallSite> sites,
         EntityRegistry registry,
         CancellationToken ct,
-        List<DiagnosticInfo>? diagnostics = null)
+        out HashSet<string>? consumedLambdaInnerSiteIds,
+        List<DiagnosticInfo> diagnostics)
     {
+        // diagnostics is required (not optional/nullable): the catch handlers below
+        // route analysis exceptions through it as QRY900 — a null list would be the
+        // last remaining way a ChainAnalyzer exception could vanish without a trace.
+        consumedLambdaInnerSiteIds = null;
         // Group sites by ChainId
         var chains = new Dictionary<string, List<TranslatedCallSite>>(StringComparer.Ordinal);
         var unchained = new List<TranslatedCallSite>();
@@ -112,11 +117,10 @@ internal static class ChainAnalyzer
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     var first = opSites.Count > 0 ? opSites[0] : null;
-                    PipelineErrorBag.Report(
-                        first?.Bound.Raw.FilePath ?? "",
-                        first?.Bound.Raw.Line ?? 0,
-                        first?.Bound.Raw.Column ?? 0,
-                        $"Operand chain analysis failed: {ex.Message}");
+                    diagnostics.Add(new DiagnosticInfo(
+                        Quarry.Generators.DiagnosticDescriptors.InternalError.Id,
+                        first?.Bound.Raw.Location ?? default,
+                        $"Operand chain analysis failed: {ex.Message}"));
                 }
             }
         }
@@ -156,11 +160,11 @@ internal static class ChainAnalyzer
         // them from interceptor generation (their SQL is embedded in the outer chain).
         if (lambdaInnerChainGroups.Count > 0)
         {
-            ConsumedLambdaInnerSiteIds ??= new HashSet<string>(StringComparer.Ordinal);
+            consumedLambdaInnerSiteIds = new HashSet<string>(StringComparer.Ordinal);
             foreach (var kvp in lambdaInnerChainGroups)
             {
                 foreach (var site in kvp.Value)
-                    ConsumedLambdaInnerSiteIds.Add(site.UniqueId);
+                    consumedLambdaInnerSiteIds.Add(site.UniqueId);
             }
         }
 
@@ -205,11 +209,10 @@ internal static class ChainAnalyzer
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 var first = kvp.Value.Count > 0 ? kvp.Value[0] : null;
-                PipelineErrorBag.Report(
-                    first?.Bound.Raw.FilePath ?? "",
-                    first?.Bound.Raw.Line ?? 0,
-                    first?.Bound.Raw.Column ?? 0,
-                    $"CTE inner chain analysis failed: {ex.Message}");
+                diagnostics.Add(new DiagnosticInfo(
+                    Quarry.Generators.DiagnosticDescriptors.InternalError.Id,
+                    first?.Bound.Raw.Location ?? default,
+                    $"CTE inner chain analysis failed: {ex.Message}"));
             }
         }
 
@@ -238,11 +241,10 @@ internal static class ChainAnalyzer
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 var first = chainSites.Count > 0 ? chainSites[0] : null;
-                PipelineErrorBag.Report(
-                    first?.Bound.Raw.FilePath ?? "",
-                    first?.Bound.Raw.Line ?? 0,
-                    first?.Bound.Raw.Column ?? 0,
-                    $"Chain analysis failed: {ex.Message}");
+                diagnostics.Add(new DiagnosticInfo(
+                    Quarry.Generators.DiagnosticDescriptors.InternalError.Id,
+                    first?.Bound.Raw.Location ?? default,
+                    $"Chain analysis failed: {ex.Message}"));
             }
         }
 
@@ -2529,7 +2531,7 @@ internal static class ChainAnalyzer
             if (targetEntry == null)
             {
                 diagnostics?.Add(new DiagnosticInfo(
-                    "QRY063",
+                    Quarry.Generators.DiagnosticDescriptors.NavigationTargetNotFound.Id,
                     location,
                     hop, currentEntity.EntityName, nav.TargetEntityName));
                 return null;

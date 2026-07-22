@@ -38,4 +38,12 @@ internal static class TraceCapture
     {
         _data?.Clear();
     }
+
+    /// <summary>
+    /// True when no trace lines are buffered on this thread. Test hook: pins the
+    /// produce-and-consume-within-one-orchestrator-call lifecycle (#311) — after any
+    /// generator run the buffer must be empty, because AnalyzeAndGroupTranslated
+    /// captures lines onto AssembledPlan.TraceLines and clears in a finally.
+    /// </summary>
+    internal static bool IsEmpty => _data == null || _data.Count == 0;
 }

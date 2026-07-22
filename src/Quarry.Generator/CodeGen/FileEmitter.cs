@@ -35,6 +35,7 @@ internal sealed class FileEmitter
     private readonly IReadOnlyList<TranslatedCallSite> _sites;
     private readonly IReadOnlyList<AssembledPlan>? _chains;
     private readonly IReadOnlyList<CarrierPlan>? _carrierPlans;
+    private readonly bool _emitTraceComments;
     private readonly List<Models.DiagnosticInfo> _emitDiagnostics = new();
     private readonly CarrierAssignmentRecorder _carrierAssignmentRecorder = new();
 
@@ -83,7 +84,8 @@ internal sealed class FileEmitter
         string fileTag,
         IReadOnlyList<TranslatedCallSite> sites,
         IReadOnlyList<AssembledPlan>? chains = null,
-        IReadOnlyList<CarrierPlan>? carrierPlans = null)
+        IReadOnlyList<CarrierPlan>? carrierPlans = null,
+        bool emitTraceComments = false)
     {
         _contextClassName = contextClassName;
         _contextNamespace = contextNamespace;
@@ -91,6 +93,12 @@ internal sealed class FileEmitter
         _sites = sites;
         _chains = chains;
         _carrierPlans = carrierPlans;
+        // AssembledPlan.TraceLines is populated for every traced chain regardless of
+        // the QUARRY_TRACE symbol (the orchestrator has no compilation access), so the
+        // symbol gate is applied here instead of by mutating the cached plan. Default
+        // is false (fail safe): only the QuarryGenerator caller, which has the
+        // compilation to check the symbol, opts in.
+        _emitTraceComments = emitTraceComments;
     }
 
     /// <summary>
@@ -461,7 +469,7 @@ internal sealed class FileEmitter
                     var label = chain.IsOperandChain
                         ? $"Operand: {execMethod} at line {chain.ExecutionSite.Line}"
                         : $"Chain: {execMethod} at line {chain.ExecutionSite.Line}";
-                    chainGroups.Add((label, chainSites, chain.TraceLines));
+                    chainGroups.Add((label, chainSites, _emitTraceComments ? chain.TraceLines : null));
                 }
             }
         }

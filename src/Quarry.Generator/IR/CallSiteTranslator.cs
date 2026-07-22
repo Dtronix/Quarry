@@ -100,15 +100,17 @@ internal static class CallSiteTranslator
         }
         catch (Exception ex)
         {
-            // Translation failed — produce a failed clause so QRY019 is emitted.
-            TraceCapture.Log(raw.UniqueId, $"Translation failed: {ex.GetType().Name}: {ex.Message}");
+            // Translation failed — produce a failed clause so QRY019 is emitted. No
+            // TraceCapture log here: this transform is per-site cached, so a ThreadStatic
+            // line would be lost on warm runs anyway (#311); the failure text reaches the
+            // trace via Clause.ErrorMessage in ChainAnalyzer's retroactive LogSiteTrace.
             var clauseKind = raw.ClauseKind ?? ClauseKind.Where;
             var failedClause = new TranslatedClause(
                 clauseKind,
                 new LiteralExpr("1", "int"),
                 Array.Empty<Translation.ParameterInfo>(),
                 isSuccess: false,
-                // No trailing punctuation: QRY019 messageFormat appends ". The original runtime method...".
+                // No trailing punctuation: QRY019 messageFormat appends ". The clause is not intercepted...".
                 errorMessage: $"{clauseKind} clause translation failed: {ex.Message}");
             return new TranslatedCallSite(bound, failedClause);
         }
@@ -128,7 +130,7 @@ internal static class CallSiteTranslator
                 new LiteralExpr("1", "int"),
                 Array.Empty<Translation.ParameterInfo>(),
                 isSuccess: false,
-                // No trailing punctuation: QRY019 messageFormat appends ". The original runtime method...".
+                // No trailing punctuation: QRY019 messageFormat appends ". The clause is not intercepted...".
                 errorMessage: $"{raw.ClauseKind ?? ClauseKind.Where} clause contains an expression that cannot be translated to SQL");
             return new TranslatedCallSite(bound, failedClause);
         }
@@ -151,7 +153,7 @@ internal static class CallSiteTranslator
                 new LiteralExpr("1", "int"),
                 Array.Empty<Translation.ParameterInfo>(),
                 isSuccess: false,
-                // No trailing punctuation: QRY019 messageFormat appends ". The original runtime method...".
+                // No trailing punctuation: QRY019 messageFormat appends ". The clause is not intercepted...".
                 errorMessage: $"{clauseKind} clause could not resolve entity metadata for column binding");
             return new TranslatedCallSite(bound, failedClause);
         }
@@ -254,7 +256,7 @@ internal static class CallSiteTranslator
                 new LiteralExpr("1", "int"),
                 Array.Empty<Translation.ParameterInfo>(),
                 isSuccess: false,
-                // No trailing punctuation: QRY019 messageFormat appends ". The original runtime method...".
+                // No trailing punctuation: QRY019 messageFormat appends ". The clause is not intercepted...".
                 errorMessage: $"{clauseKind} clause rendered to empty SQL");
             return new TranslatedCallSite(bound, failedClause);
         }

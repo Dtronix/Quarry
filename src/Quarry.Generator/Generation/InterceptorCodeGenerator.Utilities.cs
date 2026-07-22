@@ -130,7 +130,9 @@ internal static partial class InterceptorCodeGenerator
 
     /// <summary>
     /// Checks if a clause interceptor should be skipped because the clause could not be translated.
-    /// When skipped, the original runtime method runs instead of a silent no-op fallback.
+    /// When skipped, the call falls through to the default-interface throw stub
+    /// (IEntityAccessor) — a loud InvalidOperationException at runtime instead of a
+    /// silent no-op; QRY019 warns about this at compile time.
     /// </summary>
     internal static bool ShouldSkipNonTranslatableClause(TranslatedCallSite site)
     {

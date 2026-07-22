@@ -289,4 +289,4 @@ Use it in the schema like any other mapping:
 public Col<JsonDoc> Metadata => Mapped<JsonDoc, JsonDocMapping>();
 ```
 
-Both `GetSqlTypeName` and `ConfigureParameter` are called by the runtime `TypeMappingRegistry` on the fallback path. On the compile-time interceptor path, the generator inlines the `ToDb`/`FromDb` calls directly, but parameter configuration is still applied when the mapping implements `IDialectAwareTypeMapping`.
+`GetSqlTypeName` is consulted at generation time for DDL and CAST expressions. The generator inlines the `ToDb`/`FromDb` calls directly into interceptor code, and the generated parameter binding calls `ConfigureParameter` when the mapping implements `IDialectAwareTypeMapping`.

@@ -11,17 +11,20 @@ internal static class DiagnosticDescriptors
 
     /// <summary>
     /// QRY001: Query not fully analyzable.
-    /// Severity: Warning
+    /// Severity: Error — under the carrier-only model a non-analyzable site gets no
+    /// interceptor and the builder throw stub fails at runtime, so this is a broken
+    /// query, not a degraded one (#311).
     /// </summary>
     public static readonly DiagnosticDescriptor QueryNotAnalyzable = new(
         id: "QRY001",
         title: "Query not fully analyzable",
         messageFormat: "Query is not fully analyzable: {0}",
         category: Category,
-        defaultSeverity: DiagnosticSeverity.Warning,
+        defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
         description: "The query chain contains patterns that prevent compile-time analysis. " +
-                     "The original runtime method will be used instead. " +
+                     "Calls on this chain are not intercepted, and builder methods are compile-time-only " +
+                     "stubs, so executing the query will throw InvalidOperationException at runtime. " +
                      "Consider restructuring the query as a fluent chain without variable assignment or conditionals.");
 
     /// <summary>
@@ -336,7 +339,7 @@ internal static class DiagnosticDescriptors
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
         description: "Two or more TypeMapping classes map the same TCustom type. " +
-                     "The runtime TypeMappingRegistry allows only one mapping per custom type. " +
+                     "The generator cannot decide which mapping to inline for the type's columns. " +
                      "Remove the duplicate mapping or consolidate into a single TypeMapping class.");
 
     /// <summary>
@@ -348,12 +351,13 @@ internal static class DiagnosticDescriptors
         title: "Clause not translatable at compile time",
         // {0} must be a complete clause without trailing punctuation; see
         // CallSiteTranslator errorMessage callsites.
-        messageFormat: "{0}. The original runtime method will be used instead.",
+        messageFormat: "{0}. The clause is not intercepted and the call will throw InvalidOperationException at runtime.",
         category: Category,
-        defaultSeverity: DiagnosticSeverity.Warning,
+        defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
         description: "The source generator could not translate this clause expression to SQL. " +
-                     "The query will use the original runtime method, which evaluates the expression tree at runtime. " +
+                     "The clause interceptor is skipped, and builder methods are compile-time-only stubs, " +
+                     "so executing this query will throw InvalidOperationException at runtime. " +
                      "Consider restructuring the expression for compile-time analysis.");
 
     // ─── Custom EntityReader diagnostics (QRY026–QRY027) ────────────────────
