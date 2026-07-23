@@ -6,7 +6,7 @@ base-branch: master
 
 ## State
 phase: IMPLEMENT
-status: active
+status: suspended
 issue: #314
 pr:
 
@@ -92,13 +92,17 @@ Note: pre-existing build warnings — NU1903 (System.Security.Cryptography.Xml 9
 - Existing CT mentions in tests are all generator-signature detection (`HasCancellationToken`) or `CancellationToken.None` placeholders — no runtime cancellation.
 
 ## Suspend State
-- **Position**: IMPLEMENT, plan steps 1–3 of 15 complete and committed (last commit 2278af2). Next: step 4 (F1c — negative equality tests for EntityRegistry/AssembledPlan/CarrierPlan/FileInterceptorGroup, new `IR/PipelineModelEqualityTests.cs`; all four are `internal` + InternalsVisibleTo, hand-written IEquatable — see Exploration facts for file:line of each Equals).
+- **Position**: IMPLEMENT, plan steps 1–6 of 15 complete and committed (last commit ad7ee18). Next: step 7 (F5c — interceptor-binding guard matrix).
 - **In progress**: nothing mid-flight; working tree clean.
-- **Immediate next step**: implement step 4, then step 5 (file the two GitHub issues — bodies can be drafted from Working Notes F5 facts), then 6/7 (pins + CS9177 guard).
+- **Immediate next step — step 7 specifics (revised by step-6 findings, see Decisions)**:
+  1. REMOVE the vestigial `<NoWarn>CS9177</NoWarn>` from `Quarry.Tests.csproj:13-14` (verified: zero CS9177 in full build with it overridden).
+  2. New `Generation/InterceptorBindingGuardTests.cs`: synthetic-compilation matrix over entity-terminal shapes (First/FirstOrDefault/Single/All/NonQuery-style terminals × with/without Where × root-context and sub-namespace cross-context) asserting NO CS9144/CS9177 in the output compilation (all currently pass in isolation — guards regressions and future arity mismatches). Reuse the reference list + fixture pattern from PipelineModelEqualityTests; MUST include `System.ComponentModel.Primitives.dll` (see Working Notes — its absence flips generator classification).
+  3. Full build check: `dotnet build src/Quarry.Tests -p:NoWarn=NU1903` should stay CS9177/CS9144-free.
+- **Then**: step 8 (concurrency suite), 9/10 (streaming/cancellation), 11–13 (row-order sweep), 14 (benchmark gate), 15 (docs+final).
 - **WIP commit**: none (all work committed).
-- **Test status**: all green — Quarry.Tests 3427, Migration.Tests 201, Analyzers.Tests 146 (full run after step 3).
-- **Unrecorded context**: none — discoveries are in Working Notes; decisions (incl. inline generator-fix approval and alert-only benchmark gate nuances) are in Decisions. Note for step 14: previous data.js entry lives at Quarry-benchmarks repo gh-pages dev/bench/data.js; runs.json is the manifest. Note for steps 11–13: use the sweep rules in plan.md Key concepts; sort keys reviewed on main context before commit.
-- **Suspend trigger**: IMPLEMENT context check (≥3 steps completed this session).
+- **Test status**: all green — Quarry.Tests 3438 (full run after step 6), Migration.Tests 201, Analyzers.Tests 146 (after step 3; untouched since).
+- **Unrecorded context**: none — all discoveries in Working Notes (step-6 block is essential reading: #328 retitled, #329 CS9144 facts, vestigial NoWarn evidence). For step 14: previous benchmark entry lives in Quarry-benchmarks repo gh-pages `dev/bench/data.js`; `dev/bench/runs/runs.json` is the manifest. For steps 11–13: sweep rules in plan.md Key concepts; sort keys reviewed on main context before commit.
+- **Suspend trigger**: IMPLEMENT context check (≥3 steps completed this session — steps 4, 5, 6).
 
 ## Session Log
 | Date | Phases | Summary |
@@ -108,3 +112,4 @@ Note: pre-existing build warnings — NU1903 (System.Security.Cryptography.Xml 9
 | 2026-07-23 | PLAN→IMPLEMENT | 15-step plan.md approved; implementation started. |
 | 2026-07-23 | IMPLEMENT | Steps 1–3 done (manifest CI check; tracking names; caching-test rewrite + inline DisplayClassEnricher stale-tree crash fix + two #310 pins). Suspended per ≥3-step context check; branch pushed. |
 | 2026-07-23 | IMPLEMENT | Resumed same-session (baseline still green from pre-suspend full run); continuing at step 4. |
+| 2026-07-23 | IMPLEMENT | Steps 4–6 done (pipeline-model equality tests; issues #328/#329 filed; conditional-Having coverage + #328 pin — misattribution found stale, real defect is unmasked Having; #329 confirmed as CS9144; NoWarn CS9177 found vestigial). Suspended per ≥3-step check; branch pushed. |
