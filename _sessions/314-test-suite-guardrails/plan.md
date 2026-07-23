@@ -16,7 +16,7 @@ Implements issue #314 (all 7 findings; the two low items are deferred per Decisi
   Add a step to `.github/workflows/ci.yml` after `Test`: `git diff --exit-code -- src/Quarry.Tests/ManifestOutput` (build regenerates goldens in place via `QuarrySqlManifestPath`). Also run a local build + diff to prove the current goldens are clean.
   Tests: none added; full suite must stay green. Verify the step logic locally with an intentional golden touch (not committed).
 
-- [ ] **2. F1a — Add `WithTrackingName` to generator pipeline stages**
+- [x] **2. F1a — Add `WithTrackingName` to generator pipeline stages**
   In `QuarryGenerator.cs` `Initialize`, name the load-bearing nodes: context declarations, entity registry, raw call sites, enriched sites, bound sites, translated sites, per-file groups (and the manifest node). Names as constants (e.g. `TrackingNames` static class in the generator) so tests reference them typed, not stringly.
   Tests: existing suite green (names are inert metadata). No new tests yet — consumed in step 3.
   Depends on: nothing.
