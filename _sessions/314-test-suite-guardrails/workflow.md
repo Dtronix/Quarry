@@ -6,7 +6,7 @@ base-branch: master
 
 ## State
 phase: IMPLEMENT
-status: active
+status: suspended
 issue: #314
 pr:
 
@@ -79,6 +79,13 @@ Note: pre-existing build warnings — NU1903 (System.Security.Cryptography.Xml 9
 - Existing CT mentions in tests are all generator-signature detection (`HasCancellationToken`) or `CancellationToken.None` placeholders — no runtime cancellation.
 
 ## Suspend State
+- **Position**: IMPLEMENT, plan steps 1–3 of 15 complete and committed (last commit 2278af2). Next: step 4 (F1c — negative equality tests for EntityRegistry/AssembledPlan/CarrierPlan/FileInterceptorGroup, new `IR/PipelineModelEqualityTests.cs`; all four are `internal` + InternalsVisibleTo, hand-written IEquatable — see Exploration facts for file:line of each Equals).
+- **In progress**: nothing mid-flight; working tree clean.
+- **Immediate next step**: implement step 4, then step 5 (file the two GitHub issues — bodies can be drafted from Working Notes F5 facts), then 6/7 (pins + CS9177 guard).
+- **WIP commit**: none (all work committed).
+- **Test status**: all green — Quarry.Tests 3427, Migration.Tests 201, Analyzers.Tests 146 (full run after step 3).
+- **Unrecorded context**: none — discoveries are in Working Notes; decisions (incl. inline generator-fix approval and alert-only benchmark gate nuances) are in Decisions. Note for step 14: previous data.js entry lives at Quarry-benchmarks repo gh-pages dev/bench/data.js; runs.json is the manifest. Note for steps 11–13: use the sweep rules in plan.md Key concepts; sort keys reviewed on main context before commit.
+- **Suspend trigger**: IMPLEMENT context check (≥3 steps completed this session).
 
 ## Session Log
 | Date | Phases | Summary |
@@ -86,3 +93,4 @@ Note: pre-existing build warnings — NU1903 (System.Security.Cryptography.Xml 9
 | 2026-07-22 | INTAKE | Loaded issue #314, created worktree `314-test-suite-guardrails`, baseline test run started. |
 | 2026-07-22 | DESIGN | 4-agent exploration of all findings; baseline green (3771 tests). Scope/gate/sweep/CS9177 decisions recorded; design approved. |
 | 2026-07-23 | PLAN→IMPLEMENT | 15-step plan.md approved; implementation started. |
+| 2026-07-23 | IMPLEMENT | Steps 1–3 done (manifest CI check; tracking names; caching-test rewrite + inline DisplayClassEnricher stale-tree crash fix + two #310 pins). Suspended per ≥3-step context check; branch pushed. |
