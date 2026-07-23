@@ -39,7 +39,7 @@ Implements issue #314 (all 7 findings; the two low items are deferred per Decisi
   Two `gh issue create` calls with full Issue Body template: (a) conditional-Having GroupBy/Having variable-split context misattribution (`CrossDialectConditionalMaskTests.cs:1170-1174` NOTE); (b) entity-terminal interceptor signature/arity mismatch (comments in 3 integration suites; cause of blanket CS9177 NoWarn). Record issue numbers in workflow.md.
   Tests: none. Depends on: nothing.
 
-- [ ] **6. F5b — Pinning tests for both bugs**
+- [x] **6. F5b — Pinning tests for both bugs** *(major deviation, see Working Notes: #328's misattribution was stale — replaced by taken-branch regression test + not-mask-gated pin in the real suite; #329 pin not compilable (build error) — signal moves to step-7 guard + issue-documented probe)*
   - Bug (a): active pin — build the conditional-Having split chain in a codegen-only test, assert the misattributed binding (current buggy output); failure ⇒ bug fixed.
   - Bug (b): active pin — codegen test on an entity-terminal chain asserting the call is currently NOT intercepted (CS9177 present / no matching InterceptsLocation); failure ⇒ fixed. Update the three integration-suite comments to reference the issue numbers.
   Tests: the pins themselves. Depends on: step 5 (issue numbers).

@@ -63,7 +63,7 @@ public class MySqlIntegrationTests
         // Explicit projection so the chain terminates on IQueryBuilder<T,TResult>
         // rather than IQueryBuilder<T> — the entity-terminal fallback path
         // has an unrelated interceptor signature mismatch that is out of
-        // scope for this fix (tracked separately).
+        // scope for this fix (tracked as #329, pinned by KnownBug_Issue329 tests).
         var city = await My.Addresses()
             .Where(a => a.AddressId == newId)
             .Select(a => a.City)
@@ -102,7 +102,7 @@ public class MySqlIntegrationTests
         Assert.That(rows, Is.EqualTo(3));
 
         // Explicit projection avoids the IQueryBuilder<T>-terminal overload
-        // mismatch (unrelated to this fix; see EntityInsert test).
+        // mismatch (tracked as #329; see EntityInsert test).
         var insertedNames = await My.Warehouses()
             .Where(w => w.WarehouseName == "North Atlantic Hub"
                      || w.WarehouseName == "APAC Ring"
