@@ -31,7 +31,7 @@ Implements issue #314 (all 7 findings; the two low items are deferred per Decisi
   Tests: the rewritten fixture itself. Full suite green.
   Depends on: step 2.
 
-- [ ] **4. F1c — Negative equality tests for pipeline models**
+- [x] **4. F1c — Negative equality tests for pipeline models**
   New `IR/PipelineModelEqualityTests.cs` (or extend `EntityRegistryTests`): for `EntityRegistry`, `AssembledPlan`, `CarrierPlan`, `FileInterceptorGroup` — inequality when each constituent differs (esp. `EntityRegistry` with a different `_allContexts` set — regression pin for the previously-shipped bug), plus hash-consistency checks. Follow the existing negative-test precedent (`CarrierStructuralKey` etc.).
   Tests: the new file. Depends on: nothing.
 
