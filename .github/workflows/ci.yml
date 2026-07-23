@@ -42,6 +42,11 @@ jobs:
       - name: Test
         run: dotnet test Quarry.sln -c Release --no-build
 
+      - name: Check SQL manifest goldens for drift
+        run: |
+          git diff --exit-code -- src/Quarry.Tests/ManifestOutput \
+            || { echo "::error::Generated SQL manifests differ from checked-in goldens. If the SQL change is intentional, rebuild locally and commit the updated ManifestOutput files."; exit 1; }
+
       - name: Pack
         run: >-
           dotnet pack Quarry.sln
