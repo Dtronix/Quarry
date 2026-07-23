@@ -35,7 +35,7 @@ Implements issue #314 (all 7 findings; the two low items are deferred per Decisi
   New `IR/PipelineModelEqualityTests.cs` (or extend `EntityRegistryTests`): for `EntityRegistry`, `AssembledPlan`, `CarrierPlan`, `FileInterceptorGroup` — inequality when each constituent differs (esp. `EntityRegistry` with a different `_allContexts` set — regression pin for the previously-shipped bug), plus hash-consistency checks. Follow the existing negative-test precedent (`CarrierStructuralKey` etc.).
   Tests: the new file. Depends on: nothing.
 
-- [ ] **5. F5a — File tracking issues for the two routed-around bugs**
+- [x] **5. F5a — File tracking issues for the two routed-around bugs** *(→ #328, #329)*
   Two `gh issue create` calls with full Issue Body template: (a) conditional-Having GroupBy/Having variable-split context misattribution (`CrossDialectConditionalMaskTests.cs:1170-1174` NOTE); (b) entity-terminal interceptor signature/arity mismatch (comments in 3 integration suites; cause of blanket CS9177 NoWarn). Record issue numbers in workflow.md.
   Tests: none. Depends on: nothing.
 
