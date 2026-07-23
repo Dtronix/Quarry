@@ -88,6 +88,34 @@ internal static class DisplayClassEnricher
             var lambda = site.EnrichmentLambda;
             var syntaxTree = lambda.SyntaxTree;
 
+            // A cached site can carry nodes from a superseded parse of the same
+            // file: a persistent driver re-fed identical text keeps the previous
+            // output instances ("Unchanged"), whose trees are not part of the
+            // current compilation — GetSemanticModel would throw and kill the
+            // whole generator run. Recover the equivalent node from the tree the
+            // compilation actually contains; skip enrichment if it moved.
+            if (!compilation.ContainsSyntaxTree(syntaxTree))
+            {
+                SyntaxTree? currentTree = null;
+                foreach (var tree in compilation.SyntaxTrees)
+                {
+                    if (tree.FilePath == syntaxTree.FilePath)
+                    {
+                        currentTree = tree;
+                        break;
+                    }
+                }
+
+                var recovered = currentTree?.GetRoot(cancellationToken)
+                    .FindNode(lambda.Span, getInnermostNodeForTie: true)
+                    as Microsoft.CodeAnalysis.CSharp.Syntax.LambdaExpressionSyntax;
+                if (recovered == null || recovered.RawKind != lambda.RawKind)
+                    continue;
+
+                lambda = recovered;
+                syntaxTree = currentTree!;
+            }
+
             if (!semanticModelCache.TryGetValue(syntaxTree, out var semanticModel))
             {
                 semanticModel = compilation.GetSemanticModel(syntaxTree);

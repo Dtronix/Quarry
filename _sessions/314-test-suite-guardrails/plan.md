@@ -21,7 +21,7 @@ Implements issue #314 (all 7 findings; the two low items are deferred per Decisi
   Tests: existing suite green (names are inert metadata). No new tests yet — consumed in step 3.
   Depends on: nothing.
 
-- [ ] **3. F1b — Rewrite `IncrementalCachingTests`**
+- [x] **3. F1b — Rewrite `IncrementalCachingTests`** *(deviation: includes user-approved inline fix of a generator crash found by the new unchanged-run test — DisplayClassEnricher stale-tree recovery; plus two #310 pins instead of correct-behavior assertions, see Working Notes)*
   - Fixtures: named-tuple / single-column projections; add an assertion helper that the run produced no QRY014/QRY032 and that each interceptor file contains a real body (`Does.Contain("file sealed class Chain_")` / SQL text), killing the hollow-shell failure mode.
   - `PerFileOutput_UnchangedCompilation_AllOutputsCached`: build the second compilation from **freshly parsed trees** of identical text; assert all tracked stages report Cached/Unchanged **per stage name** from step 2.
   - `PerFileOutput_ModifyOneFile_OtherFileCached`: assert the unchanged file's per-file group output is specifically Cached and the modified file's is Modified/New (keyed by FileTag in the output name).

@@ -38,6 +38,13 @@ Note: pre-existing build warnings — NU1903 (System.Security.Cryptography.Xml 9
 
 ## Working Notes
 
+### Discovered during step 3 (2026-07-23)
+- **Real generator crash found by the fresh-tree unchanged-run test**: persistent driver + re-parsed identical text (compiler-server warm rebuild) → cached RawCallSite holds nodes of superseded trees; `DisplayClassEnricher.EnrichAll` (line 93) calls `compilation.GetSemanticModel(oldTree)` → ArgumentException → CS8785 → generator contributes NOTHING (all interceptors silently vanish). Not covered by issues 309/310/318 as such. **Decision 2026-07-23: fix inline** (user-approved) — recover equivalent node from current compilation by FilePath+span in EnrichAll; noted as plan deviation for review.
+- Roslyn tracked-steps semantics learned: named nodes that are wholesale-skipped (inputs untouched) record NO steps — an absent stage in `TrackedSteps` is itself a cached signal. On "Unchanged", the driver KEEPS the previous output instance (this is what leaves stale tree references in cached sites).
+- **#310 mutation defect empirically confirmed** via ModifyOneFile test: emission output action mutates cached `AssembledPlan.ReaderDelegateCode` (QuarryGenerator.cs:663) which participates in `AssembledPlan.Equals` (AssembledPlan.cs:284) → recomputed pristine group ≠ cached-then-mutated group → unchanged file's per-file group reports Modified instead of Cached. Pinned in test with #310 reference (text-identity assertions remain the hard guardrail).
+- **#310 defect 1 (cross-partial ordinal shift → stale display-class name) reproduced and pinned**: incremental emission keeps `<>c__DisplayClass1_0` while a clean driver on identical final source emits `<>c__DisplayClass2_0`.
+- CS8785 is Warning severity — health assertions must check for it explicitly, not just Severity.Error.
+
 ### Exploration facts (2026-07-22)
 
 **F1 incremental caching (corroborated, with one correction):**
