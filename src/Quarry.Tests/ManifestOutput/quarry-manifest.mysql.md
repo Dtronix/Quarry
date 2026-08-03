@@ -3162,6 +3162,18 @@ SELECT `UserName` FROM `users` WHERE `UserId` = ?
 ### Users().Where(...).Select(...).ExecuteFetchAllAsync()
 
 ```sql
+SELECT `UserName` FROM `users` WHERE `UserId` > ?
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Users().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
 SELECT `UserName` FROM `users` WHERE `UserId` IN ({__COL_P0__})
 ```
 
@@ -5459,7 +5471,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 594 |
+| Total discovered | 595 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 102 |
-| Rendered | 492 |
+| Rendered | 493 |

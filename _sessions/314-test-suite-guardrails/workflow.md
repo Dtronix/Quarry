@@ -45,6 +45,29 @@ Note: pre-existing build warnings — NU1903 (System.Security.Cryptography.Xml 9
 
 ## Working Notes
 
+### Step 8 (2026-08-03) — concurrency suite
+
+- **New generator limitation found: chains inside doubly-nested lambdas fail to compile.**
+  The natural way to write a parallel worker —
+  `harnesses.Select((h, i) => Task.Run(async () => { var name = $"Worker{i}"; ... .Set(u => u.UserName = name) ... }))`
+  — makes the generator emit interceptors that reference `name` / `threshold` directly, but those
+  locals live in a display class the interceptor cannot see: **CS0103 "The name 'x' does not exist
+  in the current context"** in the generated `*.Interceptors.*.g.cs` for all four contexts.
+  Workaround used: each worker body is a named `private static async Task<T> Run...WorkerAsync(...)`
+  method, so the chain's captures are ordinary method locals. Not yet isolated to a minimal repro
+  (one lambda vs. two, `async` lambda vs. plain) — do that before filing; raise at REVIEW as a
+  candidate follow-up issue.
+- Harness facts that shaped the suite: `QueryTestHarness.SqlAsync`/`CreateSchema`/`SeedData` are
+  **SQLite-only** — PG/MySQL/SQL Server use a pre-seeded shared baseline plus a per-harness
+  transaction rolled back on dispose. So concurrent **writes** must stay on SQLite (private
+  in-memory DB per harness); concurrent writes on the container dialects would contend on row
+  locks in the shared baseline and produce timeouts rather than findings. Container dialects are
+  exercised read-only.
+- Harnesses are created **sequentially**, only the Quarry operations run in parallel — racing
+  container first-call initialization would test the fixtures, not the library.
+- Cost: 3 tests, 24 harnesses total, ~35s. Notable against a ~78s Quarry.Tests baseline; `Workers`
+  is a single const if CI time needs trimming.
+
 ### Step 7 (2026-08-03) — #329 IS synthetically pinnable (corrects step 6)
 
 - **Step 6's conclusion that entity-terminal shapes "emit CORRECT interceptors in isolation" is

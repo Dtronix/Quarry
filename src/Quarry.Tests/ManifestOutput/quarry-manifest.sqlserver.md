@@ -3099,6 +3099,18 @@ SELECT [UserName] FROM [users] WHERE [UserId] = @p0
 ### Users().Where(...).Select(...).ExecuteFetchAllAsync()
 
 ```sql
+SELECT [UserName] FROM [users] WHERE [UserId] > @p0
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Users().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
 SELECT [UserName] FROM [users] WHERE [UserId] IN ({__COL_P0__})
 ```
 
@@ -5323,7 +5335,7 @@ WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 587 |
+| Total discovered | 588 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 104 |
-| Rendered | 483 |
+| Rendered | 484 |

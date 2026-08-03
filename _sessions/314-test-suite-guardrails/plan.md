@@ -48,8 +48,8 @@ Implements issue #314 (all 7 findings; the two low items are deferred per Decisi
   New `Generation/InterceptorBindingGuardTests.cs`: 18 chain shapes (entity terminals, generic terminals on generic receivers, modification terminals) each compiled in its own synthetic compilation with interceptors enabled, asserting no CS8785/CS9144/CS9177 and that the terminal's interceptor was emitted; the 9 entity-terminal shapes re-run against a cross-namespace second context. Plus `KnownBug_Issue329_EntityTerminal_EmitsTwoArityReceiver` pinning the mismatched receiver the emitter currently produces.
   Tests: the guard test. Depends on: step 6 (shares fixture shapes; can merge into one commit with 6 if natural).
 
-- [ ] **8. F3 — Concurrency suite**
-  New `SqlOutput/ConcurrencyTests.cs` (or `Integration/`): (a) N parallel harnesses running mixed SELECT/UPDATE/Patch via `Task.WhenAll`; (b) parallel first-touch of interceptors sharing one carrier class — spin T tasks all executing the same prepared chain first time (static-init race); (c) parallel contexts on separate connections against the shared baseline (documented-supported scenario). Keep N modest (8–16) for CI stability.
+- [x] **8. F3 — Concurrency suite** *(placed in `Integration/` — the tests assert execution behaviour, not SQL text; writes are SQLite-only because the container dialects share one baseline schema, see Working Notes)*
+  New `Integration/ConcurrencyTests.cs`: (a) 8 parallel harnesses running mixed SELECT/UPDATE/Patch with per-worker parameter values, asserting no worker reads back another's parameter; (b) barrier-synchronized first touch of one shared carrier chain across 8 workers; (c) 8 parallel contexts on separate connections querying all four dialects read-only. Worker bodies are named methods — chains in doubly-nested lambdas do not compile (Working Notes).
   Tests: the new suite; full suite green. Depends on: nothing.
 
 - [ ] **9. F7a — Streaming early-break disposal tests**

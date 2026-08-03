@@ -596,6 +596,14 @@ SELECT "Status", MIN("Total") AS "Item2" FROM "orders" GROUP BY "Status"
 
 ---
 
+### Orders().Where(...).OrderBy(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT "OrderId", "Status", "Total" FROM "orders" WHERE "Total" > 100.00 ORDER BY "OrderId" ASC
+```
+
+---
+
 ### Orders().Where(...).OrderBy(...).Select(...).Limit(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -2867,7 +2875,7 @@ UPDATE "users" SET "UserName" = @p0 WHERE "UserId" = 1
 
 | Parameter | Type |
 |-----------|------|
-| `@p0` | `object` |
+| `@p0` | `string` |
 
 ---
 
@@ -3389,6 +3397,14 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 ### Users().Where(...).Select(...).ExecuteFetchAllAsync()
 
 ```sql
+SELECT "UserId" FROM "users" WHERE "IsActive" = 1
+```
+
+---
+
+### Users().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
 SELECT "UserId", "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__}) AND "UserId" > @p1
 ```
 
@@ -3430,6 +3446,18 @@ SELECT "UserName" FROM "users" WHERE "UserId" <= @p0 AND "UserId" IN ({__COL_P1_
 
 ```sql
 SELECT "UserName" FROM "users" WHERE "UserId" = @p0
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Users().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserName" FROM "users" WHERE "UserId" > @p0
 ```
 
 | Parameter | Type |
@@ -5885,7 +5913,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 732 |
+| Total discovered | 738 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 198 |
-| Rendered | 534 |
+| Consolidated (deduped) | 201 |
+| Rendered | 537 |
