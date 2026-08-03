@@ -6,7 +6,7 @@ base-branch: master
 
 ## State
 phase: IMPLEMENT
-status: active
+status: suspended
 issue: #314
 pr:
 
@@ -295,15 +295,71 @@ reasons, and both reasons are worth carrying into step 13:
 - Existing CT mentions in tests are all generator-signature detection (`HasCancellationToken`) or `CancellationToken.None` placeholders — no runtime cancellation.
 
 ## Suspend State
-_(cleared 2026-08-03 on resume — step 10 completed and committed as `1aae06a` after the last suspend was written. Carry-forward context that outlived it:)_
-- Adding chains regenerates `ManifestOutput` goldens — commit them or the step-1 CI drift check fails.
-- **Raise at REVIEW** — candidate follow-up issue: chains inside doubly-nested lambdas emit uncompilable
-  interceptors (CS0103), not yet isolated to a minimal repro (step-8 Working Notes).
+- **Position**: IMPLEMENT, plan steps 1–12 and 14 of 15 complete, committed and pushed
+  (last commit `bcf2d54`). **Remaining: step 13, then step 15.**
+- **In progress**: nothing mid-flight; working tree clean.
+- **Test status**: all green — full `dotnet test Quarry.sln` with Docker available after step 12:
+  Quarry.Tests 3484, Migration.Tests 201, Analyzers.Tests 146. No pre-existing failures.
+- **WIP commit**: none.
+
+### Immediate next step — step 13 (row-order sweep, remaining files + query-side fixes)
+
+Two distinct halves; do them as two commits.
+
+**13a — remaining file sweep.** Same delegated procedure as steps 11–12. The rules doc lives at
+`scratchpad/sweep-rules.md` (regenerate it from the step-11/12 Working Notes if the scratchpad is
+gone — it must include the "Lessons from the first file group" section, which is what stopped the
+second pass repeating the JoinTests mistake). Inventory of remaining files, pg/my/ss FetchAll
+sites vs. non-zero positional accesses:
+
+| File | FetchAll | `[1+]` | File | FetchAll | `[1+]` |
+|---|---:|---:|---|---:|---:|
+| StringOpTests | 63 | 0 | CompositionTests | 60 | 9 |
+| WindowFunctionTests | 36 | 15 | ComplexTests | 27 | 0 |
+| ConditionalMaskTests | 27 | 0 | NullableValueTests | 21 | 13 |
+| AggregateTests | 21 | 0 | EntityReaderTests | 21 | 0 |
+| NestedSubqueryTests | 20 | 12 | MiscTests | 14 | 0 |
+| OrderByTests | 12 | 24 | EnumTests | 12 | 0 |
+| TypeMappingTests | 12 | 0 | DistinctOrderByTests | 9 | 0 |
+| JoinNullableProjectionTests | 9 | 0 | DeleteTests | 6 | 0 |
+| HasManyThroughTests | 6 | 5 | StreamingTests | 6 | 0 |
+| PrepareTests | 6 | 3 | NavigationJoinTests | 3 | 7 |
+| FkKeyProjectionTests | 3 | 9 | | | |
+
+Expect `OrderByTests` / `DistinctOrderByTests` to be all-skip (a top-level ORDER BY is the thing
+they pin). Real work concentrates in Composition, WindowFunction, NullableValue, NestedSubquery.
+Also normalize the ad-hoc idiom at `FkKeyProjectionTests.cs:63,68,73,116,120,124`
+(`(await q.ExecuteFetchAllAsync()).OrderBy(k).ToList()` → `SortedByAsync`), real-provider sides only.
+
+**13b — query-side remediation** for the sites sorting cannot reach (all identified, all in
+already-swept files; details in the step-11/12 Working Notes):
+1. Nine `CrossDialectJoinTests` tests that encode `orders.OrderId` order through an unprojected
+   column — needs the join key projected + ordered, or `Is.EquivalentTo`.
+2. Four `CrossDialectSelectTests` pagination tests doing `LIMIT 2 OFFSET 1` with no ORDER BY.
+3. `NoSelect_ExecuteFetchFirstAsync_ReturnsFirstEntity` — `First` over a 2-row predicate.
+4. `Where_CollectionPlusScalar_WithPagination_ReturnsCorrectRows` — `Limit(1)`, no ORDER BY.
+Per plan: add query-side ORDER BY where the SQL assertion permits (update expected SQL
+accordingly); where it does not permit, leave it and note it in review.
+
+### Then — step 15
+Full `dotnet test Quarry.sln`; update `llm-testing.md` (SortedByAsync as the default pattern,
+concurrency/streaming/cancellation suites, bug-pin convention, manifest CI enforcement) and
+`src/Quarry.Generator/llm.md` (tracking names). → REVIEW.
+
+### Carry-forward context
+- Adding chains regenerates `ManifestOutput` goldens — commit them or the step-1 CI drift check
+  fails. (The row-order sweep does *not* regenerate them: it only appends post-terminal calls.)
+- **Raise at REVIEW** — candidate follow-up issue: chains inside doubly-nested lambdas emit
+  uncompilable interceptors (CS0103), not yet isolated to a minimal repro (step-8 Working Notes).
 - **Raise at REVIEW** — known coverage limit: mid-stream cancellation OCE asserted on SQLite only
   (step-10 Working Notes).
-- For step 14: previous benchmark entry lives in the Quarry-benchmarks repo gh-pages `dev/bench/data.js`;
-  `dev/bench/runs/runs.json` is the manifest.
-- For steps 11–13: sweep rules in plan.md Key concepts; sort keys reviewed on main context before commit.
+- **Raise at REVIEW** — coverage gap, not a row-order defect: several tests assert only
+  `Has.Count` on the pg/my/ss sides while the SQLite side asserts values
+  (`Join_FiveTable_Select`, and ~11 tests in `CrossDialectSetOperationTests`). Immune to order
+  flake but blind to wrong-rows regressions. Candidate separate issue.
+- Step-14 gate is committed but only dry-run verified; its first real exercise is post-merge.
+- **Unrecorded context**: none — everything is in Working Notes.
+- **Suspend trigger**: IMPLEMENT context check (≥3 steps completed this session — 11, 14, 12).
 
 ## Session Log
 | Date | Phases | Summary |
@@ -317,4 +373,5 @@ _(cleared 2026-08-03 on resume — step 10 completed and committed as `1aae06a` 
 | 2026-08-03 | IMPLEMENT (resumed) | Resumed from suspend at step 7/15. Re-ran full baseline before continuing (3438/201/146 green). |
 | 2026-08-03 | IMPLEMENT | Steps 7–9 done. 7: interceptor-binding guard matrix + vestigial NoWarn CS9177 removed + #329 pin recovered (corrects step 6). 8: concurrency suite; found chains in doubly-nested lambdas emit uncompilable interceptors. 9: streaming abandonment disposal tests, bite-verified. Suite 3480/201/146 green. Suspended per ≥3-step check; branch pushed. |
 | 2026-08-03 | IMPLEMENT | Step 10 done (runtime cancellation coverage, commit `1aae06a`) — session ended without a suspend write. |
-| 2026-08-03 | IMPLEMENT (resumed) | New session, resumed at step 11/15. Stale Suspend State cleared; full baseline re-run. |
+| 2026-08-03 | IMPLEMENT (resumed) | New session, resumed at step 11/15. Stale Suspend State cleared; full baseline re-run (3484/201/146 green). |
+| 2026-08-03 | IMPLEMENT | Steps 11, 14, 12 done. 11: 87 sites swept in Select/Subquery/Join; found two clusters sorting cannot fix (9 JoinTests encoding order via an unprojected column, 4 LIMIT/OFFSET pagination tests) → deferred to 13b. 14: alert-only benchmark regression gate, jq dry-run verified. 12: 27 sites in Where/Cte/WideTuple; WideTuple and SetOperation needed nothing. Suite 3484/201/146 green. Suspended per ≥3-step check; branch pushed. |
