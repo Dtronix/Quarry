@@ -44,8 +44,8 @@ Implements issue #314 (all 7 findings; the two low items are deferred per Decisi
   - Bug (b): active pin — codegen test on an entity-terminal chain asserting the call is currently NOT intercepted (CS9177 present / no matching InterceptsLocation); failure ⇒ fixed. Update the three integration-suite comments to reference the issue numbers.
   Tests: the pins themselves. Depends on: step 5 (issue numbers).
 
-- [ ] **7. F5c — CS9177 guard test**
-  Codegen test compiling a representative synthetic source set (including the known entity-terminal fallback shapes) **with interceptors enabled**, collecting CS9177 diagnostics from the final compilation, asserting the exact expected set (count + originating member). Any new arity mismatch changes the set and fails the guard even though the csproj NoWarn stays.
+- [x] **7. F5c — CS9177 guard test** *(deviations: the csproj NoWarn was removed rather than kept — it was vestigial, see step-6 Working Notes; and the "exact expected set of CS9177" is empty, so the guard asserts zero CS9144/CS9177 across a shape matrix plus proof that an interceptor was actually emitted. Additionally recovered a compilable #329 pin — see step-7 Working Notes)*
+  New `Generation/InterceptorBindingGuardTests.cs`: 18 chain shapes (entity terminals, generic terminals on generic receivers, modification terminals) each compiled in its own synthetic compilation with interceptors enabled, asserting no CS8785/CS9144/CS9177 and that the terminal's interceptor was emitted; the 9 entity-terminal shapes re-run against a cross-namespace second context. Plus `KnownBug_Issue329_EntityTerminal_EmitsTwoArityReceiver` pinning the mismatched receiver the emitter currently produces.
   Tests: the guard test. Depends on: step 6 (shares fixture shapes; can merge into one commit with 6 if natural).
 
 - [ ] **8. F3 — Concurrency suite**

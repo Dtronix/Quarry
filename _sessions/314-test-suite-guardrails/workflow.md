@@ -6,7 +6,7 @@ base-branch: master
 
 ## State
 phase: IMPLEMENT
-status: suspended
+status: active
 issue: #314
 pr:
 
@@ -37,8 +37,48 @@ Note: pre-existing build warnings — NU1903 (System.Security.Cryptography.Xml 9
 - 2026-07-22 — **CS9177 (F5)**: pin + guard test — file issues for both routed-around bugs, add pinning tests, keep blanket NoWarn, add codegen guard test asserting the exact expected set of non-intercepted sites.
 - 2026-07-23 — **CS9177 NoWarn REMOVAL (F5 revision)**: evidence showed the blanket NoWarn suppresses nothing (zero CS9177 in a full build with it overridden; the real mismatch is CS9144, an error). Step 7 removes the vestigial NoWarn and adds an interceptor-binding guard matrix instead of "targeted suppressions".
 - 2026-07-23 — **Pin placement (F5 revision)**: #328's pin lives in CrossDialectConditionalMaskTests against the real contexts (synthetic isolation doesn't reproduce either bug); #328 retitled to the actual remaining defect (conditional Having not mask-gated). #329 has no compilable pin (the bug is a build error) — signal is the guard matrix + documented probe in the issue.
+- 2026-08-03 — **#329 pin restored (revises the 2026-07-23 pin-placement decision)**: step 7 found the
+  defect *is* reproducible in isolation — the emitter produces a two-arity receiver for a chain that
+  never projects; it simply raises no CS9144 there. Pinned on the emitted text in
+  `InterceptorBindingGuardTests.KnownBug_Issue329_EntityTerminal_EmitsTwoArityReceiver` rather than
+  on a compiler diagnostic. The guard matrix stays as the regression net for clause shapes.
 
 ## Working Notes
+
+### Step 7 (2026-08-03) — #329 IS synthetically pinnable (corrects step 6)
+
+- **Step 6's conclusion that entity-terminal shapes "emit CORRECT interceptors in isolation" is
+  wrong.** Dumping the generated source for `db.Users().Where(...).ExecuteFetchAllAsync()` in an
+  isolated `CSharpCompilation` shows the emitter produces
+  `public static Task<List<User>> ExecuteFetchAllAsync_...(this IQueryBuilder<User, User> builder, ...)`
+  while the preceding `Where_...` interceptor returns `IQueryBuilder<User>`. That is exactly the
+  #329 mismatch — it just does not raise CS9144 in an isolated compilation, which is why step 6
+  read it as correct. Same shape in the full test project *is* a CS9144 error (hence the
+  `.Select(...)` workarounds). So #329 does have a compilable pin after all:
+  `KnownBug_Issue329_EntityTerminal_EmitsTwoArityReceiver` asserts the two-arity receiver text
+  and fails when the emitter is fixed.
+- **Corollary — do not rely on synthetic CS9144 for terminal mismatches.** A hand-written
+  `[InterceptsLocation]` interceptor with a deliberately wrong receiver arity also produces no
+  CS9144 in an isolated compilation. The attribute *is* recognized (a garbage `data` argument
+  yields CS9231, and a probe colliding with the generator's own interceptor yields CS9153), so
+  the silence is the compiler's interceptor-matching rule for these shapes, not a broken harness.
+  Assert on emitted text for terminal-receiver defects.
+- **Guard-matrix bite-verification**: mutating the single decision point
+  `CarrierEmitter.ResolveCarrierReceiverType` (`CarrierEmitter.cs:250`) to return the two-arity
+  form makes the *whole project* fail to build with real CS9144 errors on clause interceptors
+  (`Distinct()`, `Limit(int)`, `Union(...)`). That proves the matrix's CS9144/CS9177 assertion is
+  not vacuous for clause shapes (the matrix includes `Distinct_FetchAll` / `Limit_FetchFirst` for
+  this reason). It cannot be bite-verified end-to-end *inside* the synthetic harness, because the
+  mutation breaks the Quarry.Tests build before any test runs. Revert such mutations with
+  `git checkout --` (see the step-6 mtime gotcha below).
+- Interceptors are emitted into the **context's own namespace**, so a synthetic compilation must
+  enable every fixture context namespace via the `InterceptorsNamespaces` parse-option feature
+  (`"TestApp;TestApp.Sub"`) or the compiler rejects the generated `[InterceptsLocation]`s.
+- `IEntityAccessor<T>` exposes **no terminals of its own** — every chain must pass through one
+  builder-returning method (`Where`/`OrderBy`/`Limit`/`Distinct`) before terminating. Relevant
+  when constructing minimal entity-terminal fixtures.
+- **Blanket `NoWarn` CS9177 removed** from `Quarry.Tests.csproj`, confirming the step-6 finding:
+  a non-incremental build of Quarry.Tests without it reports 0 errors and zero CS9177/CS9144.
 
 ### Step 6 (2026-07-23) — major empirical corrections to finding 5
 - **#328 misattribution is STALE**: split conditional-Having chain now binds to the correct context (probe on My rendered correct backtick SQL). Likely fixed by #307/#322. But a REAL bug remains in the same shape: **conditional Having is not mask-gated** — HAVING renders unconditionally (verified SQL + execution, all 4 dialects). #328 retitled to that defect; taken-branch regression test + untaken-branch active pin added to CrossDialectConditionalMaskTests. (Pin uses `int.Parse("0") == 1` for runtime-false to dodge constant-branch analysis.)
@@ -113,3 +153,4 @@ Note: pre-existing build warnings — NU1903 (System.Security.Cryptography.Xml 9
 | 2026-07-23 | IMPLEMENT | Steps 1–3 done (manifest CI check; tracking names; caching-test rewrite + inline DisplayClassEnricher stale-tree crash fix + two #310 pins). Suspended per ≥3-step context check; branch pushed. |
 | 2026-07-23 | IMPLEMENT | Resumed same-session (baseline still green from pre-suspend full run); continuing at step 4. |
 | 2026-07-23 | IMPLEMENT | Steps 4–6 done (pipeline-model equality tests; issues #328/#329 filed; conditional-Having coverage + #328 pin — misattribution found stale, real defect is unmasked Having; #329 confirmed as CS9144; NoWarn CS9177 found vestigial). Suspended per ≥3-step check; branch pushed. |
+| 2026-08-03 | IMPLEMENT (resumed) | Resumed from suspend at step 7/15. Re-ran full baseline before continuing. |
