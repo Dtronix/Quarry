@@ -70,7 +70,7 @@ Implements issue #314 (all 7 findings; the two low items are deferred per Decisi
 - [ ] **13. F4c — Row-order sweep: remaining ~17 files + First/FetchFirst ORDER BY remediation**
   Remaining files per sweep rules. Then bare `.First()` / `ExecuteFetchFirstAsync`-on-multi-row sites: add query-side `ORDER BY` where the SQL assertion permits (update expected SQL accordingly); where it doesn't permit, leave and note in review.
 
-- [ ] **14. F2 — Benchmark regression gate (alert-only) in `benchmark.yml`**
+- [x] **14. F2 — Benchmark regression gate (alert-only) in `benchmark.yml`** *(deviation: issue lookup/creation uses `curl` + REST rather than `gh`, which is not guaranteed on the self-hosted benchmark runner; the gate runs before the publish steps so a crashed run never becomes the stored baseline)*
   After the merge step: jq-compare current combined results vs previous data.js entry per `Quarry_*` series — mean regression >15% or any `allocated` increase ⇒ collect breaches; if any, `gh issue create` (label `performance-regression`, body listing series/old/new/delta; dedupe: skip if an open issue with the same title exists). Separately: expected-series check — every series present in the previous entry must exist in the current results with non-null `Statistics`, else **fail the workflow** (replaces silent `select(.Statistics != null)` drop). Needs `issues: write` permission and jq logic only — no compiled tooling.
   Tests: none runnable locally beyond `jq` dry-runs against committed artifact samples + `act`-style reasoning; validated post-merge. Verify yml with `gh workflow view`/yaml lint.
 

@@ -45,6 +45,32 @@ Note: pre-existing build warnings — NU1903 (System.Security.Cryptography.Xml 9
 
 ## Working Notes
 
+### Step 14 (2026-08-03) — benchmark regression gate
+
+- **Gate runs before publishing, not after.** The comparison step sits between "Merge benchmark
+  results" and "Generate merged HTML report", and fetches the previous `data.js` from the
+  benchmarks repo's gh-pages over raw.githubusercontent (same public path the `check` job
+  already uses for `runs.json`). Comparing before publish means a crashed run never becomes the
+  stored baseline, and it avoids coupling to the publish step's in-place append.
+- **`gh` CLI is not assumed present** on the self-hosted `debian-benchmark` runner. Issue lookup
+  and creation go through `curl` + the REST API, which the workflow already relies on for commit
+  metadata. `jq` is likewise already a hard dependency of the merge step.
+- **Dedupe is on issue title alone, not on the label** — a maintainer who relabels the tracking
+  issue should still suppress duplicates. `select(.pull_request == null)` is required because
+  `/issues` returns PRs too.
+- `select(.Statistics != null)` in the merge step is **kept**, not removed: downstream jq would
+  otherwise have to null-guard. What changed is that the drop is no longer silent — a series
+  present in the last published run and absent here fails the workflow.
+- **Dry-run verified locally with jq 1.7.1** against synthetic fixtures
+  (`scratchpad/perfgate-dryrun.sh`), covering: +20% mean → breach; allocation 100→120 B with
+  only +1% mean → breach; +5% mean with flat allocation → clean; removed series → missing;
+  newly added series → ignored; non-`Quarry_*` methods → filtered out. Also confirmed the
+  no-baseline paths (`entries` key absent, empty entries array, `benches: null`) all yield an
+  empty previous set rather than a jq error. YAML re-parsed after editing; step order and the
+  two `if:` guards confirmed.
+- Not verifiable locally: the `issues: write` token scope and the actual REST calls. First real
+  exercise is post-merge on master.
+
 ### Step 11 (2026-08-03) — row-order sweep, first file group
 
 - **The 526-assertion estimate does not translate into 526 conversions.** Across
