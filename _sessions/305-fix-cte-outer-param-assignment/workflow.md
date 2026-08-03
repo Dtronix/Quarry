@@ -100,6 +100,18 @@ Baseline test status: all green at 7bb0e35 — Quarry.Tests 3281 passed, Quarry.
   had the conditional-map branch removed. Fix: `touch` the file (or `git checkout --`,
   which sets a fresh mtime) before rebuilding. When bite-verifying by mutating source,
   prefer `git stash` / `git checkout -- <file>` over manual backup files.
+- **Rebase gotcha (FINALIZE 2026-08-03):** rebasing onto master conflicted on all four
+  `src/Quarry.Tests/ManifestOutput/quarry-manifest.{dialect}.md` goldens — and only on the
+  summary-count block (`Total discovered` / `Rendered`); the per-entry SQL sections
+  auto-merge cleanly. These goldens are generator build output (`QuarrySqlManifestPath` in
+  Quarry.Tests.csproj:64), so the resolution is mechanical: keep either side, then rebuild
+  and commit the regenerated file. Resolved by keeping the HEAD (master) side at each
+  conflict and letting the post-rebase build rewrite the counts (+3 MySQL, +2 sqlite/pg/ss
+  — the entries this branch adds). Do NOT hand-compute these numbers.
+- Post-rebase full suite (2026-08-03, Docker up): Quarry.Tests 3429, Migration.Tests 201,
+  Analyzers.Tests 146 — 0 failed, 0 skipped. No interaction with #322's conditional-mask
+  rework: the `BuildParamConditionalMap` CTE branch merged into master's revised walk
+  without semantic conflict.
 - Main repo (Quarry-master) has an uncommitted, unrelated change to
   `src/Quarry.Generator/CodeGen/CarrierEmitter.cs` (Patch-chain `__colShift`
   CS0219 avoidance). It is NOT part of this branch; worktree branched from clean
