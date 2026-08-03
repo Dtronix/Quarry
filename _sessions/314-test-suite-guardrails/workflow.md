@@ -6,7 +6,7 @@ base-branch: master
 
 ## State
 phase: IMPLEMENT
-status: suspended
+status: active
 issue: #314
 pr:
 
@@ -44,6 +44,32 @@ Note: pre-existing build warnings — NU1903 (System.Security.Cryptography.Xml 9
   on a compiler diagnostic. The guard matrix stays as the regression net for clause shapes.
 
 ## Working Notes
+
+### Step 10 (2026-08-03) — cancellation
+
+- **Mid-stream cancellation is only observable when the provider awaits I/O.** With the three
+  seeded rows, PostgreSQL delivers the whole result set in one response, so
+  `while (await reader.ReadAsync(ct))` never awaits again and never sees the token — enumeration
+  runs to completion after `Cancel()`. SQLite does surface OCE. Split accordingly: a
+  connection-usability test across all four dialects (universal, and the leak guard), plus a
+  strict OCE assertion on SQLite only, with the reason documented in the test. Making PG/MySQL/SS
+  stream for real would need bulk inserts of thousands of rows via four dialect-specific
+  statements — judged not worth it for insurance coverage. **Raise at REVIEW** as a known coverage
+  limit.
+- **Bite-verified.** Dropping the token (`ExecuteReaderAsync(behavior, CancellationToken.None)` and
+  `ReadAsync(CancellationToken.None)` at `QueryExecutor.cs:32`, `:38`, `:314`) fails both
+  `PreCancelledToken_EveryFetchTerminal_...` and `MidStreamCancellation_SurfacesOperationCanceled_...`.
+- **Second generator constraint found (distinct from step 8): a *partial* chain passed as a method
+  argument is not intercepted.** Handing `Lite.Users().OrderBy(...).Select(...)` to a helper that
+  applies the terminal fails at **runtime** with
+  `NotSupportedException: Entity accessor methods must be intercepted by the Quarry source generator` —
+  no build-time diagnostic. The chain must terminate at the call site; pass the terminal's result
+  (`IAsyncEnumerable<T>`, `Task<T>`) to helpers instead. This is why the cancellation helpers take
+  an already-started operation rather than a builder.
+- OCE propagates unwrapped by design: every executor's failure catch is filtered
+  `when (ex is not OperationCanceledException)`. For a *pre-cancelled* token the throw comes from
+  `ExecuteReaderAsync` — outside that try — so the filter itself is only load-bearing for
+  cancellation observed mid-read.
 
 ### Step 9 (2026-08-03) — streaming disposal
 

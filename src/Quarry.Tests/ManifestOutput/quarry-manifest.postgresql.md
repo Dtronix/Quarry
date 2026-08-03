@@ -1847,6 +1847,22 @@ SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" LEFT JOIN "orders" AS 
 
 ---
 
+### Users().OrderBy(...).Select(...).ExecuteFetchFirstAsync()
+
+```sql
+SELECT "UserName" FROM "users" ORDER BY "UserId" ASC
+```
+
+---
+
+### Users().OrderBy(...).Select(...).ExecuteFetchFirstOrDefaultAsync()
+
+```sql
+SELECT "UserName" FROM "users" ORDER BY "UserId" ASC
+```
+
+---
+
 ### Users().OrderBy(...).Select(...).ToAsyncEnumerable()
 
 ```sql
@@ -2607,6 +2623,14 @@ UPDATE "users" SET "UserName" = $1, "IsActive" = FALSE WHERE "UserId" = 2
 ### Users().Update().Set(...).Where(...).ExecuteNonQueryAsync()
 
 ```sql
+UPDATE "users" SET "UserName" = 'cancelled' WHERE "UserId" = 1
+```
+
+---
+
+### Users().Update().Set(...).Where(...).ExecuteNonQueryAsync()
+
+```sql
 UPDATE "users"{__PATCH_SET__} WHERE "UserId" = 1
 ```
 
@@ -3351,6 +3375,30 @@ SELECT "UserName", "IsActive" FROM "users" WHERE "UserId" = 2
 
 ```sql
 SELECT "UserName" FROM "users" WHERE "UserId" = -999
+```
+
+---
+
+### Users().Where(...).Select(...).ExecuteFetchSingleAsync()
+
+```sql
+SELECT "UserName" FROM "users" WHERE "UserId" = 1
+```
+
+---
+
+### Users().Where(...).Select(...).ExecuteFetchSingleOrDefaultAsync()
+
+```sql
+SELECT "UserName" FROM "users" WHERE "UserId" = 1
+```
+
+---
+
+### Users().Where(...).Select(...).ExecuteScalarAsync()
+
+```sql
+SELECT "UserId" FROM "users" WHERE "UserId" = 1
 ```
 
 ---
@@ -5523,7 +5571,7 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 628 |
+| Total discovered | 639 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 125 |
-| Rendered | 503 |
+| Consolidated (deduped) | 130 |
+| Rendered | 509 |

@@ -56,7 +56,7 @@ Implements issue #314 (all 7 findings; the two low items are deferred per Decisi
   Extend `CrossDialectStreamingTests`: early-`break` after first row, then issue a follow-up query **on the same harness connection** and assert success on all 4 dialects (leaked reader ⇒ MySqlConnector/SqlClient failure); also `await using` enumerator explicit-dispose variant, and dispose-mid-enumeration followed by harness rollback (dispose path already exercised by harness teardown — assert no throw).
   Tests: new tests. Depends on: nothing.
 
-- [ ] **10. F7b — Cancellation tests**
+- [x] **10. F7b — Cancellation tests** *(deviation: mid-stream OCE is asserted on SQLite only — a provider that has buffered the result set never awaits I/O again and so never observes the token, so the all-dialect test asserts connection usability instead. Bite-verified by dropping the token in the executor. See Working Notes)*
   New tests: (a) pre-cancelled token into each fetch terminal (`FetchAll/First/FirstOrDefault/Single/SingleOrDefault/Scalar/NonQuery`) ⇒ `OperationCanceledException`, connection remains usable; (b) mid-stream cancellation of `ToAsyncEnumerable` via token cancelled after first `MoveNextAsync` ⇒ OCE and subsequent command on same connection succeeds; (c) raw-SQL streaming overload with token. Keep per-dialect where the harness makes it cheap; SQLite + PG minimum, all 4 where stable.
   Tests: new tests. Depends on: step 9 (same file/patterns).
 
