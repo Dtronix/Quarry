@@ -6,7 +6,7 @@ base-branch: master
 
 ## State
 phase: IMPLEMENT
-status: active
+status: suspended
 issue: #314
 pr:
 
@@ -168,17 +168,25 @@ Note: pre-existing build warnings — NU1903 (System.Security.Cryptography.Xml 9
 - Existing CT mentions in tests are all generator-signature detection (`HasCancellationToken`) or `CancellationToken.None` placeholders — no runtime cancellation.
 
 ## Suspend State
-- **Position**: IMPLEMENT, plan steps 1–6 of 15 complete and committed (last commit ad7ee18). Next: step 7 (F5c — interceptor-binding guard matrix).
+- **Position**: IMPLEMENT, plan steps 1–9 of 15 complete, committed and pushed (last commit 52b9ed9). Next: step 10 (F7b — cancellation tests).
 - **In progress**: nothing mid-flight; working tree clean.
-- **Immediate next step — step 7 specifics (revised by step-6 findings, see Decisions)**:
-  1. REMOVE the vestigial `<NoWarn>CS9177</NoWarn>` from `Quarry.Tests.csproj:13-14` (verified: zero CS9177 in full build with it overridden).
-  2. New `Generation/InterceptorBindingGuardTests.cs`: synthetic-compilation matrix over entity-terminal shapes (First/FirstOrDefault/Single/All/NonQuery-style terminals × with/without Where × root-context and sub-namespace cross-context) asserting NO CS9144/CS9177 in the output compilation (all currently pass in isolation — guards regressions and future arity mismatches). Reuse the reference list + fixture pattern from PipelineModelEqualityTests; MUST include `System.ComponentModel.Primitives.dll` (see Working Notes — its absence flips generator classification).
-  3. Full build check: `dotnet build src/Quarry.Tests -p:NoWarn=NU1903` should stay CS9177/CS9144-free.
-- **Then**: step 8 (concurrency suite), 9/10 (streaming/cancellation), 11–13 (row-order sweep), 14 (benchmark gate), 15 (docs+final).
-- **WIP commit**: none (all work committed).
-- **Test status**: all green — Quarry.Tests 3438 (full run after step 6), Migration.Tests 201, Analyzers.Tests 146 (after step 3; untouched since).
-- **Unrecorded context**: none — all discoveries in Working Notes (step-6 block is essential reading: #328 retitled, #329 CS9144 facts, vestigial NoWarn evidence). For step 14: previous benchmark entry lives in Quarry-benchmarks repo gh-pages `dev/bench/data.js`; `dev/bench/runs/runs.json` is the manifest. For steps 11–13: sweep rules in plan.md Key concepts; sort keys reviewed on main context before commit.
-- **Suspend trigger**: IMPLEMENT context check (≥3 steps completed this session — steps 4, 5, 6).
+- **Immediate next step — step 10 (cancellation)**, per plan:
+  1. Pre-cancelled token into each fetch terminal (`FetchAll/First/FirstOrDefault/Single/SingleOrDefault/Scalar/NonQuery`) ⇒ `OperationCanceledException`, connection still usable afterwards.
+  2. Mid-stream cancellation of `ToAsyncEnumerable` (token cancelled after the first `MoveNextAsync`) ⇒ OCE, and a subsequent command on the same connection succeeds.
+  3. Raw-SQL streaming overload with a token.
+  SQLite + PG minimum, all four where stable. Follow the step-9 pattern: the *follow-up query on the same harness connection* is the assertion with teeth — bite-verify it the same way.
+- **Then**: 11–13 (row-order sweep), 14 (benchmark gate), 15 (docs+final).
+- **WIP commit**: none (all work committed and pushed).
+- **Test status**: all green — Quarry.Tests 3480, Migration.Tests 201, Analyzers.Tests 146 (full `dotnet test Quarry.sln` after step 9, Docker available).
+- **Unrecorded context**: none — all discoveries are in Working Notes. Essential reading before continuing:
+  - **step-9 block** — the bite-verification pattern for disposal/cancellation, and the warning that the harness-rollback test does *not* detect a leak;
+  - **step-8 block** — chains inside doubly-nested lambdas emit uncompilable interceptors (CS0103); write worker bodies as named methods. Not yet isolated to a minimal repro — **candidate follow-up issue, raise at REVIEW**;
+  - **step-7 block** — #329 is synthetically pinnable after all (corrects step 6); don't rely on synthetic CS9144 for terminal-shape mismatches;
+  - **step-6 block** — #328 retitled, #329 CS9144 facts.
+  - Adding chains regenerates `ManifestOutput` goldens — commit them or the step-1 CI drift check fails.
+  - For step 14: previous benchmark entry lives in the Quarry-benchmarks repo gh-pages `dev/bench/data.js`; `dev/bench/runs/runs.json` is the manifest.
+  - For steps 11–13: sweep rules in plan.md Key concepts; sort keys reviewed on main context before commit.
+- **Suspend trigger**: IMPLEMENT context check (≥3 steps completed this session — steps 7, 8, 9).
 
 ## Session Log
 | Date | Phases | Summary |
@@ -189,4 +197,5 @@ Note: pre-existing build warnings — NU1903 (System.Security.Cryptography.Xml 9
 | 2026-07-23 | IMPLEMENT | Steps 1–3 done (manifest CI check; tracking names; caching-test rewrite + inline DisplayClassEnricher stale-tree crash fix + two #310 pins). Suspended per ≥3-step context check; branch pushed. |
 | 2026-07-23 | IMPLEMENT | Resumed same-session (baseline still green from pre-suspend full run); continuing at step 4. |
 | 2026-07-23 | IMPLEMENT | Steps 4–6 done (pipeline-model equality tests; issues #328/#329 filed; conditional-Having coverage + #328 pin — misattribution found stale, real defect is unmasked Having; #329 confirmed as CS9144; NoWarn CS9177 found vestigial). Suspended per ≥3-step check; branch pushed. |
-| 2026-08-03 | IMPLEMENT (resumed) | Resumed from suspend at step 7/15. Re-ran full baseline before continuing. |
+| 2026-08-03 | IMPLEMENT (resumed) | Resumed from suspend at step 7/15. Re-ran full baseline before continuing (3438/201/146 green). |
+| 2026-08-03 | IMPLEMENT | Steps 7–9 done. 7: interceptor-binding guard matrix + vestigial NoWarn CS9177 removed + #329 pin recovered (corrects step 6). 8: concurrency suite; found chains in doubly-nested lambdas emit uncompilable interceptors. 9: streaming abandonment disposal tests, bite-verified. Suite 3480/201/146 green. Suspended per ≥3-step check; branch pushed. |
