@@ -64,7 +64,7 @@ Implements issue #314 (all 7 findings; the two low items are deferred per Decisi
   Delegated mechanical conversion per sweep rules (~471 raw accesses); sort keys reviewed on main context. Commit per this file group.
   Tests: converted files re-run green (`--filter` per file), then full suite at step end.
 
-- [ ] **12. F4b — Row-order sweep: CrossDialectWideTupleTests, CrossDialectWhereTests, CrossDialectCteTests, CrossDialectSetOperationTests**
+- [x] **12. F4b — Row-order sweep: CrossDialectWideTupleTests, CrossDialectWhereTests, CrossDialectCteTests, CrossDialectSetOperationTests** *(deviation: 27 lines, not ~240 — WideTupleTests needs nothing because every test already carries a top-level ORDER BY, and SetOperationTests needs nothing because it was already hardened with inline `.OrderBy(...).ToList()`. Also normalized the ad-hoc inline-OrderBy fetch lines in WideTupleTests to `SortedByAsync` per the helper's own doc comment — see Working Notes)*
   Same procedure (~240 accesses; CteTests partially converted already).
 
 - [ ] **13. F4c — Row-order sweep: remaining ~17 files + First/FetchFirst ORDER BY remediation**

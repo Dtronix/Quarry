@@ -45,6 +45,42 @@ Note: pre-existing build warnings — NU1903 (System.Security.Cryptography.Xml 9
 
 ## Working Notes
 
+### Step 12 (2026-08-03) — row-order sweep, second file group
+
+Only **27 lines** across the four files. Two of the four needed nothing at all, for opposite
+reasons, and both reasons are worth carrying into step 13:
+
+- **`CrossDialectWideTupleTests` — 0 conversions, every test already carries a top-level
+  `ORDER BY`.** All 21 pg/my/ss sites hit the primary skip rule. `Tuple_PostCteWideProjection_OrderBy`
+  is the sharpest case: `r => r.OrderId` ascending *would* coincidentally reproduce the asserted
+  order (OrderId 1 → Total 250, OrderId 3 → Total 150) while silently ceasing to test the
+  `Direction.Descending` ORDER BY it exists to pin. That is exactly the regression-masking the
+  skip rule protects against.
+- **`CrossDialectSetOperationTests` — 0 conversions, already hardened by a different mechanism.**
+  Its authors evidently hit this problem first: every multi-row value-asserting test sorts inline
+  with `.OrderBy(r => r.UserName).ToList()` on all four sides, and every other test asserts count
+  only. 75 sites, all correctly skipped.
+- **`CrossDialectCteTests` — 3 conversions.** `Cte_FromCte_SimpleFilter` was the one test the
+  earlier partial pass missed; the other 18 sites were already converted.
+- **`CrossDialectWhereTests` — 21 conversions** (7 tests), all `r => r.UserId`. No test in the
+  file asserts any SQL containing `ORDER BY`, so the primary skip rule never fired; the 14 skips
+  are all single-row or `Does.Contain`/count-only assertions.
+
+- **Ad-hoc `(await q.ExecuteFetchAllAsync()).OrderBy(k).ToList()` idiom — normalized where it is
+  a fetch line.** `RowOrderExtensions`' own doc comment asks for `SortedByAsync` instead, so the
+  three pg/my/ss sites in `Tuple_PostCteWideProjection` were converted. A repo-wide grep found
+  **6 more at `SqlOutput/FkKeyProjectionTests.cs:63,68,73,116,120,124`** → normalize in step 13.
+  The SQLite side of those tests is left on the inline form, matching the helper's documented
+  contract (real-provider sides only).
+  **Not** normalized: 12 sites in `CrossDialectSetOperationTests` (`CrossEntity_Union_*`,
+  `_UnionAll_`, `_Except_`, `_Union_WithParameters`) sort into a *separate* `pgValues`/`myValues`/
+  `ssValues` local rather than on the fetch line, so converting them means editing
+  assertion-adjacent lines. They are already order-safe; leave them.
+- **New latent flake for step 13**:
+  `Where_CollectionPlusScalar_WithPagination_ReturnsCorrectRows` applies `Limit(1)` with no
+  ORDER BY on all four dialects. Harmless today (count-only assertion), but it cannot be
+  strengthened without a query-side ORDER BY.
+
 ### Step 14 (2026-08-03) — benchmark regression gate
 
 - **Gate runs before publishing, not after.** The comparison step sits between "Merge benchmark
