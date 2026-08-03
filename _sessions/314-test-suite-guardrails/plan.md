@@ -52,7 +52,7 @@ Implements issue #314 (all 7 findings; the two low items are deferred per Decisi
   New `Integration/ConcurrencyTests.cs`: (a) 8 parallel harnesses running mixed SELECT/UPDATE/Patch with per-worker parameter values, asserting no worker reads back another's parameter; (b) barrier-synchronized first touch of one shared carrier chain across 8 workers; (c) 8 parallel contexts on separate connections querying all four dialects read-only. Worker bodies are named methods — chains in doubly-nested lambdas do not compile (Working Notes).
   Tests: the new suite; full suite green. Depends on: nothing.
 
-- [ ] **9. F7a — Streaming early-break disposal tests**
+- [x] **9. F7a — Streaming early-break disposal tests** *(bite-verified by removing `await using` from the reader in both streaming overloads: the two follow-up-query tests fail, the rollback test does not — see Working Notes)*
   Extend `CrossDialectStreamingTests`: early-`break` after first row, then issue a follow-up query **on the same harness connection** and assert success on all 4 dialects (leaked reader ⇒ MySqlConnector/SqlClient failure); also `await using` enumerator explicit-dispose variant, and dispose-mid-enumeration followed by harness rollback (dispose path already exercised by harness teardown — assert no throw).
   Tests: new tests. Depends on: nothing.
 

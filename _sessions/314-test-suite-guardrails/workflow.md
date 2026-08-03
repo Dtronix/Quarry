@@ -45,6 +45,19 @@ Note: pre-existing build warnings — NU1903 (System.Security.Cryptography.Xml 9
 
 ## Working Notes
 
+### Step 9 (2026-08-03) — streaming disposal
+
+- **Bite-verified.** Removing `await using` from the reader in both streaming overloads
+  (`QueryExecutor.cs:311` and `:352`) makes `ToAsyncEnumerable_AbandonedAfterFirstRow_...` and
+  `ToAsyncEnumerable_EnumeratorDisposedEarly_...` fail. The follow-up query on the same harness
+  connection is what detects the leak, exactly as designed.
+- **The rollback test does NOT detect a leak** — it still passed under the mutation, because the
+  providers tolerate a rollback with a reader outstanding. Kept (the plan asked for it) but its
+  doc comment now says plainly what it does and does not guard. Do not treat it as disposal
+  coverage.
+- Adding chains to the test project **regenerates the ManifestOutput goldens** — they must be
+  committed with the change or the step-1 CI drift check fails.
+
 ### Step 8 (2026-08-03) — concurrency suite
 
 - **New generator limitation found: chains inside doubly-nested lambdas fail to compile.**

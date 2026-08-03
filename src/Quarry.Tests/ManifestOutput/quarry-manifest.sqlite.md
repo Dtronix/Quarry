@@ -5913,7 +5913,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 738 |
+| Total discovered | 743 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 201 |
+| Consolidated (deduped) | 206 |
 | Rendered | 537 |

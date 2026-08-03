@@ -5523,7 +5523,7 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 623 |
+| Total discovered | 628 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 120 |
+| Consolidated (deduped) | 125 |
 | Rendered | 503 |
