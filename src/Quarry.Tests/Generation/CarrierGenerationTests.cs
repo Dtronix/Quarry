@@ -4485,6 +4485,64 @@ public class Queries
             + string.Join("; ", qry037.Select(d => d.GetMessage())));
     }
 
+    [Test]
+    public void CteInnerAndOuterCapturedParams_NoQRY037_AssignsBothPFields()
+    {
+        // Issue #305: a captured param inside the With<T>() lambda AND a captured param
+        // in the outer Where used to trip QRY037 — AssembledPlan's site-parameter walk
+        // advanced the global offset by 0 for the CteDefinition site (its Clause is
+        // null), so the outer Where interceptor was emitted against P0 (the CTE's slot)
+        // and P1 was never assigned. The fix advances the offset by the CteDef's
+        // inner-param count; both P-fields must now be assigned, and the chain must
+        // build cleanly.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<Order> Orders();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        decimal threshold = 100.00m;
+        int minId = 2;
+        await db.With<Order>(orders => orders.Where(o => o.Total > threshold))
+            .FromCte<Order>()
+            .Where(o => o.OrderId >= minId)
+            .Select(o => (o.OrderId, o.Total))
+            .ExecuteFetchAllAsync();
+    }
+}
+";
+        var compilation = CreateCompilation(source);
+        var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry037 = diagnostics.Where(d => d.Id == "QRY037").ToList();
+        Assert.That(qry037, Is.Empty,
+            "Inner+outer captured CTE params must not trip QRY037. Diagnostics: "
+            + string.Join("; ", qry037.Select(d => d.GetMessage())));
+
+        var tree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.EndsWith(".g.cs") && t.FilePath.Contains(".Interceptors."));
+        Assert.That(tree, Is.Not.Null, "Interceptor file must be generated for the CTE chain");
+        var code = tree!.GetText().ToString();
+
+        // Count-based: the pre-fix stomp signature was TWO P0 assignments (CTE capture
+        // in the With interceptor + the misrouted outer Where) and ZERO P1 assignments.
+        // The QRY037-absence assertion above already implies P1 is assigned somewhere;
+        // the exact counts additionally reject a wrong-interceptor routing where P1 is
+        // assigned but P0 is still double-written.
+        var p0Assignments = System.Text.RegularExpressions.Regex.Matches(code, @"__c\.P0\s*=").Count;
+        var p1Assignments = System.Text.RegularExpressions.Regex.Matches(code, @"__c\.P1\s*=").Count;
+        Assert.That(p0Assignments, Is.EqualTo(1),
+            "Exactly one P0 assignment expected (the With interceptor's CTE capture); "
+            + "two means the outer Where is stomping the CTE's slot again");
+        Assert.That(p1Assignments, Is.EqualTo(1),
+            "Exactly one P1 assignment expected (the outer Where interceptor)");
+    }
+
     /// <summary>
     /// Helper to build a synthetic CarrierPlan with the given carrier name and fields.
     /// Bypasses the full pipeline so the gap-detection logic can be tested in isolation.

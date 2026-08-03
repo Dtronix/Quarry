@@ -208,6 +208,79 @@ public static class Queries
         Assert.That(p1, Is.LessThan(p2), "WHERE slots keep clause order after the hoisted slot");
     }
 
+    private const string ConditionalAfterParameterizedCteSource = @"
+using Quarry;
+namespace TestApp;
+
+public class OrderSchema : Schema
+{
+    public static string Table => ""orders"";
+    public Key<int> OrderId => Identity();
+    public Col<int> UserId { get; }
+    public Col<decimal> Total { get; }
+}
+
+[QuarryContext(Dialect = SqlDialect.MySQL)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<Order> Orders();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db, bool byMax)
+    {
+        decimal threshold = 100.00m;
+        int minId = 1;
+        int maxId = 3;
+        IQueryBuilder<Order> q = db.With<Order>(orders => orders.Where(o => o.Total > threshold))
+            .FromCte<Order>()
+            .Where(o => o.OrderId >= minId);
+        if (byMax) { q = q.Where(o => o.OrderId <= maxId); }
+        var rows = await q
+            .Select(o => (o.OrderId, o.Total))
+            .ExecuteFetchAllAsync();
+    }
+}
+";
+
+    [Test]
+    public void ConditionalOuterClause_AfterParameterizedCte_MySQL_NoQRY048()
+    {
+        // Issue #305 remediation (review F2): the alignment-observing pin for
+        // AssembledPlan.BuildParamConditionalMap's CteDefinition offset advance.
+        // Slots: threshold(0, CTE inner), minId(1, unconditional outer),
+        // maxId(2, conditional bit 0). RewriteMySqlBindMarkers validates each SQL
+        // variant's placeholder slot set against the conditional map's expected
+        // active set — if the CTE's inner-param slot were skipped in that walk, the
+        // conditional flag would land on slot 1 instead of slot 2, the mask-0
+        // variant's active set would exclude a slot its text contains, and the
+        // validation would fail loudly with QRY048. Unconditional chains cannot
+        // observe this (every param is active in every variant regardless of keys),
+        // so this previously-QRY037-blocked shape is the only pin for the
+        // conditional-map half of the #305 fix.
+        var (code, diagnostics) = RunGenerator(ConditionalAfterParameterizedCteSource);
+
+        Assert.That(diagnostics.Where(d => d.Id == "QRY037"), Is.Empty,
+            "Inner+outer captured CTE params must build (#305)");
+        Assert.That(diagnostics.Where(d => d.Id == "QRY048"), Is.Empty,
+            "A QRY048 here means the conditional map's keys are misaligned with the " +
+            "chain's parameter slots — the CteDefinition offset advance regressed");
+        Assert.That(code, Does.Not.Contain("{__Q"),
+            "Bind-order markers must never leak into generated source");
+
+        // WITH renders first and no wrap/hoist applies, so text order is identity;
+        // the bind blocks must stay in slot order.
+        var p0 = code.IndexOf("var __p0 = __cmd.CreateParameter();", StringComparison.Ordinal);
+        var p1 = code.IndexOf("var __p1 = __cmd.CreateParameter();", StringComparison.Ordinal);
+        var p2 = code.IndexOf("var __p2 = __cmd.CreateParameter();", StringComparison.Ordinal);
+        Assert.That(p0, Is.GreaterThanOrEqualTo(0), "P0 (CTE inner) bind block should exist");
+        Assert.That(p1, Is.GreaterThanOrEqualTo(0), "P1 (outer Where) bind block should exist");
+        Assert.That(p2, Is.GreaterThanOrEqualTo(0), "P2 (conditional Where) bind block should exist");
+        Assert.That(p0, Is.LessThan(p1), "CTE inner param binds before the outer param (WITH renders first)");
+        Assert.That(p1, Is.LessThan(p2), "Unconditional outer param binds before the conditional one");
+    }
+
     private const string MarkerLiteralSource = @"
 using Quarry;
 namespace TestApp;

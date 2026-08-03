@@ -213,6 +213,21 @@ internal sealed class AssembledPlan : IEquatable<AssembledPlan>
                     globalParamOffset += Plan.SetOperations[setOpIndex].Operand.Parameters.Count;
                 setOpIndex++;
             }
+            else if (clause.Site.Kind == Models.InterceptorKind.CteDefinition)
+            {
+                // A CteDefinition site owns the chain slots [CteDef.ParameterOffset,
+                // ParameterOffset + InnerParameters.Count) — ChainAnalyzer merges the
+                // inner chain's params into the outer parameter list ahead of all clause
+                // params. The site's Clause is null (CteDefinition is not clause-bearing),
+                // so without this branch the walk would advance by 0 and every param-
+                // bearing clause after the CTE would resolve its P-fields short by the
+                // inner-param count (issue #305: outer Where assigned P0 instead of P1,
+                // tripping the QRY037 self-check). Match by CTE short name — the same
+                // first-match rule TransitionBodyEmitter.EmitCteDefinition uses
+                // (duplicates are QRY082 errors; a failed-analysis CTE has no CteDef and
+                // the chain is already a QRY080 error, so advancing 0 is consistent).
+                globalParamOffset += GetCteInnerParamCount(clause.Site);
+            }
             else if (clause.Site.Clause != null)
                 globalParamOffset += clause.Site.Clause.Parameters.Count;
             else if (clause.Site.Kind == Models.InterceptorKind.UpdateSetAction && clause.Site.Bound.Raw.SetActionParameters != null)
@@ -253,12 +268,39 @@ internal sealed class AssembledPlan : IEquatable<AssembledPlan>
                 setOpIndex++;
                 continue;
             }
+            if (clause.Site.Kind == Models.InterceptorKind.CteDefinition)
+            {
+                // Skip the CTE's inner-param slots without adding map entries: inner
+                // chains have no conditional clauses, and consumers treat missing keys
+                // as unconditional/active. The offset must still advance so post-CTE
+                // clause params are keyed at their true slots (see BuildSiteParamsMap).
+                globalOffset += GetCteInnerParamCount(clause.Site);
+                continue;
+            }
             var paramCount = GetClauseParamCount(clause);
             for (int i = 0; i < paramCount; i++)
                 map[globalOffset + i] = (clause.IsConditional, clause.BitIndex);
             globalOffset += paramCount;
         }
         return map;
+    }
+
+    /// <summary>
+    /// Returns the number of chain parameter slots owned by a CteDefinition site: the
+    /// inner-param count of the CteDef whose name matches the site's DTO short name
+    /// (first match, mirroring TransitionBodyEmitter.EmitCteDefinition), or 0 when no
+    /// CteDef matched (inner chain failed analysis — the chain already carries QRY080).
+    /// </summary>
+    private int GetCteInnerParamCount(TranslatedCallSite site)
+    {
+        var cteName = CteNameHelpers.ExtractShortName(
+            site.Bound.Raw.CteEntityTypeName ?? site.EntityTypeName);
+        foreach (var cte in Plan.CteDefinitions)
+        {
+            if (cte.Name == cteName)
+                return cte.InnerParameters.Count;
+        }
+        return 0;
     }
 
     private static int GetClauseParamCount(ChainClauseEntry clause)

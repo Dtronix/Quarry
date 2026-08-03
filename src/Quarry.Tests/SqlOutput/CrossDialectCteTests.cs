@@ -175,6 +175,140 @@ internal class CrossDialectCteTests
         Assert.That(ssResults2[0], Is.EqualTo((1, 250.00m)));
     }
 
+    /// <summary>
+    /// Regression test for issue #305: a captured param inside the With&lt;T&gt;() lambda
+    /// combined with a captured param in the outer Where used to fail generation with
+    /// QRY037 — AssembledPlan's site-parameter walk skipped the CteDefinition site's
+    /// inner-param slots, so the outer Where interceptor was emitted against P0 (the
+    /// CTE's slot) and P1 was never assigned. The inner param must render at slot 0
+    /// (WITH clause, rendered first) and the outer param at slot 1.
+    /// </summary>
+    [Test]
+    public async Task Cte_FromCte_InnerAndOuterCapturedParams()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        decimal threshold = 100.00m;
+        int minId = 2;
+
+        var lt = Lite.With<Order>(orders => orders.Where(o => o.Total > threshold))
+            .FromCte<Order>()
+            .Where(o => o.OrderId >= minId)
+            .Select(o => (o.OrderId, o.Total))
+            .Prepare();
+        var pg = Pg.With<Pg.Order>(orders => orders.Where(o => o.Total > threshold))
+            .FromCte<Pg.Order>()
+            .Where(o => o.OrderId >= minId)
+            .Select(o => (o.OrderId, o.Total))
+            .Prepare();
+        var my = My.With<My.Order>(orders => orders.Where(o => o.Total > threshold))
+            .FromCte<My.Order>()
+            .Where(o => o.OrderId >= minId)
+            .Select(o => (o.OrderId, o.Total))
+            .Prepare();
+        var ss = Ss.With<Ss.Order>(orders => orders.Where(o => o.Total > threshold))
+            .FromCte<Ss.Order>()
+            .Where(o => o.OrderId >= minId)
+            .Select(o => (o.OrderId, o.Total))
+            .Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "WITH \"Order\" AS (SELECT \"OrderId\", \"UserId\", \"Total\", \"Status\", \"Priority\", \"OrderDate\", \"Notes\" FROM \"orders\" WHERE \"Total\" > @p0) SELECT \"OrderId\", \"Total\" FROM \"Order\" WHERE \"OrderId\" >= @p1",
+            pg:     "WITH \"Order\" AS (SELECT \"OrderId\", \"UserId\", \"Total\", \"Status\", \"Priority\", \"OrderDate\", \"Notes\" FROM \"orders\" WHERE \"Total\" > $1) SELECT \"OrderId\", \"Total\" FROM \"Order\" WHERE \"OrderId\" >= $2",
+            mysql:  "WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `Total` > ?) SELECT `OrderId`, `Total` FROM `Order` WHERE `OrderId` >= ?",
+            ss:     "WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [OrderDate], [Notes] FROM [orders] WHERE [Total] > @p0) SELECT [OrderId], [Total] FROM [Order] WHERE [OrderId] >= @p1");
+
+        // Seed data: OrderId=1 Total=250.00, OrderId=2 Total=75.50, OrderId=3 Total=150.00
+        // CTE keeps orders 1 (250.00) and 3 (150.00); OrderId >= 2 keeps only order 3.
+        // A slot swap (Total > 2 ... OrderId >= 100) returns empty; a dropped outer
+        // param (OrderId >= 0) also returns order 1.
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Is.EqualTo(new[] { (3, 150.00m) }));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Is.EqualTo(new[] { (3, 150.00m) }));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Is.EqualTo(new[] { (3, 150.00m) }));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Is.EqualTo(new[] { (3, 150.00m) }));
+    }
+
+    /// <summary>
+    /// Issue #305 remediation (review F3): cumulative offset accumulation across
+    /// MULTIPLE param-bearing CteDefinition entries combined with an outer captured
+    /// param. Two CTEs contribute slots 0 and 1; the outer Where must land at slot 2 —
+    /// a per-entry advance that only accumulates the first CTE would emit the outer
+    /// assignment against slot 1 (the second CTE's) and trip QRY037 or misbind.
+    /// </summary>
+    [Test]
+    public async Task Cte_TwoChainedWiths_CapturedParams_AndOuterCapturedParam()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        decimal orderCutoff = 100m;
+        bool activeFilter = true;
+        int minId = 2;
+
+        var lt = Lite
+            .With<Order>(orders => orders.Where(o => o.Total > orderCutoff))
+            .With<User>(users => users.Where(u => u.IsActive == activeFilter))
+            .FromCte<Order>()
+            .Where(o => o.OrderId >= minId)
+            .Select(o => (o.OrderId, o.Total))
+            .Prepare();
+        var pg = Pg
+            .With<Pg.Order>(orders => orders.Where(o => o.Total > orderCutoff))
+            .With<Pg.User>(users => users.Where(u => u.IsActive == activeFilter))
+            .FromCte<Pg.Order>()
+            .Where(o => o.OrderId >= minId)
+            .Select(o => (o.OrderId, o.Total))
+            .Prepare();
+        var my = My
+            .With<My.Order>(orders => orders.Where(o => o.Total > orderCutoff))
+            .With<My.User>(users => users.Where(u => u.IsActive == activeFilter))
+            .FromCte<My.Order>()
+            .Where(o => o.OrderId >= minId)
+            .Select(o => (o.OrderId, o.Total))
+            .Prepare();
+        var ss = Ss
+            .With<Ss.Order>(orders => orders.Where(o => o.Total > orderCutoff))
+            .With<Ss.User>(users => users.Where(u => u.IsActive == activeFilter))
+            .FromCte<Ss.Order>()
+            .Where(o => o.OrderId >= minId)
+            .Select(o => (o.OrderId, o.Total))
+            .Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "WITH \"Order\" AS (SELECT \"OrderId\", \"UserId\", \"Total\", \"Status\", \"Priority\", \"OrderDate\", \"Notes\" FROM \"orders\" WHERE \"Total\" > @p0), \"User\" AS (SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"IsActive\" = @p1) SELECT \"OrderId\", \"Total\" FROM \"Order\" WHERE \"OrderId\" >= @p2",
+            pg:     "WITH \"Order\" AS (SELECT \"OrderId\", \"UserId\", \"Total\", \"Status\", \"Priority\", \"OrderDate\", \"Notes\" FROM \"orders\" WHERE \"Total\" > $1), \"User\" AS (SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"IsActive\" = $2) SELECT \"OrderId\", \"Total\" FROM \"Order\" WHERE \"OrderId\" >= $3",
+            mysql:  "WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `Total` > ?), `User` AS (SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `IsActive` = ?) SELECT `OrderId`, `Total` FROM `Order` WHERE `OrderId` >= ?",
+            ss:     "WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [OrderDate], [Notes] FROM [orders] WHERE [Total] > @p0), [User] AS (SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [IsActive] = @p1) SELECT [OrderId], [Total] FROM [Order] WHERE [OrderId] >= @p2");
+
+        // Order CTE keeps orders 1 (250.00) and 3 (150.00); OrderId >= 2 keeps order 3.
+        // A slot skew that binds minId(2) into slot 1 flips the User CTE's IsActive
+        // comparand instead, and the outer filter binds default(int) = 0 — returning
+        // order 1 as well.
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Is.EqualTo(new[] { (3, 150.00m) }));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Is.EqualTo(new[] { (3, 150.00m) }));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Is.EqualTo(new[] { (3, 150.00m) }));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Is.EqualTo(new[] { (3, 150.00m) }));
+    }
+
     #endregion
 
     #region CTE FromCte (identity / all columns)
