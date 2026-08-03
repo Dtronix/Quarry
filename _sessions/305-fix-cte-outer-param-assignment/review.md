@@ -8,7 +8,7 @@
 | F2 | B | B | M | Test Quality | Conditional-map half of fix has no alignment-observing test (conditional outer clause after parameterized CTE on MySQL is newly reachable, untested) | Added ConditionalOuterClause_AfterParameterizedCte_MySQL_NoQRY048 (MySqlBindOrderGenerationTests) — verified it fails when only the conditional-map branch is removed |
 | F3 | B | B | L | Test Quality | No multi-CTE (two param-bearing Withs) + outer captured param test — cumulative offset accumulation uncovered | Added Cte_TwoChainedWiths_CapturedParams_AndOuterCapturedParam (CrossDialectCteTests) — 2 param CTEs + outer param, SQL + execution on all 4 dialects |
 | F4 | B | B | L | Test Quality | Generation test regexes match anywhere in file; wrong-interceptor assignment would still pass | Tightened CteInnerAndOuterCapturedParams_NoQRY037_AssignsBothPFields to exact-count assertions (1x P0, 1x P1) |
-| F5 | C | C | L | Codebase Consistency | `GetCteInnerParamCount` is the 3rd/4th copy of the CteDef-by-short-name first-match loop — consolidation opportunity | issue creation pending user confirmation (outward-facing); to file: consolidate CteDef-by-name lookup into shared helper |
+| F5 | C | C | L | Codebase Consistency | `GetCteInnerParamCount` is the 3rd/4th copy of the CteDef-by-short-name first-match loop — consolidation opportunity | dismissed without issue — user declined filing the follow-up on 2026-08-03; consolidation of the CteDef-by-name lookup remains an open (unfiled) cleanup opportunity |
 
 ## Plan Compliance
 

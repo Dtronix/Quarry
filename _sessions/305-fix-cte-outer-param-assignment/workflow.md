@@ -6,7 +6,7 @@ base-branch: master
 
 ## State
 phase: FINALIZE
-status: suspended
+status: active
 issue: #305
 pr: #306
 
@@ -54,6 +54,12 @@ Baseline test status: all green at 7bb0e35 — Quarry.Tests 3281 passed, Quarry.
 - 2026-07-02: REVIEW classifications applied as recommended (user AFK at prompt; same
   autonomous-default as DESIGN): F1→D, F2→B, F3→B, F4→B, F5→C. Final: 0A/3B/1C/1D.
   F5's issue creation deferred until user confirmation (outward-facing action).
+
+- 2026-08-03: **F5 will NOT be filed as an issue** (user decision on resume). The
+  CteDef-by-short-name lookup consolidation stays an unrecorded maintainability
+  opportunity; review.md F5 marked dismissed and the `_issue-f5.md` draft deleted.
+- 2026-08-03: FINALIZE path chosen: rebase onto origin/master (branch went CONFLICTING
+  after #321/#322/#325/#326/#327 landed), run the full suite to green, then squash merge.
 
 ## Working Notes
 - **Root cause (confirmed by code trace, DESIGN 2026-07-02):** not in ChainAnalyzer or
@@ -113,6 +119,7 @@ Baseline test status: all green at 7bb0e35 — Quarry.Tests 3281 passed, Quarry.
 ## Session Log
 | Date | Phases | Summary |
 |------|--------|---------|
+| 2026-08-03 | FINALIZE (resumed) | Resumed from suspend. PR #306 had gone CONFLICTING (master +5: #321, #322, #325, #326, #327). User chose rebase → full test run → squash merge, and declined filing the F5 follow-up issue. |
 | 2026-07-13 | FINALIZE (suspended) | PR #306 CI green, ready to merge. User chose to start issue #307 in parallel; workflow suspended at FINALIZE step 1. |
 | 2026-07-02 | INTAKE, DESIGN, PLAN | Loaded issue #305, created worktree + branch, baseline all green (3628 tests). Traced root cause to AssembledPlan offset walk. Design+plan provisionally approved (user AFK); wrote plan.md; entered IMPLEMENT. |
 | 2026-07-02 | IMPLEMENT, REVIEW, REMEDIATE | 3 plan steps committed, suite green each step. Review: 5 findings (0A/3B/1C/1D), B-items fixed and bite-verified, F5 issue deferred pending user confirm. PR #306 created; awaiting CI. |
