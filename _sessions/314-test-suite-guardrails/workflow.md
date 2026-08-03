@@ -45,6 +45,45 @@ Note: pre-existing build warnings — NU1903 (System.Security.Cryptography.Xml 9
 
 ## Working Notes
 
+### Step 11 (2026-08-03) — row-order sweep, first file group
+
+- **The 526-assertion estimate does not translate into 526 conversions.** Across
+  SelectTests / SubqueryTests / JoinTests only **87 fetch lines (29 test methods)** were
+  convertible. The raw positional-access count is inflated because most tests assert several
+  fields per row, and a large share of pg/my/ss sides assert only `Has.Count` while the
+  positional asserts live on the SQLite side (which we deliberately never touch). Expect the
+  same ratio in steps 12–13 — the sweep is much smaller than the issue implies.
+- **JoinTests is mostly *unfixable* by sorting, and that is the important finding.** 9 tests
+  (`Join_InnerJoin_OnClause`, `Join_WithWhere_OnLeftTable`, `Join_InnerJoin_NamedTupleProjection`,
+  `Join_ThreeTable_NamedTupleProjection`, `Join_WithWhere_TwoCapturedParams_BooleanBetween_...`,
+  `Where_BeforeJoin_GetsTableAliasQualification`, `Select_Joined_Many_Sum_OnLeftTable`,
+  `Select_Joined_Many_Count_OnLeftTable`, `Select_Joined_HasManyThrough_Max_OnLeftTable`)
+  assert `[0]=(Alice,250.00), [1]=(Alice,75.50), [2]=(Bob,150.00)` on an unordered users→orders
+  join. The order they encode is `orders.OrderId` ascending, but `OrderId` is **not projected** —
+  the only discriminator present is `Total`, which runs *descending* within the Alice group. So
+  no ascending key over the projected columns reproduces the asserted order, and a naive
+  `(UserName, Total)` key turns them red. These need a **query-side** fix (project + ORDER BY
+  the join key, or relax to `Is.EquivalentTo`) → deferred to step 13.
+- **Pagination cluster is a latent flake sorting cannot reach.** `Pagination_LimitOffset`,
+  `_LiteralLimit_ParameterizedOffset`, `_ParameterizedLimit_LiteralOffset`, `_BothParameterized`
+  all do `LIMIT 2 OFFSET 1` with no ORDER BY and assert they get exactly Bob and Charlie; on
+  PG/MySQL any 2-row subset is legal, and SQL Server's generated `ORDER BY (SELECT NULL)`
+  satisfies the T-SQL grammar without imposing an order. *Which* rows come back is
+  nondeterministic, so C# sorting cannot help → step 13. `Pagination_LimitOnly` **was**
+  converted: `LIMIT 5` over 3 rows returns the whole table, so sorting fully determinises it.
+- **`ExecuteFetchFirstAsync` on a multi-row predicate**:
+  `NoSelect_ExecuteFetchFirstAsync_ReturnsFirstEntity` matches 2 rows and asserts `UserId == 1`.
+  Same class of defect, same step-13 remediation.
+- **Sort keys are seed-dependent in the `Select_Many_*` block** (SubqueryTests, 7 tests / 21
+  sites): those projections omit `UserId`, so `UserName` is the only identifying column.
+  Total for the current seed (Alice/Bob/Charlie distinct) but it would stop being total if a
+  second "Alice" were ever seeded. Acceptable; noted so a future seed change knows to look.
+- Inferred tuple element names work as sort keys — `(u.UserId, u.UserName)` admits
+  `r => r.UserId`, matching the committed reference at `CrossDialectCteTests.cs:119`. The
+  94-test green run is the proof: a wrong key would have reordered rows and failed the asserts.
+- `SortedByAsync` needs no `using` — `Quarry.Tests.SqlOutput` is nested inside `Quarry.Tests`.
+- Sweep did not regenerate `ManifestOutput` goldens (no new chains, only post-terminal calls).
+
 ### Step 10 (2026-08-03) — cancellation
 
 - **Mid-stream cancellation is only observable when the provider awaits I/O.** With the three
@@ -194,25 +233,15 @@ Note: pre-existing build warnings — NU1903 (System.Security.Cryptography.Xml 9
 - Existing CT mentions in tests are all generator-signature detection (`HasCancellationToken`) or `CancellationToken.None` placeholders — no runtime cancellation.
 
 ## Suspend State
-- **Position**: IMPLEMENT, plan steps 1–9 of 15 complete, committed and pushed (last commit 52b9ed9). Next: step 10 (F7b — cancellation tests).
-- **In progress**: nothing mid-flight; working tree clean.
-- **Immediate next step — step 10 (cancellation)**, per plan:
-  1. Pre-cancelled token into each fetch terminal (`FetchAll/First/FirstOrDefault/Single/SingleOrDefault/Scalar/NonQuery`) ⇒ `OperationCanceledException`, connection still usable afterwards.
-  2. Mid-stream cancellation of `ToAsyncEnumerable` (token cancelled after the first `MoveNextAsync`) ⇒ OCE, and a subsequent command on the same connection succeeds.
-  3. Raw-SQL streaming overload with a token.
-  SQLite + PG minimum, all four where stable. Follow the step-9 pattern: the *follow-up query on the same harness connection* is the assertion with teeth — bite-verify it the same way.
-- **Then**: 11–13 (row-order sweep), 14 (benchmark gate), 15 (docs+final).
-- **WIP commit**: none (all work committed and pushed).
-- **Test status**: all green — Quarry.Tests 3480, Migration.Tests 201, Analyzers.Tests 146 (full `dotnet test Quarry.sln` after step 9, Docker available).
-- **Unrecorded context**: none — all discoveries are in Working Notes. Essential reading before continuing:
-  - **step-9 block** — the bite-verification pattern for disposal/cancellation, and the warning that the harness-rollback test does *not* detect a leak;
-  - **step-8 block** — chains inside doubly-nested lambdas emit uncompilable interceptors (CS0103); write worker bodies as named methods. Not yet isolated to a minimal repro — **candidate follow-up issue, raise at REVIEW**;
-  - **step-7 block** — #329 is synthetically pinnable after all (corrects step 6); don't rely on synthetic CS9144 for terminal-shape mismatches;
-  - **step-6 block** — #328 retitled, #329 CS9144 facts.
-  - Adding chains regenerates `ManifestOutput` goldens — commit them or the step-1 CI drift check fails.
-  - For step 14: previous benchmark entry lives in the Quarry-benchmarks repo gh-pages `dev/bench/data.js`; `dev/bench/runs/runs.json` is the manifest.
-  - For steps 11–13: sweep rules in plan.md Key concepts; sort keys reviewed on main context before commit.
-- **Suspend trigger**: IMPLEMENT context check (≥3 steps completed this session — steps 7, 8, 9).
+_(cleared 2026-08-03 on resume — step 10 completed and committed as `1aae06a` after the last suspend was written. Carry-forward context that outlived it:)_
+- Adding chains regenerates `ManifestOutput` goldens — commit them or the step-1 CI drift check fails.
+- **Raise at REVIEW** — candidate follow-up issue: chains inside doubly-nested lambdas emit uncompilable
+  interceptors (CS0103), not yet isolated to a minimal repro (step-8 Working Notes).
+- **Raise at REVIEW** — known coverage limit: mid-stream cancellation OCE asserted on SQLite only
+  (step-10 Working Notes).
+- For step 14: previous benchmark entry lives in the Quarry-benchmarks repo gh-pages `dev/bench/data.js`;
+  `dev/bench/runs/runs.json` is the manifest.
+- For steps 11–13: sweep rules in plan.md Key concepts; sort keys reviewed on main context before commit.
 
 ## Session Log
 | Date | Phases | Summary |
@@ -225,3 +254,5 @@ Note: pre-existing build warnings — NU1903 (System.Security.Cryptography.Xml 9
 | 2026-07-23 | IMPLEMENT | Steps 4–6 done (pipeline-model equality tests; issues #328/#329 filed; conditional-Having coverage + #328 pin — misattribution found stale, real defect is unmasked Having; #329 confirmed as CS9144; NoWarn CS9177 found vestigial). Suspended per ≥3-step check; branch pushed. |
 | 2026-08-03 | IMPLEMENT (resumed) | Resumed from suspend at step 7/15. Re-ran full baseline before continuing (3438/201/146 green). |
 | 2026-08-03 | IMPLEMENT | Steps 7–9 done. 7: interceptor-binding guard matrix + vestigial NoWarn CS9177 removed + #329 pin recovered (corrects step 6). 8: concurrency suite; found chains in doubly-nested lambdas emit uncompilable interceptors. 9: streaming abandonment disposal tests, bite-verified. Suite 3480/201/146 green. Suspended per ≥3-step check; branch pushed. |
+| 2026-08-03 | IMPLEMENT | Step 10 done (runtime cancellation coverage, commit `1aae06a`) — session ended without a suspend write. |
+| 2026-08-03 | IMPLEMENT (resumed) | New session, resumed at step 11/15. Stale Suspend State cleared; full baseline re-run. |

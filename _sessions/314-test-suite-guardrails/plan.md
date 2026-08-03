@@ -60,7 +60,7 @@ Implements issue #314 (all 7 findings; the two low items are deferred per Decisi
   New tests: (a) pre-cancelled token into each fetch terminal (`FetchAll/First/FirstOrDefault/Single/SingleOrDefault/Scalar/NonQuery`) ⇒ `OperationCanceledException`, connection remains usable; (b) mid-stream cancellation of `ToAsyncEnumerable` via token cancelled after first `MoveNextAsync` ⇒ OCE and subsequent command on same connection succeeds; (c) raw-SQL streaming overload with token. Keep per-dialect where the harness makes it cheap; SQLite + PG minimum, all 4 where stable.
   Tests: new tests. Depends on: step 9 (same file/patterns).
 
-- [ ] **11. F4a — Row-order sweep: CrossDialectSelectTests, CrossDialectSubqueryTests, CrossDialectJoinTests**
+- [x] **11. F4a — Row-order sweep: CrossDialectSelectTests, CrossDialectSubqueryTests, CrossDialectJoinTests** *(deviation: 87 sites across 29 tests converted, not ~471 — the raw access count is inflated by multi-field asserts and by pg/my/ss sides that only assert `Has.Count`. JoinTests is largely NOT sortable: 9 tests encode `orders.OrderId` order via an unprojected column, and the 4 LIMIT/OFFSET pagination tests are nondeterministic in row *selection*. Both clusters deferred to step 13 as query-side fixes — see Working Notes)*
   Delegated mechanical conversion per sweep rules (~471 raw accesses); sort keys reviewed on main context. Commit per this file group.
   Tests: converted files re-run green (`--filter` per file), then full suite at step end.
 

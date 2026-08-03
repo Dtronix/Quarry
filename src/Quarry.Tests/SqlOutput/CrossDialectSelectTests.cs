@@ -36,19 +36,19 @@ internal class CrossDialectSelectTests
         Assert.That(results[1], Is.EqualTo((2, "Bob")));
         Assert.That(results[2], Is.EqualTo((3, "Charlie")));
 
-        var pgResults = await pg.ExecuteFetchAllAsync();
+        var pgResults = await pg.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(pgResults, Has.Count.EqualTo(3));
         Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
         Assert.That(pgResults[1], Is.EqualTo((2, "Bob")));
         Assert.That(pgResults[2], Is.EqualTo((3, "Charlie")));
 
-        var myResults = await my.ExecuteFetchAllAsync();
+        var myResults = await my.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(myResults, Has.Count.EqualTo(3));
         Assert.That(myResults[0], Is.EqualTo((1, "Alice")));
         Assert.That(myResults[1], Is.EqualTo((2, "Bob")));
         Assert.That(myResults[2], Is.EqualTo((3, "Charlie")));
 
-        var ssResults = await ss.ExecuteFetchAllAsync();
+        var ssResults = await ss.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(ssResults, Has.Count.EqualTo(3));
         Assert.That(ssResults[0], Is.EqualTo((1, "Alice")));
         Assert.That(ssResults[1], Is.EqualTo((2, "Bob")));
@@ -80,19 +80,19 @@ internal class CrossDialectSelectTests
         Assert.That(results[1], Is.EqualTo((2, "Bob", true)));
         Assert.That(results[2], Is.EqualTo((3, "Charlie", false)));
 
-        var pgResults = await pg.ExecuteFetchAllAsync();
+        var pgResults = await pg.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(pgResults, Has.Count.EqualTo(3));
         Assert.That(pgResults[0], Is.EqualTo((1, "Alice", true)));
         Assert.That(pgResults[1], Is.EqualTo((2, "Bob", true)));
         Assert.That(pgResults[2], Is.EqualTo((3, "Charlie", false)));
 
-        var myResults = await my.ExecuteFetchAllAsync();
+        var myResults = await my.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(myResults, Has.Count.EqualTo(3));
         Assert.That(myResults[0], Is.EqualTo((1, "Alice", true)));
         Assert.That(myResults[1], Is.EqualTo((2, "Bob", true)));
         Assert.That(myResults[2], Is.EqualTo((3, "Charlie", false)));
 
-        var ssResults = await ss.ExecuteFetchAllAsync();
+        var ssResults = await ss.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(ssResults, Has.Count.EqualTo(3));
         Assert.That(ssResults[0], Is.EqualTo((1, "Alice", true)));
         Assert.That(ssResults[1], Is.EqualTo((2, "Bob", true)));
@@ -132,7 +132,7 @@ internal class CrossDialectSelectTests
         Assert.That(results[2].Id, Is.EqualTo(3));
         Assert.That(results[2].Name, Is.EqualTo("Charlie"));
 
-        var pgResults = await pg.ExecuteFetchAllAsync();
+        var pgResults = await pg.ExecuteFetchAllAsync().SortedByAsync(r => r.Id);
         Assert.That(pgResults, Has.Count.EqualTo(3));
         Assert.That(pgResults[0].Id, Is.EqualTo(1));
         Assert.That(pgResults[0].Name, Is.EqualTo("Alice"));
@@ -141,7 +141,7 @@ internal class CrossDialectSelectTests
         Assert.That(pgResults[2].Id, Is.EqualTo(3));
         Assert.That(pgResults[2].Name, Is.EqualTo("Charlie"));
 
-        var myResults = await my.ExecuteFetchAllAsync();
+        var myResults = await my.ExecuteFetchAllAsync().SortedByAsync(r => r.Id);
         Assert.That(myResults, Has.Count.EqualTo(3));
         Assert.That(myResults[0].Id, Is.EqualTo(1));
         Assert.That(myResults[0].Name, Is.EqualTo("Alice"));
@@ -150,7 +150,7 @@ internal class CrossDialectSelectTests
         Assert.That(myResults[2].Id, Is.EqualTo(3));
         Assert.That(myResults[2].Name, Is.EqualTo("Charlie"));
 
-        var ssResults = await ss.ExecuteFetchAllAsync();
+        var ssResults = await ss.ExecuteFetchAllAsync().SortedByAsync(r => r.Id);
         Assert.That(ssResults, Has.Count.EqualTo(3));
         Assert.That(ssResults[0].Id, Is.EqualTo(1));
         Assert.That(ssResults[0].Name, Is.EqualTo("Alice"));
@@ -187,7 +187,7 @@ internal class CrossDialectSelectTests
         Assert.That(results[2].Id, Is.EqualTo(3));
         Assert.That(results[2].Active, Is.False);
 
-        var pgResults = await pg.ExecuteFetchAllAsync();
+        var pgResults = await pg.ExecuteFetchAllAsync().SortedByAsync(r => r.Id);
         Assert.That(pgResults, Has.Count.EqualTo(3));
         Assert.That(pgResults[0].Id, Is.EqualTo(1));
         Assert.That(pgResults[0].Name, Is.EqualTo("Alice"));
@@ -195,7 +195,7 @@ internal class CrossDialectSelectTests
         Assert.That(pgResults[2].Id, Is.EqualTo(3));
         Assert.That(pgResults[2].Active, Is.False);
 
-        var myResults = await my.ExecuteFetchAllAsync();
+        var myResults = await my.ExecuteFetchAllAsync().SortedByAsync(r => r.Id);
         Assert.That(myResults, Has.Count.EqualTo(3));
         Assert.That(myResults[0].Id, Is.EqualTo(1));
         Assert.That(myResults[0].Name, Is.EqualTo("Alice"));
@@ -203,7 +203,7 @@ internal class CrossDialectSelectTests
         Assert.That(myResults[2].Id, Is.EqualTo(3));
         Assert.That(myResults[2].Active, Is.False);
 
-        var ssResults = await ss.ExecuteFetchAllAsync();
+        var ssResults = await ss.ExecuteFetchAllAsync().SortedByAsync(r => r.Id);
         Assert.That(ssResults, Has.Count.EqualTo(3));
         Assert.That(ssResults[0].Id, Is.EqualTo(1));
         Assert.That(ssResults[0].Name, Is.EqualTo("Alice"));
@@ -250,7 +250,7 @@ internal class CrossDialectSelectTests
         Assert.That(results[2].UserName, Is.EqualTo("Charlie"));
         Assert.That(results[2].IsActive, Is.False);
 
-        var pgResults = await pg.ExecuteFetchAllAsync();
+        var pgResults = await pg.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(pgResults, Has.Count.EqualTo(3));
 
         Assert.That(pgResults[0].UserId, Is.EqualTo(1));
@@ -265,7 +265,7 @@ internal class CrossDialectSelectTests
         Assert.That(pgResults[2].UserName, Is.EqualTo("Charlie"));
         Assert.That(pgResults[2].IsActive, Is.False);
 
-        var myResults = await my.ExecuteFetchAllAsync();
+        var myResults = await my.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(myResults, Has.Count.EqualTo(3));
 
         Assert.That(myResults[0].UserId, Is.EqualTo(1));
@@ -280,7 +280,7 @@ internal class CrossDialectSelectTests
         Assert.That(myResults[2].UserName, Is.EqualTo("Charlie"));
         Assert.That(myResults[2].IsActive, Is.False);
 
-        var ssResults = await ss.ExecuteFetchAllAsync();
+        var ssResults = await ss.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(ssResults, Has.Count.EqualTo(3));
 
         Assert.That(ssResults[0].UserId, Is.EqualTo(1));
@@ -327,7 +327,7 @@ internal class CrossDialectSelectTests
         Assert.That(results[2].UserId, Is.EqualTo(3));
         Assert.That(results[2].Email, Is.EqualTo("charlie@test.com"));
 
-        var pgResults = await pg.ExecuteFetchAllAsync();
+        var pgResults = await pg.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(pgResults, Has.Count.EqualTo(3));
 
         Assert.That(pgResults[0].UserId, Is.EqualTo(1));
@@ -339,7 +339,7 @@ internal class CrossDialectSelectTests
         Assert.That(pgResults[2].UserId, Is.EqualTo(3));
         Assert.That(pgResults[2].Email, Is.EqualTo("charlie@test.com"));
 
-        var myResults = await my.ExecuteFetchAllAsync();
+        var myResults = await my.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(myResults, Has.Count.EqualTo(3));
 
         Assert.That(myResults[0].UserId, Is.EqualTo(1));
@@ -351,7 +351,7 @@ internal class CrossDialectSelectTests
         Assert.That(myResults[2].UserId, Is.EqualTo(3));
         Assert.That(myResults[2].Email, Is.EqualTo("charlie@test.com"));
 
-        var ssResults = await ss.ExecuteFetchAllAsync();
+        var ssResults = await ss.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(ssResults, Has.Count.EqualTo(3));
 
         Assert.That(ssResults[0].UserId, Is.EqualTo(1));
@@ -400,7 +400,7 @@ internal class CrossDialectSelectTests
         Assert.That(results[2].UserName, Is.EqualTo("Charlie"));
         Assert.That(results[2].IsActive, Is.False);
 
-        var pgResults = await pg.ExecuteFetchAllAsync();
+        var pgResults = await pg.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(pgResults, Has.Count.EqualTo(3));
         Assert.That(pgResults[0].UserId, Is.EqualTo(1));
         Assert.That(pgResults[0].UserName, Is.EqualTo("Alice"));
@@ -413,7 +413,7 @@ internal class CrossDialectSelectTests
         Assert.That(pgResults[2].UserName, Is.EqualTo("Charlie"));
         Assert.That(pgResults[2].IsActive, Is.False);
 
-        var myResults = await my.ExecuteFetchAllAsync();
+        var myResults = await my.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(myResults, Has.Count.EqualTo(3));
         Assert.That(myResults[0].UserId, Is.EqualTo(1));
         Assert.That(myResults[0].UserName, Is.EqualTo("Alice"));
@@ -426,7 +426,7 @@ internal class CrossDialectSelectTests
         Assert.That(myResults[2].UserName, Is.EqualTo("Charlie"));
         Assert.That(myResults[2].IsActive, Is.False);
 
-        var ssResults = await ss.ExecuteFetchAllAsync();
+        var ssResults = await ss.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(ssResults, Has.Count.EqualTo(3));
         Assert.That(ssResults[0].UserId, Is.EqualTo(1));
         Assert.That(ssResults[0].UserName, Is.EqualTo("Alice"));
@@ -469,7 +469,7 @@ internal class CrossDialectSelectTests
         Assert.That(results[2].OrderId, Is.EqualTo(3));
         Assert.That(results[2].Total, Is.EqualTo(150.00m));
 
-        var pgResults = await pg.ExecuteFetchAllAsync();
+        var pgResults = await pg.ExecuteFetchAllAsync().SortedByAsync(r => r.OrderId);
         Assert.That(pgResults, Has.Count.EqualTo(3));
         Assert.That(pgResults[0].OrderId, Is.EqualTo(1));
         Assert.That(pgResults[0].Total, Is.EqualTo(250.00m));
@@ -479,7 +479,7 @@ internal class CrossDialectSelectTests
         Assert.That(pgResults[2].OrderId, Is.EqualTo(3));
         Assert.That(pgResults[2].Total, Is.EqualTo(150.00m));
 
-        var myResults = await my.ExecuteFetchAllAsync();
+        var myResults = await my.ExecuteFetchAllAsync().SortedByAsync(r => r.OrderId);
         Assert.That(myResults, Has.Count.EqualTo(3));
         Assert.That(myResults[0].OrderId, Is.EqualTo(1));
         Assert.That(myResults[0].Total, Is.EqualTo(250.00m));
@@ -489,7 +489,7 @@ internal class CrossDialectSelectTests
         Assert.That(myResults[2].OrderId, Is.EqualTo(3));
         Assert.That(myResults[2].Total, Is.EqualTo(150.00m));
 
-        var ssResults = await ss.ExecuteFetchAllAsync();
+        var ssResults = await ss.ExecuteFetchAllAsync().SortedByAsync(r => r.OrderId);
         Assert.That(ssResults, Has.Count.EqualTo(3));
         Assert.That(ssResults[0].OrderId, Is.EqualTo(1));
         Assert.That(ssResults[0].Total, Is.EqualTo(250.00m));
@@ -595,19 +595,19 @@ internal class CrossDialectSelectTests
         Assert.That(results[1], Is.EqualTo((2, 75.50m)));
         Assert.That(results[2], Is.EqualTo((3, 150.00m)));
 
-        var pgResults = await pg.ExecuteFetchAllAsync();
+        var pgResults = await pg.ExecuteFetchAllAsync().SortedByAsync(r => r.OrderId);
         Assert.That(pgResults, Has.Count.EqualTo(3));
         Assert.That(pgResults[0], Is.EqualTo((1, 250.00m)));
         Assert.That(pgResults[1], Is.EqualTo((2, 75.50m)));
         Assert.That(pgResults[2], Is.EqualTo((3, 150.00m)));
 
-        var myResults = await my.ExecuteFetchAllAsync();
+        var myResults = await my.ExecuteFetchAllAsync().SortedByAsync(r => r.OrderId);
         Assert.That(myResults, Has.Count.EqualTo(3));
         Assert.That(myResults[0], Is.EqualTo((1, 250.00m)));
         Assert.That(myResults[1], Is.EqualTo((2, 75.50m)));
         Assert.That(myResults[2], Is.EqualTo((3, 150.00m)));
 
-        var ssResults = await ss.ExecuteFetchAllAsync();
+        var ssResults = await ss.ExecuteFetchAllAsync().SortedByAsync(r => r.OrderId);
         Assert.That(ssResults, Has.Count.EqualTo(3));
         Assert.That(ssResults[0], Is.EqualTo((1, 250.00m)));
         Assert.That(ssResults[1], Is.EqualTo((2, 75.50m)));
@@ -683,19 +683,23 @@ internal class CrossDialectSelectTests
         Assert.That(results[1], Is.EqualTo((2, "Bob")));
         Assert.That(results[2], Is.EqualTo((3, "Charlie")));
 
-        var pgResults = await pg.ExecuteFetchAllAsync();
+        // LIMIT 5 over 3 seeded rows returns the whole table, so no row can be
+        // dropped by an arbitrary provider ordering and sorting fully determinises
+        // this — unlike the LIMIT/OFFSET tests below, where *which* rows come back
+        // is itself provider-dependent.
+        var pgResults = await pg.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(pgResults, Has.Count.EqualTo(3));
         Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
         Assert.That(pgResults[1], Is.EqualTo((2, "Bob")));
         Assert.That(pgResults[2], Is.EqualTo((3, "Charlie")));
 
-        var myResults = await my.ExecuteFetchAllAsync();
+        var myResults = await my.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(myResults, Has.Count.EqualTo(3));
         Assert.That(myResults[0], Is.EqualTo((1, "Alice")));
         Assert.That(myResults[1], Is.EqualTo((2, "Bob")));
         Assert.That(myResults[2], Is.EqualTo((3, "Charlie")));
 
-        var ssResults = await ss.ExecuteFetchAllAsync();
+        var ssResults = await ss.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(ssResults, Has.Count.EqualTo(3));
         Assert.That(ssResults[0], Is.EqualTo((1, "Alice")));
         Assert.That(ssResults[1], Is.EqualTo((2, "Bob")));
@@ -865,21 +869,21 @@ internal class CrossDialectSelectTests
         Assert.That(results[1].UserId, Is.EqualTo(2));
         Assert.That(results[1].UserName, Is.EqualTo("Bob"));
 
-        var pgResults = await pg.ExecuteFetchAllAsync();
+        var pgResults = await pg.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(pgResults, Has.Count.EqualTo(2));
         Assert.That(pgResults[0].UserId, Is.EqualTo(1));
         Assert.That(pgResults[0].UserName, Is.EqualTo("Alice"));
         Assert.That(pgResults[1].UserId, Is.EqualTo(2));
         Assert.That(pgResults[1].UserName, Is.EqualTo("Bob"));
 
-        var myResults = await my.ExecuteFetchAllAsync();
+        var myResults = await my.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(myResults, Has.Count.EqualTo(2));
         Assert.That(myResults[0].UserId, Is.EqualTo(1));
         Assert.That(myResults[0].UserName, Is.EqualTo("Alice"));
         Assert.That(myResults[1].UserId, Is.EqualTo(2));
         Assert.That(myResults[1].UserName, Is.EqualTo("Bob"));
 
-        var ssResults = await ss.ExecuteFetchAllAsync();
+        var ssResults = await ss.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(ssResults, Has.Count.EqualTo(2));
         Assert.That(ssResults[0].UserId, Is.EqualTo(1));
         Assert.That(ssResults[0].UserName, Is.EqualTo("Alice"));
