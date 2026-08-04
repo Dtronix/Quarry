@@ -271,6 +271,7 @@ internal static class SqlTokenizer
                 break;
             case 9:
                 if (SpanEqualsIgnoreCase(text, "INTERSECT")) return SqlTokenKind.Intersect;
+                if (SpanEqualsIgnoreCase(text, "RECURSIVE")) return SqlTokenKind.Recursive;
                 break;
         }
 

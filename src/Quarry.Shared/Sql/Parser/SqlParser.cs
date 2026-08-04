@@ -171,6 +171,9 @@ internal sealed class SqlParser
             case SqlTokenKind.Set:
             case SqlTokenKind.Values:
             case SqlTokenKind.Into:
+            // RECURSIVE is only structural directly after WITH; everywhere else it is a
+            // perfectly ordinary name, and it tokenized as an identifier before #331.
+            case SqlTokenKind.Recursive:
                 return true;
             default:
                 return false;

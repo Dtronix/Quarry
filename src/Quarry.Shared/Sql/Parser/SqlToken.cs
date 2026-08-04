@@ -110,6 +110,7 @@ internal enum SqlTokenKind
     True,
     False,
     With,
+    Recursive,
     Union,
     Intersect,
     Except,

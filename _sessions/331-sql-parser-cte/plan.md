@@ -30,7 +30,7 @@ db.With<Order, RecentOrders>(o => o.Where(o => o.Total > 100)
 
 ## Steps
 
-- [ ] **1. Tokenizer: `RECURSIVE` keyword.** Add `SqlTokenKind.Recursive` to `SqlToken.cs` and a `case 9:` arm in `SqlTokenizer.ClassifyKeyword` (next to the existing `INTERSECT` arm). No parser change — purely additive, `RECURSIVE` currently tokenizes as `Identifier`.
+- [x] **1. Tokenizer: `RECURSIVE` keyword.** Add `SqlTokenKind.Recursive` to `SqlToken.cs` and a `case 9:` arm in `SqlTokenizer.ClassifyKeyword` (next to the existing `INTERSECT` arm). No parser change — purely additive, `RECURSIVE` currently tokenizes as `Identifier`.
   *Tests:* `SqlTokenizerTests.cs` — assert `RECURSIVE` tokenizes to `SqlTokenKind.Recursive`, mixed-case included.
 
 - [ ] **2. AST nodes and walker (no parser change).** In `SqlNode.cs`: add `SqlNodeKind.CommonTableExpression` and `SqlNodeKind.SetOperation`; add `SqlSetOperator` enum (`Union`, `UnionAll`, `Intersect`, `IntersectAll`, `Except`, `ExceptAll`); add `SqlSetOperationStatement : SqlStatement` with `Left`/`Operator`/`Right` (both sides `SqlStatement` so chains nest left-associatively); add `SqlCommonTableExpression : SqlNode` with `Name`, `ColumnNames` (`IReadOnlyList<string>?`), `Query` (`SqlStatement`). Add optional trailing ctor params `ctes` and `isRecursive` to `SqlSelectStatement` (per D1 — one construction site, so this is source-compatible). In `SqlNodeWalker.Walk`: descend into `SqlSelectStatement.Ctes`, `SqlCommonTableExpression.Query`, and `SqlSetOperationStatement.Left`/`Right`. Nothing constructs these yet, so behavior is unchanged.

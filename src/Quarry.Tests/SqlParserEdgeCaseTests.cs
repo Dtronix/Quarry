@@ -487,6 +487,20 @@ public class SqlParserEdgeCaseTests
     }
 
     [Test]
+    public void Parse_SoftKeyword_RecursiveAsUnquotedColumn()
+    {
+        // RECURSIVE became a keyword in #331, but it is only structural directly after
+        // WITH. Everywhere else it must still work as an ordinary name, as it did when
+        // it tokenized as a plain identifier.
+        var result = Parse("SELECT recursive FROM t WHERE recursive = 1");
+        Assert.That(result.Success, Is.True);
+        var col = (SqlSelectColumn)result.SelectStatement!.Columns[0];
+        Assert.That(((SqlColumnRef)col.Expression).ColumnName, Is.EqualTo("recursive"));
+        var bin = (SqlBinaryExpr)result.SelectStatement!.Where!;
+        Assert.That(((SqlColumnRef)bin.Left).ColumnName, Is.EqualTo("recursive"));
+    }
+
+    [Test]
     public void Parse_SoftKeyword_QualifiedColumn()
     {
         // soft keyword as table alias prefix: t.limit

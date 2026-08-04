@@ -215,6 +215,9 @@ public class SqlTokenizerTests
             ("values", SqlTokenKind.Values),
             ("INTO", SqlTokenKind.Into),
             ("into", SqlTokenKind.Into),
+            ("RECURSIVE", SqlTokenKind.Recursive),
+            ("recursive", SqlTokenKind.Recursive),
+            ("ReCuRsIvE", SqlTokenKind.Recursive),
         };
 
         foreach (var (text, kind) in keywordMap)
