@@ -28,9 +28,20 @@ Every row and every value stays asserted; only the accidental ordering assumptio
 still fail. The existing `Has.Count.EqualTo(n)` line is kept above each one: strictly redundant, but
 a count mismatch reports far more legibly than a multiset diff, and it mirrors the SQLite side.
 
+### Amendment (during IMPLEMENT): hoist `expected`
+
+The forms below were written with the expected array inline in each `Is.EquivalentTo(...)` call.
+During step 4 it turned out that `Join_FiveTable_Select`, already on `origin/master` in this same
+file, does exactly this conversion with a hoisted `var expected = new[] { … }` — and cites #332 in
+its comment. That is the established local pattern and the direct precedent for this work, so all
+nine were reworked to match: one `expected` per test, declared after the SQLite positional asserts
+and before the first real-provider block. Same assertions, ~3× less text. Deliberately **not**
+hoisted to a fixture-level static — per-test keeps the expected values visible where they are read.
+
 ### Three assertion shapes
 
-The nine tests fall into three shapes, which is how the steps below are grouped.
+The nine tests fall into three shapes, which is how the steps below are grouped. (Shown inline
+below; see the amendment above for the hoisted form actually used.)
 
 **Plain positional tuple** (four tests) — the direct issue-suggested form:
 

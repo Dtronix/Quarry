@@ -5,7 +5,7 @@ platform: github
 base-branch: master
 
 ## State
-phase: DESIGN
+phase: REVIEW
 status: active
 issue: #332
 pr:
@@ -108,6 +108,16 @@ never used` in generated `MyDb.Interceptors.*.g.cs`, and one `NUnit2009` in
   `.SortedByAsync(r => r.UserName)` over a two-row result whose usernames are distinct (Alice, Bob),
   which is a genuine total order. Those were handled by the #314 sweep and are out of scope here.
   Worth knowing so a future sweep doesn't "finish the job" by converting them too.
+- **The precise statement of the #332 trap matters, and my first `<remarks>` rewrite got it wrong.**
+  I wrote that for the aggregate variants "no total order over the projection exists at all". False:
+  the three rows are pairwise distinct (`Total` separates the two Alice rows), so
+  `(UserName, Total)` *is* a total order. The real constraint is narrower — no *ascending* key
+  reproduces the *originally asserted sequence* (250.00 before 75.50), and making a sort work would
+  mean rewriting the expected sequence to fit the key, which `llm-testing.md` explicitly forbids.
+  The aggregate column is not "worse still"; it simply adds no discriminator beyond `Total`.
+  This matters because `llm-testing.md:135` now sends readers to that `<remarks>` as the canonical
+  explanation — a maintainer who checks a false claim either distrusts the rest or inverts it
+  ("a total order does exist, so I may sort") and reintroduces the bug. Caught as F3 in review.
 - `Assert.That` throws on first failure rather than collecting, so only the first mutated dialect
   block reported. Not a concern for the real assertions, but it means a multi-dialect row-order
   regression would surface one dialect at a time.
@@ -118,4 +128,6 @@ never used` in generated `MyDb.Interceptors.*.g.cs`, and one `NUnit2009` in
 
 | Date | Phases | Summary |
 |------|--------|---------|
-| 2026-08-04 | INTAKE → DESIGN | Loaded issue #332, created worktree/branch, read all nine test sites and seed data. |
+| 2026-08-04 | INTAKE → DESIGN | Loaded issue #332, created worktree/branch, read all nine test sites and seed data. Baseline 3501/3501. |
+| 2026-08-04 | PLAN → IMPLEMENT | All 4 steps committed (80895b3, 2abee88, ff9d8e2, 7428a1a). Full suite 3501/3501, matching baseline. Manifest goldens unchanged. |
+| 2026-08-04 | → REVIEW | `origin/master` had not moved from b03e246, so no rebase was needed. Delegated analysis pass. |
