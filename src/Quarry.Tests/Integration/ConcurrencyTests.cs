@@ -38,10 +38,16 @@ namespace Quarry.Tests.Integration;
 internal class ConcurrencyTests
 {
     /// <summary>
-    /// Kept modest deliberately: each harness holds four open connections, so
-    /// the connection count is this number times four.
+    /// Each harness holds four open connections — one SQLite plus three container
+    /// transactions — so the open-connection count is this number times four.
     /// </summary>
-    private const int Workers = 8;
+    /// <remarks>
+    /// Four, not eight. Measured with warm containers, both tests here run in well under a
+    /// second combined, so worker count is not a runtime concern either way — but four is
+    /// already enough for worker-to-worker cross-talk to be observable, and eight was an
+    /// arbitrary number holding twice the connections against the shared baseline.
+    /// </remarks>
+    private const int Workers = 4;
 
     /// <summary>
     /// How long a worker will wait at the shared barrier before failing. The barrier is
@@ -217,11 +223,11 @@ internal class ConcurrencyTests
     /// chain is where it breaks.
     /// </summary>
     /// <remarks>
-    /// The chain shape here is intentionally not used anywhere else in the
-    /// suite, so in a full-suite run this is the process's first touch of that
-    /// carrier. NUnit does not guarantee fixture order, so first-touch is not
-    /// guaranteed in a filtered run — the contended execution itself is the
-    /// assertion either way.
+    /// The chain shape here is intentionally not used anywhere else in the suite. That is
+    /// what makes the first-touch claim hold regardless of NUnit's fixture ordering: no
+    /// other test can have initialized this carrier, so whenever this test runs, it runs
+    /// that carrier's static initialization — and it runs it from
+    /// <see cref="Workers"/> threads released simultaneously.
     /// </remarks>
     [Test]
     public async Task ParallelFirstTouch_IdenticalChain_InitializesSafely()

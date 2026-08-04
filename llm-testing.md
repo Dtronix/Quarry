@@ -195,6 +195,13 @@ Container-backed tests are skipped, not failed. The reason is cached per-process
 
 When Docker IS available, container startup is **deferred to first use** and amortized over the whole run — one PG + one MySQL + one SQL Server container per process, kept alive until the test runner exits.
 
+**This wrecks naive timing.** The whole ~34s of container boot plus baseline seeding is billed to whichever test touches a container *first*, so exactly one test in any run looks pathologically slow while the next one takes 0.02s. It is not a slow test, and it is not a stable identity — it changes with run order. Two consequences:
+
+- **Never size a fixture from a `--filter`ed run.** Filtering to one container fixture makes *that* fixture the first consumer, so it absorbs the entire boot. A fixture measured at 26s alone can be 0.2s in a full run.
+- To get real per-test numbers, use `dotnet test --logger "trx;LogFileName=full.trx"` and read `UnitTestResult/@duration` and `@startTime` from `src/Quarry.Tests/TestResults/full.trx`. Console output only reports the total.
+
+If suite wall clock needs to come down, container startup is the lever — roughly half of a full run — not test count.
+
 ## SQL Manifest tests
 
 `ManifestOutput/quarry-manifest.{dialect}.md` are checked-in goldens. Enabling `<QuarrySqlManifestPath>` on `Quarry.Tests.csproj` regenerates them on build; the generator's `WriteIfChanged` guard suppresses no-op diffs. Treat unexpected manifest churn the same way you'd treat unexpected SQL: regression first, then update the goldens if the new SQL is intentionally correct.

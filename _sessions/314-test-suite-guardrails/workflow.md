@@ -45,6 +45,34 @@ Note: pre-existing build warnings — NU1903 (System.Security.Cryptography.Xml 9
 
 ## Working Notes
 
+### Test timing — how to measure it, and how I got it wrong (2026-08-04)
+
+- **A filtered run charges container startup to whatever fixture you filtered to.** Running
+  `--filter ConcurrencyTests` reported 26s and I read that as the fixture's cost. It was not: with
+  no other container test in the run, that fixture became the first consumer of
+  `EnsureBaselineAsync` and absorbed the entire Docker boot (PG 17 + MySQL 8.4 + SQL Server 2022)
+  plus baseline seeding. **Never size a fixture from a filtered run.**
+- **Real numbers, from a TRX of the full suite**: sum of per-test durations 67.7s across 3500 tests,
+  of which `MidStreamCancellation_LeavesConnectionUsable` alone shows **34.14s** — because it is
+  test #734 by start time and the *first* one to touch a container. The 733 before it are
+  codegen/unit tests totalling 16.66s; the very next container test takes 0.02s. Any test in that
+  slot would show ~34s. It is not a slow test.
+- The concurrency fixture actually costs **0.22s** with warm containers
+  (`ParallelContexts` 0.16s, `ParallelHarnesses_MixedReadWrite` 0.06s) — not 26s, and not "a third
+  of the suite".
+- To get per-test durations:
+  `dotnet test --logger "trx;LogFileName=full.trx"`, then parse `UnitTestResult/@duration` and
+  `@startTime` out of `src/Quarry.Tests/TestResults/full.trx`. Console output gives only the total.
+- Consequence for the suite's wall clock: **the lever is container startup, not any test.** ~34s of
+  a ~68s run is Docker boot. Trimming tests cannot touch it; a warm-container strategy or a
+  compose sidecar in CI could.
+- **`ParallelFirstTouch_IdenticalChain_InitializesSafely` was briefly deleted and then restored.**
+  Both of my arguments for removing it were wrong: the cost was the measurement error above, and
+  the claim that "NUnit does not guarantee fixture order so first-touch is not guaranteed" was
+  overstated — the chain shape is unique to that test, so no other test can have initialized that
+  carrier and the first-touch property holds in any run. `Workers` was kept at 4 (from 8) on its
+  own merit: fewer connections held against the shared baseline, no signal lost.
+
 ### REMEDIATE (2026-08-03)
 
 - **The F19 fix paid for the whole review immediately.** Adding "assert the guard fixture compiles
