@@ -2677,6 +2677,19 @@ internal static class ChainAnalyzer
                 return "Chain variable passed as argument to non-Quarry method or captured in lambda";
             if (raw.IsAssignedFromNonQuarryMethod)
                 return "Chain variable assigned from non-Quarry method";
+
+            // A clause that captures from more than one closure scope cannot be extracted. The delegate's
+            // Target is the innermost display class; the outer ones are reachable only through the
+            // compiler's CS$<>8__locals link fields, and those cannot be read — a field accessor must
+            // return byref and a byref return cannot name an inaccessible type (dotnet/runtime#119664,
+            // open/Future). Emitting anyway produced a MissingFieldException or InvalidCastException at
+            // execution time, so disqualify at build time instead.
+            if (raw.CapturedScopeCount > 1)
+                return $"clause at {raw.Line}:{raw.Column} captures variables from {raw.CapturedScopeCount} "
+                    + "different closure scopes (for example a loop variable together with a method-level "
+                    + "local, or a local from each of two nested lambdas). Quarry can only read captures "
+                    + "from a single scope. Split the clause into separate .Where(...) calls so each "
+                    + "captures from one scope, or copy the outer value into a local in the inner scope";
         }
         if (anyInLoop && anyOutsideLoop)
             return "Chain crosses a loop boundary (some clauses inside loop, some outside)";

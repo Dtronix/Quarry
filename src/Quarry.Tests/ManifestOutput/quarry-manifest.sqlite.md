@@ -3437,6 +3437,43 @@ SELECT "UserId" FROM "users" WHERE "IsActive" = 1
 ### Users().Where(...).Select(...).ExecuteFetchAllAsync()
 
 ```sql
+SELECT "UserId" FROM "users" WHERE "UserId" > @p0
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Users().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId" FROM "users" WHERE "UserId" > @p0 AND "UserName" = @p1
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `string` |
+
+---
+
+### Users().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId" FROM "users" WHERE "UserName" = @p0
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+
+---
+
+### Users().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
 SELECT "UserId", "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__}) AND "UserId" > @p1
 ```
 
@@ -4867,6 +4904,19 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 ---
 
+### Users().Where(...).Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId" FROM "users" WHERE ("UserName" = @p0) AND ("UserId" > @p1)
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `int` |
+
+---
+
 ### Users().Where(...).Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -5996,7 +6046,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 758 |
+| Total discovered | 769 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 212 |
-| Rendered | 546 |
+| Consolidated (deduped) | 219 |
+| Rendered | 550 |

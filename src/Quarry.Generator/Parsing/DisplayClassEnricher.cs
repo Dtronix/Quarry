@@ -155,7 +155,8 @@ internal static class DisplayClassEnricher
 
             // Walk up past local functions to find the effective (non-local) method
             var effectiveMethod = method;
-            while (effectiveMethod.MethodKind == MethodKind.LocalFunction
+            while ((effectiveMethod.MethodKind == MethodKind.LocalFunction
+                    || effectiveMethod.MethodKind == MethodKind.AnonymousFunction)
                    && effectiveMethod.ContainingSymbol is IMethodSymbol parent)
             {
                 effectiveMethod = parent;
@@ -211,6 +212,12 @@ internal static class DisplayClassEnricher
             {
                 site.CaptureKind = CaptureKind.FieldCapture;
             }
+
+            // How many distinct closure scopes this clause reaches into. Above 1, the outer scopes
+            // live behind CS$<>8__locals link fields that cannot be read, so the chain is disqualified
+            // downstream instead of emitting an extractor against the wrong display class.
+            site.CapturedScopeCount = DisplayClassNameResolver.CountCaptureScopes(
+                analysis, lambda, analysisResult.MethodSyntax);
         }
 
         // === RawSql type resolution pass ===

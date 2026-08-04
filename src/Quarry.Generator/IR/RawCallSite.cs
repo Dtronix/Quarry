@@ -230,6 +230,13 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
     // Capture classification set by DisplayClassEnricher. Not part of Equals/GetHashCode.
     public CaptureKind CaptureKind { get; set; }
 
+    // Number of DISTINCT closure scopes this site's clause lambda captures locals/parameters from,
+    // set by DisplayClassEnricher. Above 1 means the outer scopes are only reachable through the
+    // compiler's CS$<>8__locals link fields, which cannot be read (dotnet/runtime#119664) — such
+    // chains are disqualified in ChainAnalyzer.CheckDisqualifiers rather than emitted wrongly.
+    // Not part of Equals/GetHashCode.
+    public int CapturedScopeCount { get; set; }
+
     // RawSql type info resolved by DisplayClassEnricher using supplemental compilation.
     // Not part of Equals/GetHashCode — computed after Collect() to avoid cache instability.
     public RawSqlTypeInfo? RawSqlTypeInfo { get; set; }
@@ -309,6 +316,7 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         copy.DisplayClassName = DisplayClassName;
         copy.CapturedVariableTypes = CapturedVariableTypes;
         copy.CaptureKind = CaptureKind;
+        copy.CapturedScopeCount = CapturedScopeCount;
         copy.RawSqlTypeInfo = RawSqlTypeInfo;
         copy.MaterializabilityError = MaterializabilityError;
         copy.EnrichmentLambda = EnrichmentLambda;
@@ -374,6 +382,7 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         copy.DisplayClassName = DisplayClassName;
         copy.CapturedVariableTypes = CapturedVariableTypes;
         copy.CaptureKind = CaptureKind;
+        copy.CapturedScopeCount = CapturedScopeCount;
         copy.RawSqlTypeInfo = RawSqlTypeInfo;
         copy.MaterializabilityError = MaterializabilityError;
         copy.EnrichmentLambda = EnrichmentLambda;
@@ -442,6 +451,7 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         copy.DisplayClassName = DisplayClassName;
         copy.CapturedVariableTypes = CapturedVariableTypes;
         copy.CaptureKind = CaptureKind;
+        copy.CapturedScopeCount = CapturedScopeCount;
         copy.RawSqlTypeInfo = RawSqlTypeInfo;
         copy.MaterializabilityError = MaterializabilityError;
         copy.EnrichmentLambda = EnrichmentLambda;

@@ -373,6 +373,22 @@ internal static class CarrierAnalyzer
                         effectiveDisplayClass = displayClassName.Substring(0, marker);
                 }
 
+                // A ClosureCapture clause that also reads an instance field: the field is NOT on the
+                // display class, it is on the instance behind <>4__this. CapturedVariableTypes holds
+                // exactly the captured locals/parameters, so a captured name absent from it is a field.
+                string? thisIndirection = null;
+                if (captureKind == CaptureKind.ClosureCapture
+                    && !isStaticField
+                    && cs.CapturedVariableTypes?.ContainsKey(p.CapturedFieldName) == false)
+                {
+                    var marker = displayClassName.IndexOf("+<>c__DisplayClass");
+                    if (marker > 0)
+                    {
+                        thisIndirection = displayClassName;
+                        effectiveDisplayClass = displayClassName.Substring(0, marker);
+                    }
+                }
+
                 var methodName = $"__ExtractVar_{p.CapturedFieldName}_{clauseIndex}";
                 seenVariables[p.CapturedFieldName] = new Models.CapturedVariableExtractor(
                     methodName,
@@ -380,7 +396,8 @@ internal static class CarrierAnalyzer
                     variableType,
                     effectiveDisplayClass,
                     captureKind,
-                    isStaticField);
+                    isStaticField,
+                    thisIndirection);
             }
 
             // For UpdateSetAction: also create extractors from clause-level captured identifiers

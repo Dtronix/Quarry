@@ -16,7 +16,8 @@ internal sealed class CapturedVariableExtractor : IEquatable<CapturedVariableExt
         string variableType,
         string displayClassName,
         CaptureKind captureKind,
-        bool isStaticField)
+        bool isStaticField,
+        string? thisIndirectionDisplayClass = null)
     {
         MethodName = methodName;
         VariableName = variableName;
@@ -24,7 +25,27 @@ internal sealed class CapturedVariableExtractor : IEquatable<CapturedVariableExt
         DisplayClassName = displayClassName;
         CaptureKind = captureKind;
         IsStaticField = isStaticField;
+        ThisIndirectionDisplayClass = thisIndirectionDisplayClass;
     }
+
+    /// <summary>
+    /// Set when the variable is an INSTANCE FIELD captured by a lambda that also captures a local.
+    /// <para>
+    /// With only a field captured, the delegate's <c>Target</c> is the containing instance and the field
+    /// is read straight off it. Add a captured local and the compiler interposes a display class: the
+    /// <c>Target</c> becomes the display class, which holds the local plus a <c>&lt;&gt;4__this</c> field
+    /// pointing back at the instance. Emitting the field extractor against the display class then throws
+    /// <c>MissingFieldException</c>.
+    /// </para>
+    /// <para>
+    /// This holds the display class to read <c>&lt;&gt;4__this</c> from; <see cref="DisplayClassName"/>
+    /// stays the containing type the field actually lives on. Unlike a display-class-to-display-class
+    /// link, this hop IS expressible: <c>&lt;&gt;4__this</c>'s type is the user's own class, so the
+    /// accessor can name it and needs no <c>[return: UnsafeAccessorType]</c> (which dotnet/runtime#119664
+    /// does not support).
+    /// </para>
+    /// </summary>
+    public string? ThisIndirectionDisplayClass { get; }
 
     /// <summary>
     /// The [UnsafeAccessor] method name on the carrier (e.g., "__ExtractVar_x_0").
@@ -71,9 +92,10 @@ internal sealed class CapturedVariableExtractor : IEquatable<CapturedVariableExt
             && VariableType == other.VariableType
             && DisplayClassName == other.DisplayClassName
             && CaptureKind == other.CaptureKind
-            && IsStaticField == other.IsStaticField;
+            && IsStaticField == other.IsStaticField
+            && ThisIndirectionDisplayClass == other.ThisIndirectionDisplayClass;
     }
 
     public override bool Equals(object? obj) => Equals(obj as CapturedVariableExtractor);
-    public override int GetHashCode() => HashCode.Combine(MethodName, VariableName, VariableType, DisplayClassName, CaptureKind, IsStaticField);
+    public override int GetHashCode() => HashCode.Combine(MethodName, VariableName, VariableType, DisplayClassName, CaptureKind, IsStaticField, ThisIndirectionDisplayClass);
 }
