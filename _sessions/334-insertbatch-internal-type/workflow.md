@@ -211,6 +211,28 @@ accessibility assertion did not fire — the catch-all "fixture does not compile
 instead. `CS1729` is ordinarily a genuine arity bug, so adding it to the accessibility filter
 outright would mislabel real defects. Whatever the scope decision, the filter needs revisiting.
 
+### 2026-08-04 — Step 5: a compiling shape can still guard nothing
+
+`AssertBindsCleanly` only proves a shape compiles and that *some* interceptor was emitted for its
+terminal. It cannot tell whether the shape reached the emitter path it was added for. Added
+`Shape_StillReachesItsRuntimeHelper` (a shape-name → expected-emitted-text table) and it caught a
+false-positive **immediately**, on its first run:
+
+- `CollectionContains_FetchAll` as originally written — `var ids = new[] { 1, 2, 3 };` with an
+  entity terminal — emitted **none** of `CollectionHelper.Materialize`, `CollectionSqlCache` or
+  `ParameterNames.*`, yet passed the binding matrix green. Rewriting it as
+  `var ids = new List<int> { … }` + `.Select(...)` (the form `SqlOutput/CollectionParameterCollisionTests.cs:25`
+  uses) fixed two of the three.
+- `CollectionHelper.Materialize` still did not appear. Cause is real and worth knowing:
+  `CarrierEmitter.cs:1243/1252` emits `Materialize` **only** when `p.IsEnumerableCollection` — a
+  `List<int>`/array is already `IReadOnlyList<T>` and is used directly. Only a collection *typed*
+  `IEnumerable<T>` takes that arm. Added `CollectionEnumerableContains_FetchAll` for it; both arms
+  are now guarded.
+
+Take-away for anyone extending the matrix: **add the expectation entry at the same time as the
+shape.** Without it there is no signal distinguishing "this shape guards the helper" from "this
+shape happens to compile", and the latter looks identical in a green run.
+
 ## Suspend State
 
 ## Session Log

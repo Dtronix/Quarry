@@ -129,7 +129,9 @@ namespace TestApp.Services;
 
 public class Service
 {
-    public async Task Run(__CONTEXT__ db)
+    // `flag` exists for conditional-clause shapes: the chain analyzer needs a genuine runtime
+    // branch, so it must not be a constant the compiler can fold away. Unused by other shapes.
+    public async Task Run(__CONTEXT__ db, bool flag)
     {
         __BODY__
     }
@@ -228,6 +230,47 @@ public class Service
             "await db.Users().Where(u => u.Orders.Any(o => o.Total > 100)).ExecuteFetchAllAsync();"),
     };
 
+    // ── Shapes that reach the Quarry.Internal runtime helpers ────────────────
+    // Each of these emits a call to a helper type that, like BatchInsertSqlBuilder,
+    // only works if it is public. They are the shapes most worth guarding.
+
+    private static readonly Shape[] RuntimeHelperShapes =
+    {
+        // SetOperationBodyEmitter.
+        new("Union_FetchAll", "ExecuteFetchAllAsync",
+            "await db.Users().Select(u => u.UserName)" +
+            ".Union(db.Orders().Select(o => o.Status)).ExecuteFetchAllAsync();"),
+        // IEnumerable.Contains -> IN (...), which emits CollectionHelper.Materialize,
+        // CollectionSqlCache and ParameterNames.AtP/Dollar.
+        new("CollectionContains_FetchAll", "ExecuteFetchAllAsync",
+            "var ids = new List<int> { 1, 2, 3 };\n" +
+            "        await db.Users().Where(u => ids.Contains(u.UserId))" +
+            ".Select(u => u.UserName).ExecuteFetchAllAsync();"),
+        // A collection typed IEnumerable<T> takes a different arm of the same emitter
+        // (CarrierEmitter.cs:1252) and is the only shape that emits CollectionHelper.Materialize —
+        // an IReadOnlyList like the List<int> above is used directly, without it.
+        new("CollectionEnumerableContains_FetchAll", "ExecuteFetchAllAsync",
+            "IEnumerable<int> ids = new List<int> { 1, 2, 3 };\n" +
+            "        await db.Users().Where(u => ids.Contains(u.UserId))" +
+            ".Select(u => u.UserName).ExecuteFetchAllAsync();"),
+        // A branched clause compiles to bitmask-dispatched SQL variants whose default arm
+        // calls ThrowHelper.UnenumeratedMask.
+        new("ConditionalMask_FetchAll", "ExecuteFetchAllAsync",
+            "var q = db.Users().Select(u => u.UserName);\n" +
+            "        if (flag) q = q.Where(u => u.IsActive);\n" +
+            "        await q.ExecuteFetchAllAsync();"),
+        // Multi-terminal PreparedQuery: one carrier serving both a diagnostics and a fetch terminal.
+        new("Prepared_MultiTerminal", "ExecuteFetchAllAsync",
+            "var prepared = db.Users().Where(u => u.IsActive).Select(u => u.UserName).Prepare();\n" +
+            "        _ = prepared.ToDiagnostics().Sql;\n" +
+            "        await prepared.ExecuteFetchAllAsync();"),
+        // Window function in a projection.
+        new("Window_RowNumber_FetchAll", "ExecuteFetchAllAsync",
+            "await db.Orders()" +
+            ".Select(o => (o.OrderId, Rn: Sql.RowNumber(over => over.OrderBy(o.Total))))" +
+            ".ExecuteFetchAllAsync();"),
+    };
+
     // ── Modification terminals ───────────────────────────────────────────────
 
     private static readonly Shape[] ModificationShapes =
@@ -246,6 +289,7 @@ public class Service
         EntityTerminalShapes
             .Concat(GenericTerminalShapes)
             .Concat(JoinShapes)
+            .Concat(RuntimeHelperShapes)
             .Concat(ModificationShapes);
 
     public static IEnumerable<Shape> EntityTerminalOnlyShapes => EntityTerminalShapes;
@@ -369,6 +413,56 @@ public class Service
             $"'{shape.Name}' no longer declares {shape.Terminal} with the two-arity receiver " +
             "for a chain that never projects. If #329 is fixed, remove this pin and the " +
             ".Select(...) workarounds in the Postgres/MySql/SqlServer integration suites.");
+    }
+
+    /// <summary>
+    /// Shape name paired with a Quarry runtime member its interceptor is expected to emit.
+    /// </summary>
+    public sealed record HelperExpectation(string ShapeName, string EmittedText)
+    {
+        public override string ToString() => $"{ShapeName} -> {EmittedText}";
+    }
+
+    /// <summary>
+    /// The emitted-surface references each guarded shape exists to exercise. Every entry names a
+    /// member that had to be made public — or that would break consumers if it ever stopped being.
+    /// </summary>
+    public static IEnumerable<HelperExpectation> RuntimeHelperExpectations => new[]
+    {
+        new HelperExpectation("BatchInsert_NonQuery", "Quarry.Internal.BatchInsertSqlBuilder.Build"),
+        new HelperExpectation("BatchInsert_ToDiagnostics", "Quarry.Internal.BatchInsertSqlBuilder.Build"),
+        new HelperExpectation("Projected_ToDiagnostics", "new QueryDiagnostics("),
+        new HelperExpectation("CollectionEnumerableContains_FetchAll", "Quarry.Internal.CollectionHelper.Materialize"),
+        new HelperExpectation("CollectionContains_FetchAll", "Quarry.Internal.CollectionSqlCache"),
+        new HelperExpectation("ConditionalMask_FetchAll", "Quarry.Internal.ThrowHelper.UnenumeratedMask"),
+        new HelperExpectation("CollectionContains_FetchAll", "Quarry.Internal.ParameterNames."),
+        new HelperExpectation("Where_FetchAll", "QueryExecutor."),
+        new HelperExpectation("Where_FetchAll", "OpId.Next()"),
+    };
+
+    /// <summary>
+    /// Pins that each guarded shape still reaches the emitter path it was added for.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="AssertBindsCleanly"/> only proves a shape compiles and that <em>some</em>
+    /// interceptor was emitted for its terminal. If a chain silently stopped being analyzable — a
+    /// disqualified conditional collapsing its mask table, a collection parameter no longer routed
+    /// through the SQL cache — the shape would keep passing while guarding nothing, and the
+    /// accessibility coverage those helpers are supposed to have would quietly disappear.
+    /// </remarks>
+    [TestCaseSource(nameof(RuntimeHelperExpectations))]
+    public void Shape_StillReachesItsRuntimeHelper(HelperExpectation expectation)
+    {
+        var shape = AllShapes.SingleOrDefault(s => s.Name == expectation.ShapeName);
+        Assert.That(shape, Is.Not.Null,
+            $"No shape named '{expectation.ShapeName}' — the expectation list is stale.");
+
+        var (generatedSources, _) = Run(shape!, "TestDbContext", crossContext: false);
+
+        Assert.That(string.Concat(generatedSources), Does.Contain(expectation.EmittedText),
+            $"'{expectation.ShapeName}' no longer emits '{expectation.EmittedText}', so it is no " +
+            "longer guarding the accessibility of that member. Either the emitter changed or the " +
+            "chain stopped being analyzable — fix the shape rather than deleting this expectation.");
     }
 
     /// <summary>

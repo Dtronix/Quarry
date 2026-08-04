@@ -148,7 +148,13 @@ last.
   shared context changes generated output for every existing shape too — confirm the pre-existing
   15 shapes stay green, which is itself the regression signal.
 
-- [ ] **5. Add set-operation, collection-`IN`, conditional-mask, prepared and window shapes**
+- [x] **5. Add set-operation, collection-`IN`, conditional-mask, prepared and window shapes**
+
+  *Expanded during implementation:* added `Shape_StillReachesItsRuntimeHelper`, pinning each shape to
+  the emitted text it exists to guard, plus a second collection shape
+  (`CollectionEnumerableContains_FetchAll`) because `CollectionHelper.Materialize` is emitted only
+  for collections typed `IEnumerable<T>`.
+
 
   New `RuntimeHelperShapes` array — these are the shapes that reach the *other* `Quarry.Internal`
   helpers, which is precisely what makes them worth guarding:
