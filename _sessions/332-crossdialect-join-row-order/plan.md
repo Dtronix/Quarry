@@ -97,7 +97,7 @@ value check, which is the point of the projection anyway.
   one expected value locally to confirm `Is.EquivalentTo` over `ValueTuple` actually compares
   elements rather than silently passing (no existing call site in the suite compares tuples).
 
-- [ ] **2. Named-tuple tests → accessor projection + `Is.EquivalentTo`**
+- [x] **2. Named-tuple tests → accessor projection + `Is.EquivalentTo`**
   `Join_InnerJoin_NamedTupleProjection` (3 rows, `(Name, Amount)`),
   `Join_ThreeTable_NamedTupleProjection` (3 rows, `(User, Amount, Product)` — see scope note above).
   Keep the `// Verify named element access works across join boundaries` comment and make sure the

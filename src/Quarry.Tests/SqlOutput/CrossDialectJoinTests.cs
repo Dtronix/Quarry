@@ -241,32 +241,34 @@ internal class CrossDialectJoinTests
         Assert.That(results[2].Name, Is.EqualTo("Bob"));
         Assert.That(results[2].Amount, Is.EqualTo(150.00m));
 
+        // Same named-element access, projected through .Select so it is exercised on every row
+        // rather than only on the two the positional asserts used to reach.
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(3));
-        Assert.That(pgResults[0].Name, Is.EqualTo("Alice"));
-        Assert.That(pgResults[0].Amount, Is.EqualTo(250.00m));
-        Assert.That(pgResults[1].Name, Is.EqualTo("Alice"));
-        Assert.That(pgResults[1].Amount, Is.EqualTo(75.50m));
-        Assert.That(pgResults[2].Name, Is.EqualTo("Bob"));
-        Assert.That(pgResults[2].Amount, Is.EqualTo(150.00m));
+        Assert.That(pgResults.Select(r => (r.Name, r.Amount)), Is.EquivalentTo(new[]
+        {
+            ("Alice", 250.00m),
+            ("Alice", 75.50m),
+            ("Bob", 150.00m),
+        }));
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(3));
-        Assert.That(myResults[0].Name, Is.EqualTo("Alice"));
-        Assert.That(myResults[0].Amount, Is.EqualTo(250.00m));
-        Assert.That(myResults[1].Name, Is.EqualTo("Alice"));
-        Assert.That(myResults[1].Amount, Is.EqualTo(75.50m));
-        Assert.That(myResults[2].Name, Is.EqualTo("Bob"));
-        Assert.That(myResults[2].Amount, Is.EqualTo(150.00m));
+        Assert.That(myResults.Select(r => (r.Name, r.Amount)), Is.EquivalentTo(new[]
+        {
+            ("Alice", 250.00m),
+            ("Alice", 75.50m),
+            ("Bob", 150.00m),
+        }));
 
         var ssResults = await ss.ExecuteFetchAllAsync();
         Assert.That(ssResults, Has.Count.EqualTo(3));
-        Assert.That(ssResults[0].Name, Is.EqualTo("Alice"));
-        Assert.That(ssResults[0].Amount, Is.EqualTo(250.00m));
-        Assert.That(ssResults[1].Name, Is.EqualTo("Alice"));
-        Assert.That(ssResults[1].Amount, Is.EqualTo(75.50m));
-        Assert.That(ssResults[2].Name, Is.EqualTo("Bob"));
-        Assert.That(ssResults[2].Amount, Is.EqualTo(150.00m));
+        Assert.That(ssResults.Select(r => (r.Name, r.Amount)), Is.EquivalentTo(new[]
+        {
+            ("Alice", 250.00m),
+            ("Alice", 75.50m),
+            ("Bob", 150.00m),
+        }));
     }
 
     [Test]
@@ -294,23 +296,36 @@ internal class CrossDialectJoinTests
         Assert.That(results[0].Amount, Is.EqualTo(250.00m));
         Assert.That(results[0].Product, Is.Not.Null);
 
+        // There is no order-independent way to say "row [0] is Alice/250.00" -- that row is not the
+        // ascending minimum over any projected column (75.50 < 250.00, "Gadget" < "Widget"). So the
+        // real-provider sides assert the whole three-row multiset instead. Seeded order_items are
+        // one per order, so the product names are fully determined.
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(3));
-        Assert.That(pgResults[0].User, Is.EqualTo("Alice"));
-        Assert.That(pgResults[0].Amount, Is.EqualTo(250.00m));
-        Assert.That(pgResults[0].Product, Is.Not.Null);
+        Assert.That(pgResults.Select(r => (r.User, r.Amount, r.Product)), Is.EquivalentTo(new[]
+        {
+            ("Alice", 250.00m, "Widget"),
+            ("Alice", 75.50m, "Gadget"),
+            ("Bob", 150.00m, "Widget"),
+        }));
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(3));
-        Assert.That(myResults[0].User, Is.EqualTo("Alice"));
-        Assert.That(myResults[0].Amount, Is.EqualTo(250.00m));
-        Assert.That(myResults[0].Product, Is.Not.Null);
+        Assert.That(myResults.Select(r => (r.User, r.Amount, r.Product)), Is.EquivalentTo(new[]
+        {
+            ("Alice", 250.00m, "Widget"),
+            ("Alice", 75.50m, "Gadget"),
+            ("Bob", 150.00m, "Widget"),
+        }));
 
         var ssResults = await ss.ExecuteFetchAllAsync();
         Assert.That(ssResults, Has.Count.EqualTo(3));
-        Assert.That(ssResults[0].User, Is.EqualTo("Alice"));
-        Assert.That(ssResults[0].Amount, Is.EqualTo(250.00m));
-        Assert.That(ssResults[0].Product, Is.Not.Null);
+        Assert.That(ssResults.Select(r => (r.User, r.Amount, r.Product)), Is.EquivalentTo(new[]
+        {
+            ("Alice", 250.00m, "Widget"),
+            ("Alice", 75.50m, "Gadget"),
+            ("Bob", 150.00m, "Widget"),
+        }));
     }
 
     #endregion
