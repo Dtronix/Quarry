@@ -5,8 +5,8 @@ platform: github
 base-branch: master
 
 ## State
-phase: PLAN
-status: active
+phase: IMPLEMENT
+status: suspended
 issue: #331
 pr:
 
@@ -74,9 +74,21 @@ Build emits pre-existing warnings (CS0219 `__colShift` unused in generated inter
 
 ## Suspend State
 
+**Suspended 2026-08-04 — IMPLEMENT, after step 3 of 11.** Triggered by the workflow context check (≥3 plan steps completed this session), not by a problem.
+
+- **Position:** plan.md steps 1–3 complete and committed. Next is step 4.
+- **In progress:** nothing. Working tree clean, no WIP commit.
+- **Immediate next step:** step 4 — correct the stale fallback message at `RawSqlColumnResolver.cs:85` (it still claims CTEs are unsupported) and add `RawSqlColumnResolverTests` proving a CTE query now resolves hardcoded ordinals. No logic change is needed there; D2 already routes CTE queries past the `HasUnsupported` gate.
+- **Commits on branch:** `e7fbd82` session artifacts → `c9e1f14` step 1 → `f04c65f` step 2 → `793271e` step 3.
+- **Test status:** all passing — 3873 total (Quarry.Tests 3522, Quarry.Migration.Tests 203, Quarry.Analyzers.Tests 148). Baseline was 3848, so 25 tests added so far.
+- **Not yet pushed to origin** at time of suspend; push is part of the suspend procedure.
+- **Unrecorded context:** none. All design conclusions are in Decisions D1–D7 and Working Notes; the remaining step details are in plan.md.
+- **Watch on resume:** steps 6–9 are the substantial half (CTE convertibility rules, `.With<>`/`.FromCte<>` emission, DTO synthesis) and both converters must be done independently — `SqlToChainConverter` and `ChainEmitter` share no code. The step-3 blanket rejections in `SqlToChainConverter.CheckConvertibility` and `ChainEmitter.TranslateSelect` are placeholders to be replaced, not kept.
+
 ## Session Log
 
 | Date | Phases | Summary |
 |------|--------|---------|
 | 2026-08-04 | INTAKE | Loaded issue #331, created worktree `331-sql-parser-cte`, baseline test run green (3848/3848), parser + consumer recon. |
+| 2026-08-04 | IMPLEMENT | Steps 1–3 complete: RECURSIVE tokenizing, CTE + set-operation AST nodes, WITH parsing with converter guards. 3873 tests green. Suspended on the context check. |
 | 2026-08-04 | DESIGN, PLAN | Mapped all four parser consumers. Confirmed the silent-CTE-drop hole the parser change opens, the CTE-name/type-name coupling, and the Join-against-CTE runtime gap. Decisions D1–D7 recorded; wrote plan.md (11 steps). |
