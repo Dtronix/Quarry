@@ -32,16 +32,21 @@ internal class CrossDialectSetOperationTests
         var results = await lt.ExecuteFetchAllAsync();
         // Alice(active), Bob(active), Charlie(inactive) → active = Alice, Bob. UserId=1 = Alice.
         // UNION removes duplicates so Alice appears once → 2 results (Alice, Bob)
+        // No top-level ORDER BY, so row values are asserted as an unordered collection.
         Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results.Select(r => r.UserName), Is.EquivalentTo(new[] { "Alice", "Bob" }));
 
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults.Select(r => r.UserName), Is.EquivalentTo(new[] { "Alice", "Bob" }));
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(2));
+        Assert.That(myResults.Select(r => r.UserName), Is.EquivalentTo(new[] { "Alice", "Bob" }));
 
         var ssResults = await ss.ExecuteFetchAllAsync();
         Assert.That(ssResults, Has.Count.EqualTo(2));
+        Assert.That(ssResults.Select(r => r.UserName), Is.EquivalentTo(new[] { "Alice", "Bob" }));
     }
 
     [Test]
@@ -65,16 +70,22 @@ internal class CrossDialectSetOperationTests
 
         var results = await lt.ExecuteFetchAllAsync();
         // UNION ALL keeps duplicates: active=Alice,Bob + UserId=1=Alice → 3 results
+        // No top-level ORDER BY, so row values are asserted as an unordered multiset
+        // (Is.EquivalentTo respects duplicate counts, so the doubled Alice is checked).
         Assert.That(results, Has.Count.EqualTo(3));
+        Assert.That(results.Select(r => r.UserName), Is.EquivalentTo(new[] { "Alice", "Alice", "Bob" }));
 
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(3));
+        Assert.That(pgResults.Select(r => r.UserName), Is.EquivalentTo(new[] { "Alice", "Alice", "Bob" }));
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(3));
+        Assert.That(myResults.Select(r => r.UserName), Is.EquivalentTo(new[] { "Alice", "Alice", "Bob" }));
 
         var ssResults = await ss.ExecuteFetchAllAsync();
         Assert.That(ssResults, Has.Count.EqualTo(3));
+        Assert.That(ssResults.Select(r => r.UserName), Is.EquivalentTo(new[] { "Alice", "Alice", "Bob" }));
     }
 
     #endregion
@@ -184,16 +195,21 @@ internal class CrossDialectSetOperationTests
 
         var results = await lt.ExecuteFetchAllAsync();
         // Active=Alice(1),Bob(2). UserId=3=Charlie. UNION → 3 unique results
+        // No top-level ORDER BY, so row values are asserted as an unordered collection.
         Assert.That(results, Has.Count.EqualTo(3));
+        Assert.That(results, Is.EquivalentTo(new[] { (1, "Alice"), (2, "Bob"), (3, "Charlie") }));
 
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(3));
+        Assert.That(pgResults, Is.EquivalentTo(new[] { (1, "Alice"), (2, "Bob"), (3, "Charlie") }));
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(3));
+        Assert.That(myResults, Is.EquivalentTo(new[] { (1, "Alice"), (2, "Bob"), (3, "Charlie") }));
 
         var ssResults = await ss.ExecuteFetchAllAsync();
         Assert.That(ssResults, Has.Count.EqualTo(3));
+        Assert.That(ssResults, Is.EquivalentTo(new[] { (1, "Alice"), (2, "Bob"), (3, "Charlie") }));
     }
 
     #endregion
@@ -324,8 +340,10 @@ internal class CrossDialectSetOperationTests
         Assert.That(diag.Sql, Does.Contain("UNION"));
         Assert.That(diag.Sql, Does.Contain("EXCEPT"));
 
+        // No top-level ORDER BY, so row values are asserted as an unordered collection.
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results, Is.EquivalentTo(new[] { (2, "Bob"), (3, "Charlie") }));
 
         var pg = Pg.Users().Select(u => (u.UserId, u.UserName))
             .Union(Pg.Users().Where(u => u.IsActive).Select(u => (u.UserId, u.UserName)))
@@ -333,6 +351,7 @@ internal class CrossDialectSetOperationTests
             .Prepare();
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults, Is.EquivalentTo(new[] { (2, "Bob"), (3, "Charlie") }));
 
         var my = My.Users().Select(u => (u.UserId, u.UserName))
             .Union(My.Users().Where(u => u.IsActive).Select(u => (u.UserId, u.UserName)))
@@ -340,6 +359,7 @@ internal class CrossDialectSetOperationTests
             .Prepare();
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(2));
+        Assert.That(myResults, Is.EquivalentTo(new[] { (2, "Bob"), (3, "Charlie") }));
 
         var ss = Ss.Users().Select(u => (u.UserId, u.UserName))
             .Union(Ss.Users().Where(u => u.IsActive).Select(u => (u.UserId, u.UserName)))
@@ -347,6 +367,7 @@ internal class CrossDialectSetOperationTests
             .Prepare();
         var ssResults = await ss.ExecuteFetchAllAsync();
         Assert.That(ssResults, Has.Count.EqualTo(2));
+        Assert.That(ssResults, Is.EquivalentTo(new[] { (2, "Bob"), (3, "Charlie") }));
     }
 
     #endregion
@@ -383,16 +404,21 @@ internal class CrossDialectSetOperationTests
         var results = await lt.ExecuteFetchAllAsync();
         // All users: (1,Alice), (2,Bob), (3,Charlie). UNION with UserId=3: same set.
         // Post-union WHERE UserId <= 2: (1,Alice), (2,Bob) → 2 results
+        // No top-level ORDER BY, so row values are asserted as an unordered collection.
         Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results, Is.EquivalentTo(new[] { (1, "Alice"), (2, "Bob") }));
 
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults, Is.EquivalentTo(new[] { (1, "Alice"), (2, "Bob") }));
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(2));
+        Assert.That(myResults, Is.EquivalentTo(new[] { (1, "Alice"), (2, "Bob") }));
 
         var ssResults = await ss.ExecuteFetchAllAsync();
         Assert.That(ssResults, Has.Count.EqualTo(2));
+        Assert.That(ssResults, Is.EquivalentTo(new[] { (1, "Alice"), (2, "Bob") }));
     }
 
     [Test]
@@ -467,16 +493,21 @@ internal class CrossDialectSetOperationTests
         var results = await lt.ExecuteFetchAllAsync();
         // UserId >= 2: (2,Bob), (3,Charlie). UserId <= 3: (1,Alice), (2,Bob), (3,Charlie).
         // UNION: (1,Alice), (2,Bob), (3,Charlie) → 3 results
+        // No top-level ORDER BY, so row values are asserted as an unordered collection.
         Assert.That(results, Has.Count.EqualTo(3));
+        Assert.That(results, Is.EquivalentTo(new[] { (1, "Alice"), (2, "Bob"), (3, "Charlie") }));
 
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(3));
+        Assert.That(pgResults, Is.EquivalentTo(new[] { (1, "Alice"), (2, "Bob"), (3, "Charlie") }));
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(3));
+        Assert.That(myResults, Is.EquivalentTo(new[] { (1, "Alice"), (2, "Bob"), (3, "Charlie") }));
 
         var ssResults = await ss.ExecuteFetchAllAsync();
         Assert.That(ssResults, Has.Count.EqualTo(3));
+        Assert.That(ssResults, Is.EquivalentTo(new[] { (1, "Alice"), (2, "Bob"), (3, "Charlie") }));
     }
 
     [Test]
@@ -635,25 +666,30 @@ internal class CrossDialectSetOperationTests
 
         var results = await lt.ExecuteFetchAllAsync();
         // All 3 users from both sides, UNION removes duplicates → 3 results
+        // No top-level ORDER BY, so row values are asserted as an unordered collection.
         Assert.That(results, Has.Count.EqualTo(3));
+        Assert.That(results, Is.EquivalentTo(new[] { (1, "Alice"), (2, "Bob"), (3, "Charlie") }));
 
         var pg = Pg.Users().Select(u => (u.UserId, u.UserName))
             .Union(Pg.Users().Distinct().Select(u => (u.UserId, u.UserName)))
             .Prepare();
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(3));
+        Assert.That(pgResults, Is.EquivalentTo(new[] { (1, "Alice"), (2, "Bob"), (3, "Charlie") }));
 
         var my = My.Users().Select(u => (u.UserId, u.UserName))
             .Union(My.Users().Distinct().Select(u => (u.UserId, u.UserName)))
             .Prepare();
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(3));
+        Assert.That(myResults, Is.EquivalentTo(new[] { (1, "Alice"), (2, "Bob"), (3, "Charlie") }));
 
         var ss = Ss.Users().Select(u => (u.UserId, u.UserName))
             .Union(Ss.Users().Distinct().Select(u => (u.UserId, u.UserName)))
             .Prepare();
         var ssResults = await ss.ExecuteFetchAllAsync();
         Assert.That(ssResults, Has.Count.EqualTo(3));
+        Assert.That(ssResults, Is.EquivalentTo(new[] { (1, "Alice"), (2, "Bob"), (3, "Charlie") }));
     }
 
     [Test]
@@ -1135,17 +1171,23 @@ internal class CrossDialectSetOperationTests
             mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `IsActive` = 1 UNION SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `UserId` = 1",
             ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [IsActive] = 1 UNION SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [UserId] = 1");
 
+        // UNION removes the duplicate Alice → Alice, Bob. No top-level ORDER BY, so row
+        // values are asserted as an unordered collection.
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results.Select(r => r.UserName), Is.EquivalentTo(new[] { "Alice", "Bob" }));
 
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults.Select(r => r.UserName), Is.EquivalentTo(new[] { "Alice", "Bob" }));
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(2));
+        Assert.That(myResults.Select(r => r.UserName), Is.EquivalentTo(new[] { "Alice", "Bob" }));
 
         var ssResults = await ss.ExecuteFetchAllAsync();
         Assert.That(ssResults, Has.Count.EqualTo(2));
+        Assert.That(ssResults.Select(r => r.UserName), Is.EquivalentTo(new[] { "Alice", "Bob" }));
     }
 
     [Test]
@@ -1167,17 +1209,23 @@ internal class CrossDialectSetOperationTests
             mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `IsActive` = 1 UNION ALL SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `UserId` = 1",
             ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [IsActive] = 1 UNION ALL SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [UserId] = 1");
 
+        // UNION ALL keeps the duplicate Alice → Alice, Alice, Bob. No top-level ORDER BY,
+        // so row values are asserted as an unordered multiset.
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(3));
+        Assert.That(results.Select(r => r.UserName), Is.EquivalentTo(new[] { "Alice", "Alice", "Bob" }));
 
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(3));
+        Assert.That(pgResults.Select(r => r.UserName), Is.EquivalentTo(new[] { "Alice", "Alice", "Bob" }));
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(3));
+        Assert.That(myResults.Select(r => r.UserName), Is.EquivalentTo(new[] { "Alice", "Alice", "Bob" }));
 
         var ssResults = await ss.ExecuteFetchAllAsync();
         Assert.That(ssResults, Has.Count.EqualTo(3));
+        Assert.That(ssResults.Select(r => r.UserName), Is.EquivalentTo(new[] { "Alice", "Alice", "Bob" }));
     }
 
     [Test]
@@ -1288,17 +1336,29 @@ internal class CrossDialectSetOperationTests
             mysql:  "SELECT `OrderId`, NTILE(2) OVER (ORDER BY `OrderDate`) AS `Grp` FROM `orders` UNION ALL SELECT `OrderId`, NTILE(?) OVER (ORDER BY `OrderDate`) AS `Grp` FROM `orders`",
             ss:     "SELECT [OrderId], CAST(NTILE(2) OVER (ORDER BY [OrderDate]) AS INT) AS [Grp] FROM [orders] UNION ALL SELECT [OrderId], CAST(NTILE(@p0) OVER (ORDER BY [OrderDate]) AS INT) AS [Grp] FROM [orders]");
 
+        // Both sides bucket the same 3 orders by OrderDate ASC into 2 NTILE groups.
+        // NTILE fills the larger group first: orders 1 (2024-06-01) and 2 (2024-06-15)
+        // land in bucket 1, order 3 (2024-07-01) in bucket 2. UNION ALL keeps both sides.
+        // No top-level ORDER BY, so row values are asserted as an unordered multiset —
+        // this also pins the operand's `buckets` binding (a default(int) bind would not
+        // produce these groups).
+        var expectedNtile = new[] { (1, 1), (2, 1), (3, 2), (1, 1), (2, 1), (3, 2) };
+
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(6)); // 3 orders x 2 sides (UNION ALL keeps dupes)
+        Assert.That(results, Is.EquivalentTo(expectedNtile));
 
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(6));
+        Assert.That(pgResults, Is.EquivalentTo(expectedNtile));
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(6));
+        Assert.That(myResults, Is.EquivalentTo(expectedNtile));
 
         var ssResults = await ss.ExecuteFetchAllAsync();
         Assert.That(ssResults, Has.Count.EqualTo(6));
+        Assert.That(ssResults, Is.EquivalentTo(expectedNtile));
     }
 
     [Test]
@@ -1333,17 +1393,26 @@ internal class CrossDialectSetOperationTests
             mysql:  "SELECT `OrderId`, NTILE(2) OVER (ORDER BY `OrderDate`) AS `Grp` FROM `orders` WHERE `OrderId` > ? UNION ALL SELECT `OrderId`, NTILE(?) OVER (ORDER BY `OrderDate`) AS `Grp` FROM `orders`",
             ss:     "SELECT [OrderId], CAST(NTILE(2) OVER (ORDER BY [OrderDate]) AS INT) AS [Grp] FROM [orders] WHERE [OrderId] > @p0 UNION ALL SELECT [OrderId], CAST(NTILE(@p1) OVER (ORDER BY [OrderDate]) AS INT) AS [Grp] FROM [orders]");
 
+        // Same bucketing as the sibling test (orders 1, 2 → group 1; order 3 → group 2),
+        // now with the Where param at @p0 and the operand's NTILE param at @p1. No
+        // top-level ORDER BY, so row values are asserted as an unordered multiset.
+        var expectedNtile = new[] { (1, 1), (2, 1), (3, 2), (1, 1), (2, 1), (3, 2) };
+
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(6)); // 3 orders (all > 0) + 3 orders
+        Assert.That(results, Is.EquivalentTo(expectedNtile));
 
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(6));
+        Assert.That(pgResults, Is.EquivalentTo(expectedNtile));
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(6));
+        Assert.That(myResults, Is.EquivalentTo(expectedNtile));
 
         var ssResults = await ss.ExecuteFetchAllAsync();
         Assert.That(ssResults, Has.Count.EqualTo(6));
+        Assert.That(ssResults, Is.EquivalentTo(expectedNtile));
     }
 
     #endregion

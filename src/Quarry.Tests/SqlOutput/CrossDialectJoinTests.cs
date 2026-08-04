@@ -6,6 +6,17 @@ using Ss = Quarry.Tests.Samples.Ss;
 namespace Quarry.Tests.SqlOutput;
 
 
+/// <remarks>
+/// Nine tests here assert <c>pgResults[0] == ("Alice", 250.00m)</c> style sequences on a
+/// <c>users → orders</c> join that carries no <c>ORDER BY</c>. They are tracked as a known
+/// row-order flake in issue #332 and were deliberately left out of the #314
+/// <see cref="RowOrderExtensions.SortedByAsync{T, TKey}"/> sweep: the order they encode is
+/// <c>orders.OrderId</c> ascending, which is not in the projection, and the only projected
+/// discriminator (<c>Total</c>) runs *descending* within the Alice group. So
+/// <c>.SortedByAsync(r => (r.UserName, r.Total))</c> compiles, reads as correct, and silently
+/// swaps rows <c>[0]</c> and <c>[1]</c>. Do not "fix" these mechanically — see #332 for the
+/// two viable remedies.
+/// </remarks>
 [TestFixture]
 internal class CrossDialectJoinTests
 {
@@ -127,17 +138,17 @@ internal class CrossDialectJoinTests
         Assert.That(results[0], Is.EqualTo(("Alice", 250.00m)));
         Assert.That(results[1], Is.EqualTo(("Bob", 150.00m)));
 
-        var pgResults = await pg.ExecuteFetchAllAsync();
+        var pgResults = await pg.ExecuteFetchAllAsync().SortedByAsync(r => r.UserName);
         Assert.That(pgResults, Has.Count.EqualTo(2));
         Assert.That(pgResults[0], Is.EqualTo(("Alice", 250.00m)));
         Assert.That(pgResults[1], Is.EqualTo(("Bob", 150.00m)));
 
-        var myResults = await my.ExecuteFetchAllAsync();
+        var myResults = await my.ExecuteFetchAllAsync().SortedByAsync(r => r.UserName);
         Assert.That(myResults, Has.Count.EqualTo(2));
         Assert.That(myResults[0], Is.EqualTo(("Alice", 250.00m)));
         Assert.That(myResults[1], Is.EqualTo(("Bob", 150.00m)));
 
-        var ssResults = await ss.ExecuteFetchAllAsync();
+        var ssResults = await ss.ExecuteFetchAllAsync().SortedByAsync(r => r.UserName);
         Assert.That(ssResults, Has.Count.EqualTo(2));
         Assert.That(ssResults[0], Is.EqualTo(("Alice", 250.00m)));
         Assert.That(ssResults[1], Is.EqualTo(("Bob", 150.00m)));
@@ -507,17 +518,17 @@ internal class CrossDialectJoinTests
         Assert.That(results[0], Is.EqualTo(("Alice", 250.00m)));
         Assert.That(results[1], Is.EqualTo(("Bob", 150.00m)));
 
-        var pgResults = await pg.ExecuteFetchAllAsync();
+        var pgResults = await pg.ExecuteFetchAllAsync().SortedByAsync(r => r.UserName);
         Assert.That(pgResults, Has.Count.EqualTo(2));
         Assert.That(pgResults[0], Is.EqualTo(("Alice", 250.00m)));
         Assert.That(pgResults[1], Is.EqualTo(("Bob", 150.00m)));
 
-        var myResults = await my.ExecuteFetchAllAsync();
+        var myResults = await my.ExecuteFetchAllAsync().SortedByAsync(r => r.UserName);
         Assert.That(myResults, Has.Count.EqualTo(2));
         Assert.That(myResults[0], Is.EqualTo(("Alice", 250.00m)));
         Assert.That(myResults[1], Is.EqualTo(("Bob", 150.00m)));
 
-        var ssResults = await ss.ExecuteFetchAllAsync();
+        var ssResults = await ss.ExecuteFetchAllAsync().SortedByAsync(r => r.UserName);
         Assert.That(ssResults, Has.Count.EqualTo(2));
         Assert.That(ssResults[0], Is.EqualTo(("Alice", 250.00m)));
         Assert.That(ssResults[1], Is.EqualTo(("Bob", 150.00m)));
@@ -949,17 +960,17 @@ internal class CrossDialectJoinTests
         Assert.That(results[0], Is.EqualTo(("Alice", 250.00m)));
         Assert.That(results[1], Is.EqualTo(("Bob", 150.00m)));
 
-        var pgResults = await pg.ExecuteFetchAllAsync();
+        var pgResults = await pg.ExecuteFetchAllAsync().SortedByAsync(r => r.UserName);
         Assert.That(pgResults, Has.Count.EqualTo(2));
         Assert.That(pgResults[0], Is.EqualTo(("Alice", 250.00m)));
         Assert.That(pgResults[1], Is.EqualTo(("Bob", 150.00m)));
 
-        var myResults = await my.ExecuteFetchAllAsync();
+        var myResults = await my.ExecuteFetchAllAsync().SortedByAsync(r => r.UserName);
         Assert.That(myResults, Has.Count.EqualTo(2));
         Assert.That(myResults[0], Is.EqualTo(("Alice", 250.00m)));
         Assert.That(myResults[1], Is.EqualTo(("Bob", 150.00m)));
 
-        var ssResults = await ss.ExecuteFetchAllAsync();
+        var ssResults = await ss.ExecuteFetchAllAsync().SortedByAsync(r => r.UserName);
         Assert.That(ssResults, Has.Count.EqualTo(2));
         Assert.That(ssResults[0], Is.EqualTo(("Alice", 250.00m)));
         Assert.That(ssResults[1], Is.EqualTo(("Bob", 150.00m)));
@@ -995,14 +1006,26 @@ internal class CrossDialectJoinTests
         Assert.That(results[0], Is.EqualTo(("Alice", 250.00m, "Widget", "West Coast Hub")));
         Assert.That(results[1], Is.EqualTo(("Bob", 150.00m, "Widget", "EU Central")));
 
+        // The join carries no top-level ORDER BY, so the real providers are asserted as
+        // an unordered collection — every column of every row is checked without
+        // depending on the server's row order (see the fixture <remarks> and #332).
+        var expected = new[]
+        {
+            ("Alice", 250.00m, "Widget", "West Coast Hub"),
+            ("Bob", 150.00m, "Widget", "EU Central"),
+        };
+
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults, Is.EquivalentTo(expected));
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(2));
+        Assert.That(myResults, Is.EquivalentTo(expected));
 
         var ssResults = await ss.ExecuteFetchAllAsync();
         Assert.That(ssResults, Has.Count.EqualTo(2));
+        Assert.That(ssResults, Is.EquivalentTo(expected));
     }
 
     #endregion

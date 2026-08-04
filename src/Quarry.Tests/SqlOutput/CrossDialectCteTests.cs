@@ -49,17 +49,17 @@ internal class CrossDialectCteTests
         Assert.That(results[0], Is.EqualTo((1, 250.00m)));
         Assert.That(results[1], Is.EqualTo((3, 150.00m)));
 
-        var pgResults = await pg.ExecuteFetchAllAsync();
+        var pgResults = await pg.ExecuteFetchAllAsync().SortedByAsync(r => r.OrderId);
         Assert.That(pgResults, Has.Count.EqualTo(2));
         Assert.That(pgResults[0], Is.EqualTo((1, 250.00m)));
         Assert.That(pgResults[1], Is.EqualTo((3, 150.00m)));
 
-        var myResults = await my.ExecuteFetchAllAsync();
+        var myResults = await my.ExecuteFetchAllAsync().SortedByAsync(r => r.OrderId);
         Assert.That(myResults, Has.Count.EqualTo(2));
         Assert.That(myResults[0], Is.EqualTo((1, 250.00m)));
         Assert.That(myResults[1], Is.EqualTo((3, 150.00m)));
 
-        var ssResults = await ss.ExecuteFetchAllAsync();
+        var ssResults = await ss.ExecuteFetchAllAsync().SortedByAsync(r => r.OrderId);
         Assert.That(ssResults, Has.Count.EqualTo(2));
         Assert.That(ssResults[0], Is.EqualTo((1, 250.00m)));
         Assert.That(ssResults[1], Is.EqualTo((3, 150.00m)));

@@ -65,7 +65,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 predicate: static (node, _) => IsContextCandidate(node),
                 transform: static (ctx, ct) => GetContextInfo(ctx, ct))
             .Where(static info => info is not null)
-            .Select(static (info, _) => info!);
+            .Select(static (info, _) => info!)
+            .WithTrackingName(TrackingNames.ContextDeclarations);
 
         // Pipeline 1 output: Per-context entity/context/metadata generation (no Collect needed)
         // Each context is independently cached — changing one context doesn't regenerate others.
@@ -83,14 +84,16 @@ public sealed class QuarryGenerator : IIncrementalGenerator
 
         // === NEW: Build EntityRegistry from collected contexts ===
         var entityRegistry = contextDeclarations.Collect()
-            .Select(static (contexts, ct) => IR.EntityRegistry.Build(contexts, ct));
+            .Select(static (contexts, ct) => IR.EntityRegistry.Build(contexts, ct))
+            .WithTrackingName(TrackingNames.EntityRegistry);
 
         // === Stage 2: Raw Call Site Discovery (returns RawCallSite, no display class enrichment) ===
         var rawCallSites = context.SyntaxProvider
             .CreateSyntaxProvider(
                 predicate: static (node, _) => UsageSiteDiscovery.IsQuarryMethodCandidate(node),
                 transform: static (ctx, ct) => DiscoverRawCallSites(ctx, ct))
-            .SelectMany(static (sites, _) => sites);
+            .SelectMany(static (sites, _) => sites)
+            .WithTrackingName(TrackingNames.RawCallSites);
 
         // === Stage 2.5: Batch display class enrichment (build-time only via downstream consumers) ===
         // Collect all raw sites, then enrich display class names and captured variable types
@@ -99,7 +102,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             .Combine(context.CompilationProvider)
             .Combine(entityRegistry)
             .SelectMany(static (data, ct) =>
-                DisplayClassEnricher.EnrichAll(data.Left.Left, data.Left.Right, data.Right, ct));
+                DisplayClassEnricher.EnrichAll(data.Left.Left, data.Left.Right, data.Right, ct))
+            .WithTrackingName(TrackingNames.EnrichedCallSites);
 
         // === Stage 3: Per-Site Binding (individually cached) ===
         // Bind exceptions produce a BindFailure value instead of vanishing: failures
@@ -125,7 +129,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                         raw.FilePath, raw.Line, raw.Column,
                         $"Bind: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}")));
                 }
-            });
+            })
+            .WithTrackingName(TrackingNames.BindResults);
 
         var boundCallSites = bindResults
             .Where(static r => r.Site != null)
@@ -161,13 +166,15 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                     System.Diagnostics.Debug.WriteLine($"[Quarry] Translate failed: {ex}");
                     return new IR.TranslatedCallSite(pair.Left, pipelineError: $"{ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
                 }
-            });
+            })
+            .WithTrackingName(TrackingNames.TranslatedCallSites);
 
         // === Stage 5: Collected Analysis + File Grouping (new pipeline) ===
         var perFileGroups = entityRegistry
             .Combine(translatedCallSites.Collect())
             .SelectMany(static (data, ct) =>
-                IR.PipelineOrchestrator.AnalyzeAndGroupTranslated(data.Right, data.Left, ct));
+                IR.PipelineOrchestrator.AnalyzeAndGroupTranslated(data.Right, data.Left, ct))
+            .WithTrackingName(TrackingNames.PerFileGroups);
 
         // Per-file output — only regenerates files whose group changed.
         // Build-time only — interceptors replace builder interface implementations

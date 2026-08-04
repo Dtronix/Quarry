@@ -114,6 +114,27 @@ public async Task Some_CrossDialect_Test()
 
 `AssertDialects` overloads take either raw SQL strings or `QueryDiagnostics`. Both use `Assert.Multiple` so all four dialects report failures in one pass.
 
+### Row order on the real providers
+
+**PostgreSQL, MySQL InnoDB and SQL Server do not guarantee row order without a top-level `ORDER BY`.** SQLite's incidental insertion-order return shape is the deliberate reference — the SQLite side of a mirror test stays positional — but a passing `pgResults[0]` / `myResults[1]` / `ssResults[2]` assertion on an unordered query is a latent flake that a planner change (statistics refresh, parallel scan, a hash join chosen for a CTE) can break with no code change.
+
+Sort the materialised list with `RowOrderExtensions.SortedByAsync` on the **real-provider sides only**:
+
+```csharp
+var results   = await lt.ExecuteFetchAllAsync();                              // SQLite: positional
+var pgResults = await pg.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId); // PG/My/Ss: sorted
+```
+
+It is an extension on `Task<List<T>>` rather than on `PreparedQuery<T>` so the chain analyzer still sees `.ExecuteFetchAllAsync()` as the literal terminal — wrapping the chain itself would hide the terminal and trip QRY036.
+
+Rules of thumb when adding or converting a test:
+
+- **The key must be a total order over the rows the query actually returns.** A join that yields the same user twice ties on `UserName`; use the primary key, or a composite tuple key: `.SortedByAsync(r => (r.ProductName, r.UserName))`.
+- **Do not sort a query that already has a top-level `ORDER BY`.** Re-sorting in C# would mask a regression that drops the `ORDER BY` — which is the very thing those tests pin. An `ORDER BY` inside a window `OVER (...)`, a subquery, or a CTE body does *not* order the outer result set and does not count.
+- **Sorting cannot fix nondeterministic row *selection*.** `LIMIT`/`OFFSET` with no `ORDER BY` returns an arbitrary subset, and `ExecuteFetchFirstAsync` over a multi-row predicate returns an arbitrary row. Those need a query-side `.OrderBy(...)` — note it goes *after* `Select` and takes the source-entity lambda: `Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserId)`. Ordering on a literal column adds no parameter, so existing parameter indices are unaffected.
+- **Never reorder or rewrite assertions to fit a key.** If no ascending key reproduces the asserted sequence, the order is encoded in a column the projection does not carry — that is a query-side or assertion-side fix, not a sort. `CrossDialectJoinTests` has nine such tests, tracked in #332; its `<remarks>` block explains why a plausible-looking composite key silently reorders them.
+- Order-independent assertions (`Is.EquivalentTo`, `Does.Contain`, `.First(predicate)`, `.All(...)`, count-only) need no sort at all — much of the suite is already written this way.
+
 ### Per-dialect entity types
 
 Each dialect has its own context partial (`PgDb`, `MyDb`, `SsDb`, `TestDbContext`), so the generator emits **distinct CLR entity types per context** in the context's namespace:
@@ -174,9 +195,38 @@ Container-backed tests are skipped, not failed. The reason is cached per-process
 
 When Docker IS available, container startup is **deferred to first use** and amortized over the whole run — one PG + one MySQL + one SQL Server container per process, kept alive until the test runner exits.
 
+**This wrecks naive timing.** The whole ~34s of container boot plus baseline seeding is billed to whichever test touches a container *first*, so exactly one test in any run looks pathologically slow while the next one takes 0.02s. It is not a slow test, and it is not a stable identity — it changes with run order. Two consequences:
+
+- **Never size a fixture from a `--filter`ed run.** Filtering to one container fixture makes *that* fixture the first consumer, so it absorbs the entire boot. A fixture measured at 26s alone can be 0.2s in a full run.
+- To get real per-test numbers, use `dotnet test --logger "trx;LogFileName=full.trx"` and read `UnitTestResult/@duration` and `@startTime` from `src/Quarry.Tests/TestResults/full.trx`. Console output only reports the total.
+
+If suite wall clock needs to come down, container startup is the lever — roughly half of a full run — not test count.
+
 ## SQL Manifest tests
 
 `ManifestOutput/quarry-manifest.{dialect}.md` are checked-in goldens. Enabling `<QuarrySqlManifestPath>` on `Quarry.Tests.csproj` regenerates them on build; the generator's `WriteIfChanged` guard suppresses no-op diffs. Treat unexpected manifest churn the same way you'd treat unexpected SQL: regression first, then update the goldens if the new SQL is intentionally correct.
+
+**CI enforces this.** `.github/workflows/ci.yml` runs `git diff --exit-code -- src/Quarry.Tests/ManifestOutput` after the test step, so a build that regenerates a golden fails the workflow unless the regenerated file is committed. Adding or changing a chain in `Quarry.Tests` regenerates the goldens — build locally and commit them with the change. Note that appending a call *after* the terminal (e.g. `SortedByAsync`) does not, since it adds no chain.
+
+## Runtime-behaviour suites
+
+Three suites assert execution behaviour rather than SQL text, and each has a specific trap worth knowing before extending it.
+
+| Suite | What it guards |
+|---|---|
+| `Integration/ConcurrencyTests.cs` | Parallel harnesses running mixed SELECT/UPDATE/Patch, a barrier-synchronised first touch of one shared carrier chain, and parallel read-only contexts across all four dialects. Regression insurance for shared runtime state. |
+| `SqlOutput/CrossDialectStreamingTests.cs` | `ToAsyncEnumerable` early-`break` disposal. The assertion with teeth is the **follow-up query on the same harness connection** — a leaked reader poisons it (MySqlConnector forbids a second command with an open reader; SqlClient needs MARS). |
+| `Integration/CancellationTests.cs` | Pre-cancelled tokens into every fetch terminal, and mid-stream cancellation of `ToAsyncEnumerable`. |
+
+- **Concurrent writes must stay on SQLite.** `QueryTestHarness.SqlAsync`/`CreateSchema`/`SeedData` are SQLite-only; PG/MySQL/SQL Server share one pre-seeded baseline plus a per-harness transaction rolled back on dispose. Concurrent writes on the container dialects contend on row locks in the shared baseline and produce timeouts, not findings. Exercise them read-only. Create harnesses **sequentially** and parallelise only the Quarry operations — racing container first-call initialisation tests the fixtures, not the library.
+- **Mid-stream cancellation is only observable when the provider awaits I/O.** With three seeded rows PostgreSQL delivers the whole result set in one response, so `while (await reader.ReadAsync(ct))` never awaits again and never sees the token. The strict `OperationCanceledException` assertion is therefore SQLite-only; the all-dialect test asserts connection usability instead.
+- **The harness-rollback test does not detect a leaked reader** — the providers tolerate a rollback with a reader outstanding. Do not treat it as disposal coverage.
+
+## Pinning a known bug
+
+Convention (introduced with #328/#329): an **active** test named `KnownBug_Issue{N}_...` that asserts the *current buggy* behaviour, with a comment saying "when this test fails, the bug is fixed — remove the workaround and this pin". It signals by failing at exactly the moment the bug is fixed, so a workaround never outlives its cause. Where the buggy behaviour cannot be asserted stably, fall back to `[Ignore("pinned: #{N}")]` on a test asserting the *correct* behaviour.
+
+For interceptor-binding defects, assert on the **emitted interceptor text**, not on a compiler diagnostic: a receiver-arity mismatch that is a hard `CS9144` error in the full test project raises nothing at all in an isolated `CSharpCompilation` (see `Generation/InterceptorBindingGuardTests.cs`).
 
 ## Generator-test fixtures
 
@@ -200,4 +250,7 @@ Per-test isolation (transactional Pg/My/Ss + in-memory SQLite) means tests are s
 - **`PRAGMA foreign_keys` is OFF on SQLite** by default in the harness. Tests that delete a parent row leaving orphans pass on SQLite and on Pg/My/Ss (no FKs replicated). If you need FK enforcement, opt in per-test on SQLite *and* add explicit FKs to the container DDL.
 - **Mask integration tests need to verify each mask value separately.** A passing single-case test only proves one variant of `_sql[]`. Use `[TestCase]` over the bool inputs and assert each variant's SQL + post-execute row state.
 - **`q.All()` after a conditional `q = q.Where(...)`** typechecks only because both `IUpdateBuilder<T>` and `IExecutableUpdateBuilder<T>` expose the same conditional-friendly surface in the codegen tests, where the source is a string. In integration tests the C# must compile — put conditional `Set` calls before `.Where()` (or after, on the executable builder) and route to `.All()`/`.Where()` via the un-conditional path.
+- **A chain inside a doubly-nested lambda does not compile.** Writing a parallel worker as `harnesses.Select((h, i) => Task.Run(async () => { var name = $"Worker{i}"; … .Set(u => u.UserName = name) … }))` makes the generator emit interceptors that reference `name` directly, but that local lives in a display class the interceptor cannot see — `CS0103: The name 'name' does not exist in the current context` in the generated `*.Interceptors.*.g.cs`. Write each worker body as a named `private static async Task<T> Run…WorkerAsync(...)` method so the chain's captures are ordinary method locals. Tracked as issue #333.
+- **A partial chain passed as a method argument is not intercepted, and fails at runtime rather than at build time.** Handing `Lite.Users().OrderBy(...).Select(...)` to a helper that applies the terminal throws `NotSupportedException: Entity accessor methods must be intercepted by the Quarry source generator` — with no build-time diagnostic. The chain must terminate at the call site; pass the terminal's *result* (`IAsyncEnumerable<T>`, `Task<T>`) to helpers instead.
+- **A chain consumed by both `ToDiagnostics()` and a terminal needs `.Prepare()`** — otherwise QRY033 "consumed by multiple execution paths" fails the build.
 - **Co-locating `ToDiagnostics()` with a conditional clause collapses variants.** Putting `var sql = q.ToDiagnostics().Sql;` inside the same `if (...)` block as a conditional `.Set()` makes the chain analyzer see the terminal at the same nesting depth as the clause — `relativeDepth <= 0` — and the clause is reclassified as unconditional. The mask table degenerates to a single variant. Always call `Prepare()` / `ToDiagnostics()` at the chain's outer scope.

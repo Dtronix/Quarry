@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
@@ -74,6 +75,11 @@ internal static class DisplayClassEnricher
         // Cache semantic models per syntax tree
         var semanticModelCache = new Dictionary<SyntaxTree, SemanticModel>();
 
+        // FilePath -> tree, for the stale-node recovery below. Built once: the recovery
+        // path fires for *every* site on a warm-rebuild run, and scanning SyntaxTrees per
+        // site would make that O(sites x trees).
+        Dictionary<string, SyntaxTree>? treesByPath = null;
+
         // Cache per containing method (keyed by method syntax node via ReferenceEquals)
         var comparer = DisplayClassNameResolver.SyntaxNodeComparer.Instance;
         var methodAnalysisCache = new Dictionary<SyntaxNode, MethodAnalysisResult>(comparer);
@@ -87,6 +93,51 @@ internal static class DisplayClassEnricher
 
             var lambda = site.EnrichmentLambda;
             var syntaxTree = lambda.SyntaxTree;
+
+            // A cached site can carry nodes from a superseded parse of the same
+            // file: a persistent driver re-fed identical text keeps the previous
+            // output instances ("Unchanged"), whose trees are not part of the
+            // current compilation — GetSemanticModel would throw and kill the
+            // whole generator run. Recover the equivalent node from the tree the
+            // compilation actually contains; skip enrichment if it moved.
+            if (!compilation.ContainsSyntaxTree(syntaxTree))
+            {
+                if (treesByPath == null)
+                {
+                    treesByPath = new Dictionary<string, SyntaxTree>(StringComparer.Ordinal);
+                    foreach (var tree in compilation.SyntaxTrees)
+                        treesByPath[tree.FilePath] = tree;
+                }
+
+                if (!treesByPath.TryGetValue(syntaxTree.FilePath, out var currentTree))
+                    continue;
+
+                var currentRoot = currentTree.GetRoot(cancellationToken);
+
+                // FindNode throws ArgumentOutOfRangeException for a span outside the root's
+                // FullSpan. This whole block exists to stop an exception from killing the
+                // generator run (CS8785 makes every interceptor vanish), so re-introducing
+                // one here would defeat it: bound-check instead of catching.
+                if (!currentRoot.FullSpan.Contains(lambda.Span))
+                    continue;
+
+                if (currentRoot.FindNode(lambda.Span, getInnermostNodeForTie: true)
+                    is not Microsoft.CodeAnalysis.CSharp.Syntax.LambdaExpressionSyntax recovered)
+                    continue;
+
+                // Same span and same kind is not on its own proof of the same lambda — an edit
+                // could have replaced it with a different lambda of the same shape, and
+                // enriching that one would attach the wrong closure. Require the text to match.
+                if (recovered.RawKind != lambda.RawKind ||
+                    !recovered.Span.Equals(lambda.Span) ||
+                    !string.Equals(recovered.ToString(), lambda.ToString(), StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                lambda = recovered;
+                syntaxTree = currentTree;
+            }
 
             if (!semanticModelCache.TryGetValue(syntaxTree, out var semanticModel))
             {

@@ -10,8 +10,15 @@
     <!-- Enable interceptors for the generated code -->
     <InterceptorsNamespaces>$(InterceptorsNamespaces);Quarry.Tests.Samples;Quarry.Tests.Samples.MyDefault;Quarry.Tests.Samples.MyAnsi;Quarry.Generated</InterceptorsNamespaces>
 
-    <!-- Suppress CS9177: arity mismatch in generated interceptors for entity-projection fallback paths -->
-    <NoWarn>$(NoWarn);CS9177</NoWarn>
+    <!--
+      An interceptor whose signature or generic arity does not match its call site is not a
+      style issue: the call silently falls through to the throwing default interface member
+      and only fails at runtime. This project previously carried a blanket
+      <NoWarn>CS9177</NoWarn>; removing it (see #314) stops the suppression, but a warning
+      nobody fails on is not a gate. CS9144 is already an error; promoting CS9177 alongside it
+      means a reappearing arity mismatch breaks the build here rather than scrolling past.
+    -->
+    <WarningsAsErrors>$(WarningsAsErrors);CS9177;CS9144</WarningsAsErrors>
 
     <!-- Emit generated source files to disk for debugging -->
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>

@@ -125,9 +125,12 @@ internal class CrossDialectEntityReaderTests
         var (Lite, Pg, My, Ss) = t;
 
         var lt = await Lite.Products().Where(p => p.ProductId <= 3).Select(p => (p.ProductId, p.ProductName, p.Price)).ExecuteFetchAllAsync();
-        var pg = await Pg.Products().Where(p => p.ProductId <= 3).Select(p => (p.ProductId, p.ProductName, p.Price)).ExecuteFetchAllAsync();
-        var my = await My.Products().Where(p => p.ProductId <= 3).Select(p => (p.ProductId, p.ProductName, p.Price)).ExecuteFetchAllAsync();
-        var ss = await Ss.Products().Where(p => p.ProductId <= 3).Select(p => (p.ProductId, p.ProductName, p.Price)).ExecuteFetchAllAsync();
+        var pg = await Pg.Products().Where(p => p.ProductId <= 3).Select(p => (p.ProductId, p.ProductName, p.Price)).ExecuteFetchAllAsync()
+            .SortedByAsync(r => r.ProductId);
+        var my = await My.Products().Where(p => p.ProductId <= 3).Select(p => (p.ProductId, p.ProductName, p.Price)).ExecuteFetchAllAsync()
+            .SortedByAsync(r => r.ProductId);
+        var ss = await Ss.Products().Where(p => p.ProductId <= 3).Select(p => (p.ProductId, p.ProductName, p.Price)).ExecuteFetchAllAsync()
+            .SortedByAsync(r => r.ProductId);
 
         Assert.That(lt, Has.Count.EqualTo(3));
         Assert.That(pg, Has.Count.EqualTo(3));

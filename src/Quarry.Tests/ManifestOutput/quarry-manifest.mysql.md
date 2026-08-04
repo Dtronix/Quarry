@@ -278,6 +278,18 @@ DELETE FROM `orders` WHERE `OrderId` = 42
 
 ---
 
+### Orders().GroupBy(...).Having(...).Select(...).Prepare().ToDiagnostics() — 2 variants
+
+```sql
+-- base
+SELECT `Status`, COUNT(*) AS `Item2` FROM `orders` GROUP BY `Status` HAVING COUNT(*) > 1
+
+-- +true
+SELECT `Status`, COUNT(*) AS `Item2` FROM `orders` GROUP BY `Status` HAVING COUNT(*) > 1
+```
+
+---
+
 ### Orders().GroupBy(...).Having(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -1993,51 +2005,6 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 ---
 
-### Users().Select(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT `UserId`, `UserName` FROM `users` LIMIT 2 OFFSET 1
-```
-
----
-
-### Users().Select(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT `UserId`, `UserName` FROM `users` LIMIT 2 OFFSET ?
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `int` |
-
----
-
-### Users().Select(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT `UserId`, `UserName` FROM `users` LIMIT ? OFFSET 1
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `int` |
-
----
-
-### Users().Select(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT `UserId`, `UserName` FROM `users` LIMIT ? OFFSET ?
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `int` |
-| `@p1` | `int` |
-
----
-
 ### Users().Select(...).Limit(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -2067,6 +2034,51 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 -- +skipFirst
 SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` ORDER BY `UserId` ASC LIMIT 10 OFFSET 1
 ```
+
+---
+
+### Users().Select(...).OrderBy(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT `UserId`, `UserName` FROM `users` ORDER BY `UserId` ASC LIMIT 2 OFFSET 1
+```
+
+---
+
+### Users().Select(...).OrderBy(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT `UserId`, `UserName` FROM `users` ORDER BY `UserId` ASC LIMIT 2 OFFSET ?
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Users().Select(...).OrderBy(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT `UserId`, `UserName` FROM `users` ORDER BY `UserId` ASC LIMIT ? OFFSET 1
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Users().Select(...).OrderBy(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT `UserId`, `UserName` FROM `users` ORDER BY `UserId` ASC LIMIT ? OFFSET ?
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `int` |
 
 ---
 
@@ -2522,6 +2534,14 @@ UPDATE `users` SET `UserName` = 'x', `IsActive` = 0 WHERE `UserId` = 1
 ### Users().Update().Set(...).Where(...).ExecuteNonQueryAsync()
 
 ```sql
+UPDATE `users` SET `UserName` = 'cancelled' WHERE `UserId` = 1
+```
+
+---
+
+### Users().Update().Set(...).Where(...).ExecuteNonQueryAsync()
+
+```sql
 UPDATE `users`{__PATCH_SET__} WHERE `UserId` = 1
 ```
 
@@ -2782,6 +2802,14 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 -- +else(sortByName)
 SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` ORDER BY `UserId` ASC
+```
+
+---
+
+### Users().Where(...).OrderBy(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `IsActive` = 1 ORDER BY `UserId` ASC
 ```
 
 ---
@@ -3150,6 +3178,18 @@ SELECT `UserName` FROM `users` WHERE `UserId` = ?
 ### Users().Where(...).Select(...).ExecuteFetchAllAsync()
 
 ```sql
+SELECT `UserName` FROM `users` WHERE `UserId` > ?
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Users().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
 SELECT `UserName` FROM `users` WHERE `UserId` IN ({__COL_P0__})
 ```
 
@@ -3218,20 +3258,6 @@ SELECT `UserName` FROM `users` WHERE `UserId` = -999
 
 ---
 
-### Users().Where(...).Select(...).Limit(...).ExecuteFetchAllAsync()
-
-```sql
-SELECT `UserName` FROM `users` WHERE `UserId` IN ({__COL_P0__}) AND `UserId` > ? LIMIT ?
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `int[]` |
-| `@p1` | `int` |
-| `@p2` | `int` |
-
----
-
 ### Users().Where(...).Select(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -3245,6 +3271,20 @@ SELECT `UserName`, `Email` FROM `users` WHERE `IsActive` = 1 LIMIT 10 OFFSET 20
 ```sql
 SELECT `UserId`, `UserName` FROM `users` WHERE `IsActive` = 1 LIMIT 5
 ```
+
+---
+
+### Users().Where(...).Select(...).OrderBy(...).Limit(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT `UserName` FROM `users` WHERE `UserId` IN ({__COL_P0__}) AND `UserId` > ? ORDER BY `UserId` ASC LIMIT ?
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int[]` |
+| `@p1` | `int` |
+| `@p2` | `int` |
 
 ---
 
@@ -5487,7 +5527,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 595 |
+| Total discovered | 608 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 101 |
-| Rendered | 494 |
+| Consolidated (deduped) | 110 |
+| Rendered | 498 |

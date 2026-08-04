@@ -60,17 +60,17 @@ internal class FkKeyProjectionTests
         Assert.That(results[1].OrderId, Is.EqualTo(3));
         Assert.That(results[1].UserKey, Is.EqualTo(2));
 
-        var pgResults = (await pg.ExecuteFetchAllAsync()).OrderBy(r => r.OrderId).ToList();
+        var pgResults = await pg.ExecuteFetchAllAsync().SortedByAsync(r => r.OrderId);
         Assert.That(pgResults, Has.Count.EqualTo(2));
         Assert.That(pgResults[0].UserKey, Is.EqualTo(1));
         Assert.That(pgResults[1].UserKey, Is.EqualTo(2));
 
-        var myResults = (await my.ExecuteFetchAllAsync()).OrderBy(r => r.OrderId).ToList();
+        var myResults = await my.ExecuteFetchAllAsync().SortedByAsync(r => r.OrderId);
         Assert.That(myResults, Has.Count.EqualTo(2));
         Assert.That(myResults[0].UserKey, Is.EqualTo(1));
         Assert.That(myResults[1].UserKey, Is.EqualTo(2));
 
-        var ssResults = (await ss.ExecuteFetchAllAsync()).OrderBy(r => r.OrderId).ToList();
+        var ssResults = await ss.ExecuteFetchAllAsync().SortedByAsync(r => r.OrderId);
         Assert.That(ssResults, Has.Count.EqualTo(2));
         Assert.That(ssResults[0].UserKey, Is.EqualTo(1));
         Assert.That(ssResults[1].UserKey, Is.EqualTo(2));
@@ -113,15 +113,15 @@ internal class FkKeyProjectionTests
         Assert.That(results[1].UserKey, Is.EqualTo(1));
         Assert.That(results[2].UserKey, Is.EqualTo(2));
 
-        var pgResults = (await pg.ExecuteFetchAllAsync()).OrderBy(r => r.OrderId).ToList();
+        var pgResults = await pg.ExecuteFetchAllAsync().SortedByAsync(r => r.OrderId);
         Assert.That(pgResults, Has.Count.EqualTo(3));
         Assert.That(pgResults[2].UserKey, Is.EqualTo(2));
 
-        var myResults = (await my.ExecuteFetchAllAsync()).OrderBy(r => r.OrderId).ToList();
+        var myResults = await my.ExecuteFetchAllAsync().SortedByAsync(r => r.OrderId);
         Assert.That(myResults, Has.Count.EqualTo(3));
         Assert.That(myResults[2].UserKey, Is.EqualTo(2));
 
-        var ssResults = (await ss.ExecuteFetchAllAsync()).OrderBy(r => r.OrderId).ToList();
+        var ssResults = await ss.ExecuteFetchAllAsync().SortedByAsync(r => r.OrderId);
         Assert.That(ssResults, Has.Count.EqualTo(3));
         Assert.That(ssResults[2].UserKey, Is.EqualTo(2));
     }

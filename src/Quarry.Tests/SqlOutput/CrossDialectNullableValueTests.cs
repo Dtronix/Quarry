@@ -108,17 +108,17 @@ internal class CrossDialectNullableValueTests
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((3, "Charlie")));
 
-        var pgResults = await pg.ExecuteFetchAllAsync();
+        var pgResults = await pg.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(pgResults, Has.Count.EqualTo(2));
         Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
         Assert.That(pgResults[1], Is.EqualTo((3, "Charlie")));
 
-        var myResults = await my.ExecuteFetchAllAsync();
+        var myResults = await my.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(myResults, Has.Count.EqualTo(2));
         Assert.That(myResults[0], Is.EqualTo((1, "Alice")));
         Assert.That(myResults[1], Is.EqualTo((3, "Charlie")));
 
-        var ssResults = await ss.ExecuteFetchAllAsync();
+        var ssResults = await ss.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(ssResults, Has.Count.EqualTo(2));
         Assert.That(ssResults[0], Is.EqualTo((1, "Alice")));
         Assert.That(ssResults[1], Is.EqualTo((3, "Charlie")));
@@ -284,17 +284,17 @@ internal class CrossDialectNullableValueTests
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((2, "Bob")));
 
-        var pgResults = await pg.ExecuteFetchAllAsync();
+        var pgResults = await pg.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(pgResults, Has.Count.EqualTo(2));
         Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
         Assert.That(pgResults[1], Is.EqualTo((2, "Bob")));
 
-        var myResults = await my.ExecuteFetchAllAsync();
+        var myResults = await my.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(myResults, Has.Count.EqualTo(2));
         Assert.That(myResults[0], Is.EqualTo((1, "Alice")));
         Assert.That(myResults[1], Is.EqualTo((2, "Bob")));
 
-        var ssResults = await ss.ExecuteFetchAllAsync();
+        var ssResults = await ss.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(ssResults, Has.Count.EqualTo(2));
         Assert.That(ssResults[0], Is.EqualTo((1, "Alice")));
         Assert.That(ssResults[1], Is.EqualTo((2, "Bob")));
@@ -330,17 +330,17 @@ internal class CrossDialectNullableValueTests
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((3, "Charlie")));
 
-        var pgResults = await pg.ExecuteFetchAllAsync();
+        var pgResults = await pg.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(pgResults, Has.Count.EqualTo(2));
         Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
         Assert.That(pgResults[1], Is.EqualTo((3, "Charlie")));
 
-        var myResults = await my.ExecuteFetchAllAsync();
+        var myResults = await my.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(myResults, Has.Count.EqualTo(2));
         Assert.That(myResults[0], Is.EqualTo((1, "Alice")));
         Assert.That(myResults[1], Is.EqualTo((3, "Charlie")));
 
-        var ssResults = await ss.ExecuteFetchAllAsync();
+        var ssResults = await ss.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(ssResults, Has.Count.EqualTo(2));
         Assert.That(ssResults[0], Is.EqualTo((1, "Alice")));
         Assert.That(ssResults[1], Is.EqualTo((3, "Charlie")));
@@ -400,17 +400,17 @@ internal class CrossDialectNullableValueTests
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((3, "Charlie")));
 
-        var pgResults = await pg.ExecuteFetchAllAsync();
+        var pgResults = await pg.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(pgResults, Has.Count.EqualTo(2));
         Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
         Assert.That(pgResults[1], Is.EqualTo((3, "Charlie")));
 
-        var myResults = await my.ExecuteFetchAllAsync();
+        var myResults = await my.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(myResults, Has.Count.EqualTo(2));
         Assert.That(myResults[0], Is.EqualTo((1, "Alice")));
         Assert.That(myResults[1], Is.EqualTo((3, "Charlie")));
 
-        var ssResults = await ss.ExecuteFetchAllAsync();
+        var ssResults = await ss.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(ssResults, Has.Count.EqualTo(2));
         Assert.That(ssResults[0], Is.EqualTo((1, "Alice")));
         Assert.That(ssResults[1], Is.EqualTo((3, "Charlie")));
@@ -463,7 +463,8 @@ internal class CrossDialectNullableValueTests
             .Where(u => ids.Contains(u.UserId))
             .Select(u => u.UserName)
             .Prepare()
-            .ExecuteFetchAllAsync();
+            .ExecuteFetchAllAsync()
+            .SortedByAsync(s => s);
 
         Assert.That(pgResults, Has.Count.EqualTo(2));
         Assert.That(pgResults[0], Is.EqualTo("Alice"));

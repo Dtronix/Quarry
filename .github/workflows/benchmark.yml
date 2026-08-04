@@ -6,6 +6,14 @@ on:
     types: [completed]
     branches: [master]
   workflow_dispatch:
+    inputs:
+      allow_missing_series:
+        description: >-
+          Accept benchmark series that disappeared since the last published run. Needed once
+          after a deliberate benchmark rename or removal, otherwise every subsequent run keeps
+          failing on the old name and no new baseline can ever be published.
+        type: boolean
+        default: false
 
 concurrency:
   group: benchmark
@@ -68,6 +76,13 @@ jobs:
     needs: check
     if: needs.check.outputs.should_run == 'true'
     runs-on: debian-benchmark
+    # Deliberately read-only. Filing the regression issue needs `issues: write`, but this job
+    # also runs arbitrary project and NuGet code on a persistent self-hosted runner, so the
+    # write scope lives in the separate `alert` job below instead.
+    permissions:
+      contents: read
+    outputs:
+      breaches: ${{ steps.perfgate.outputs.breaches }}
 
     steps:
       - uses: actions/checkout@v5
@@ -87,12 +102,157 @@ jobs:
 
       - name: Merge benchmark results
         run: |
+          # `select(.Statistics != null)` drops benchmarks that produced no
+          # measurements so downstream jq does not have to null-guard. That
+          # drop is no longer silent: the "Compare against previous benchmark
+          # run" step below fails the workflow when a series that existed in
+          # the last published run disappears here.
           jq -s '{
             Title: "Quarry Benchmarks",
             HostEnvironmentInfo: .[0].HostEnvironmentInfo,
             Benchmarks: [.[].Benchmarks[] | select(.Statistics != null)]
           }' BenchmarkDotNet.Artifacts/results/*-report-full.json \
             > BenchmarkDotNet.Artifacts/combined-results.json
+
+      # ── Regression gate ───────────────────────────────────────────────────
+      # Alert-only for performance: a mean regression >15% or any allocation
+      # increase on a `Quarry_*` series opens a GitHub issue, it does not fail
+      # the run — a benchmark box is noisy and a red workflow would train
+      # people to ignore it. A *missing* series is different: that means a
+      # benchmark crashed or was silently dropped, which is an infrastructure
+      # failure rather than a performance judgement, so it does fail. Both run
+      # before publishing so a broken run never becomes the stored baseline.
+      - name: Compare against previous benchmark run
+        id: perfgate
+        run: |
+          set -euo pipefail
+
+          PREV_URL=https://raw.githubusercontent.com/Dtronix/Quarry-benchmarks/gh-pages/dev/bench/data.js
+          if ! curl -fsS "$PREV_URL" -o prev-data.js; then
+            echo "No previous data.js published yet — nothing to compare against."
+            echo "status=nobaseline" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Strip the `window.BENCHMARK_DATA = ` wrapper (and trailing `;` if present),
+          # mirroring the publish step below.
+          sed -e '1s|^window\.BENCHMARK_DATA *= *||' -e '$s|;[[:space:]]*$||' \
+            prev-data.js > prev-data.json
+
+          PREV_BENCHES=$(jq -c '
+            (.entries["Quarry Benchmarks"] // []) as $e
+            | if ($e | length) == 0 then [] else ($e[-1].benches // []) end' prev-data.json)
+
+          if [ "$(jq 'length' <<<"$PREV_BENCHES")" -eq 0 ]; then
+            echo "Previous data.js holds no benchmark entries — nothing to compare against."
+            echo "status=nobaseline" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Same shape and same `Quarry_*` filter the publish step uses, so the
+          # comparison is against exactly what was stored last time.
+          CUR_BENCHES=$(jq -c '[
+            .Benchmarks[]
+            | select(.Method | startswith("Quarry_"))
+            | {
+                name: .FullName,
+                value: .Statistics.Mean,
+                allocated: (.Memory.BytesAllocatedPerOperation // 0)
+              }
+          ]' BenchmarkDotNet.Artifacts/combined-results.json)
+
+          jq -n --argjson prev "$PREV_BENCHES" --argjson cur "$CUR_BENCHES" '
+            ($cur | map({key: .name, value: .}) | from_entries) as $curByName
+            | {
+                missing: [ $prev[] | select($curByName[.name] == null) | .name ],
+                breaches: [
+                  $prev[]
+                  | . as $p
+                  | $curByName[$p.name]
+                  | select(. != null)
+                  | {
+                      name: $p.name,
+                      oldMean: $p.value,
+                      newMean: .value,
+                      meanDelta: (if (($p.value // 0) > 0)
+                                  then ((.value - $p.value) / $p.value * 100)
+                                  else null end),
+                      oldAlloc: ($p.allocated // 0),
+                      newAlloc: .allocated
+                    }
+                  | select(((.meanDelta != null) and (.meanDelta > 15))
+                           or (.newAlloc > .oldAlloc))
+                ]
+              }' > perf-gate.json
+
+          MISSING_COUNT=$(jq '.missing | length' perf-gate.json)
+          BREACH_COUNT=$(jq '.breaches | length' perf-gate.json)
+
+          {
+            echo "### Benchmark comparison vs previous published run"
+            echo
+            echo "Commit: \`$(git log -1 --format='%H' HEAD)\` — $(git log -1 --format='%s' HEAD)"
+            echo
+            if [ "$BREACH_COUNT" -gt 0 ]; then
+              echo "Thresholds: mean regression >15%, or any increase in allocated bytes."
+              echo
+              echo "| Benchmark | Mean before | Mean after | Δ mean | Alloc before | Alloc after |"
+              echo "|---|---:|---:|---:|---:|---:|"
+              jq -r '.breaches[]
+                | "| \(.name) | \(.oldMean | floor) ns | \(.newMean | floor) ns | "
+                  + (if .meanDelta == null then "n/a"
+                     else ((.meanDelta * 10 | round) / 10 | tostring) + "%" end)
+                  + " | \(.oldAlloc) B | \(.newAlloc) B |"' perf-gate.json
+            else
+              echo "No regressions over threshold (>15% mean, or any allocation increase)."
+            fi
+            echo
+            if [ "$MISSING_COUNT" -gt 0 ]; then
+              echo "**Missing expected benchmark series:**"
+              echo
+              jq -r '.missing[] | "- `\(.)`"' perf-gate.json
+            fi
+          } > perf-gate.md
+
+          cat perf-gate.md >> "$GITHUB_STEP_SUMMARY"
+
+          echo "missing=$MISSING_COUNT" >> "$GITHUB_OUTPUT"
+          echo "breaches=$BREACH_COUNT" >> "$GITHUB_OUTPUT"
+          echo "status=compared" >> "$GITHUB_OUTPUT"
+
+      # Handed to the `alert` job, which owns the issues: write scope. Uploaded even when
+      # there are no breaches so a run's comparison is always retrievable after the fact.
+      - name: Upload perf-gate result
+        if: steps.perfgate.outputs.status == 'compared'
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-gate
+          path: |
+            perf-gate.md
+            perf-gate.json
+          retention-days: 30
+
+      - name: Fail on missing benchmark series
+        if: >-
+          steps.perfgate.outputs.missing != '' && steps.perfgate.outputs.missing != '0' &&
+          inputs.allow_missing_series != true
+        run: |
+          set -euo pipefail
+          echo "::error::Benchmark series present in the last published run are absent from this one." \
+               "That is a crashed or dropped benchmark, not a performance result. If the series was" \
+               "renamed or removed on purpose, re-run this workflow via workflow_dispatch with" \
+               "allow_missing_series enabled once, so a new baseline can be published."
+          jq -r '.missing[] | "::error::missing benchmark series: \(.)"' perf-gate.json
+          exit 1
+
+      - name: Note accepted missing series
+        if: >-
+          steps.perfgate.outputs.missing != '' && steps.perfgate.outputs.missing != '0' &&
+          inputs.allow_missing_series == true
+        run: |
+          set -euo pipefail
+          echo "::warning::allow_missing_series was set — publishing a new baseline without these series."
+          jq -r '.missing[] | "::warning::dropped benchmark series: \(.)"' perf-gate.json
 
       - name: Generate merged HTML report
         run: |
@@ -246,3 +406,74 @@ jobs:
           fi
         env:
           TOKEN: ${{ secrets.BENCHMARK_TOKEN }}
+
+  # Separate job so `issues: write` is never held by the job that runs project and NuGet code
+  # on the persistent self-hosted runner. It consumes only the perf-gate artifact.
+  alert:
+    needs: benchmark
+    # `always()` so a run that also failed the missing-series check still raises its regressions.
+    # The `breaches` output only exists once the comparison completed, so this implies the artifact.
+    if: >-
+      always() &&
+      needs.benchmark.outputs.breaches != '' &&
+      needs.benchmark.outputs.breaches != '0'
+    runs-on: ubuntu-latest
+    # Alert-only, per the perf-gate decision: a GitHub API blip must not turn a clean benchmark
+    # run red. The benchmark results are already published by the time this runs.
+    continue-on-error: true
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - name: Download perf-gate result
+        uses: actions/download-artifact@v4
+        with:
+          name: perf-gate
+
+      - name: File or update the performance regression issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TITLE="Performance regression detected in benchmarks"
+          API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+
+          # Filter by label rather than paging the whole open-issue list: the label is applied at
+          # creation, so this is bounded and needs no pagination. An unknown label yields [].
+          if ! OPEN=$(curl -fsS \
+                -H "Authorization: Bearer ${GH_TOKEN}" \
+                -H "Accept: application/vnd.github+json" \
+                "${API}/issues?state=open&labels=performance-regression&per_page=100"); then
+            OPEN='[]'
+          fi
+
+          EXISTING=$(jq -r --arg t "$TITLE" \
+            '[.[] | select(.pull_request == null) | select(.title == $t) | .number] | first // empty' \
+            <<<"$OPEN")
+
+          if [ -n "$EXISTING" ]; then
+            # Comment rather than skip. Skipping silently would mean that once one issue is open,
+            # no later regression is ever reported again — and because every successful run
+            # publishes a new baseline, the original regression stops being detected too.
+            jq -n --rawfile b perf-gate.md \
+              '{body: ("Another run breached the thresholds while this issue was open.\n\n" + $b)}' \
+              > comment.json
+            curl -fsS -X POST \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "${API}/issues/${EXISTING}/comments" \
+              -d @comment.json \
+              | jq -r '"Commented on issue #'"${EXISTING}"': \(.html_url)"'
+            exit 0
+          fi
+
+          jq -n --arg t "$TITLE" --rawfile b perf-gate.md \
+            '{title: $t, body: $b, labels: ["performance-regression"]}' > issue.json
+
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "${API}/issues" \
+            -d @issue.json \
+            | jq -r '"Opened issue #\(.number): \(.html_url)"'

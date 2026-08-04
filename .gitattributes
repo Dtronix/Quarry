@@ -1,0 +1,7 @@
+# The SQL manifest goldens are build output that CI compares byte-for-byte
+# (.github/workflows/ci.yml, "Check SQL manifest goldens for drift"). ManifestEmitter
+# writes them with Environment.NewLine, so on a Windows checkout with core.autocrlf=false
+# they would otherwise show as wholly modified and turn that gate red for everyone.
+# Marking them `text` normalises line endings in the index, so the comparison is
+# platform-independent regardless of the contributor's autocrlf setting.
+src/Quarry.Tests/ManifestOutput/*.md text eol=lf

@@ -175,6 +175,23 @@ Every error channel is a value in the incremental pipeline (#311) — nothing er
 
 **EntityRegistry as cross-pipeline bridge**: Built from all `ContextInfo` objects (Pipeline A output). Passed via `.Combine(entityRegistry)` into Pipeline B stages 2.5, 3a, 3b, and 4. Consequence: changing a Schema class invalidates all call site binding for entities in that schema.
 
+**Tracking names**: the load-bearing pipeline nodes are labelled via `WithTrackingName` so tests can read per-node run reasons out of `GeneratorRunResult.TrackedSteps`. Constants live in `TrackingNames.cs` — reference them typed, never as string literals:
+
+| Constant | Node |
+|---|---|
+| `ContextDeclarations` | Per-context `[QuarryContext]` discovery (Pipeline A root) |
+| `EntityRegistry` | Collected-context registry barrier feeding all interceptor stages |
+| `RawCallSites` | Stage 2 — raw call-site discovery |
+| `EnrichedCallSites` | Stage 2.5 — batch display-class enrichment |
+| `BindResults` | Stage 3 — per-site bind (success or `BindFailure`) |
+| `TranslatedCallSites` | Stage 4 — per-site translation |
+| `PerFileGroups` | Stage 5 — collected analysis grouped per source file |
+
+Two Roslyn semantics matter when asserting on these (`IncrementalCachingTests`):
+
+- **An absent stage is itself a cached signal.** A named node that is wholesale-skipped because its inputs were untouched records *no* steps at all — so "missing from `TrackedSteps`" means cached, not broken.
+- **Reference equality short-circuits the model comparison.** Re-running a driver against the same `CSharpCompilation` instance never invokes model `.Equals`. To actually exercise the equality implementations, build the second compilation from **freshly parsed trees of identical text** (`CSharpSyntaxTree.ParseText`), which is what the compiler server does on a warm rebuild.
+
 ### Chain Disqualification
 
 Chains that cannot be statically analyzed receive `OptimizationTier.RuntimeBuild` → QRY032 compile error. Disqualifiers (from `ChainAnalyzer.CheckDisqualifiers`):
@@ -521,3 +538,6 @@ QRY073 was introduced then retired in v0.3.0 when cross-entity set operations be
 - `TypeClassificationTests` — unit tests for type classification utilities
 - `DisplayClassEnricherTests` — closure analysis and type resolution tests
 - `DateTimeOffsetIntegrationTests` — GetFieldValue round-trip tests
+- `IncrementalCachingTests` — per-stage run reasons via the tracking names above; also pins the two #310 defects
+- `InterceptorBindingGuardTests` — compiles a matrix of chain shapes in isolated compilations and asserts no CS8785/CS9144/CS9177 plus that the terminal's interceptor was actually emitted. Do **not** rely on a synthetic compilation to surface a terminal receiver-arity mismatch: the same shape that is a hard CS9144 in the full test project raises nothing in isolation, so assert on the emitted interceptor text instead
+- `IR/PipelineModelEqualityTests` — negative equality + hash consistency for `EntityRegistry`, `AssembledPlan`, `CarrierPlan`, `FileInterceptorGroup`. These implement `IEquatable<T>` by hand and are what gates incremental caching, so a dropped field comparison silently degrades every downstream stage

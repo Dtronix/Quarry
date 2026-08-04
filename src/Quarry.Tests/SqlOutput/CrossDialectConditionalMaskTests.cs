@@ -1167,11 +1167,107 @@ internal class CrossDialectConditionalMaskTests
             ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [IsActive] = 1 ORDER BY [UserName] ASC OFFSET 0 ROWS FETCH NEXT 10 ROWS ONLY");
     }
 
-    // NOTE: A conditional-Having test (e.g. `var ltG = lt.GroupBy(...); if (true) ltG = ltG.Having(...);`)
-    // currently triggers a generator misattribution: the chain binds to `CteDb` instead of
-    // `TestDbContext` because both expose `IEntityAccessor<Order>` Orders() and the chain root's
-    // context type is lost across the GroupBy/Having variable split. Single-line GroupBy chains
-    // are fine (see CrossDialectAggregateTests). Filed as follow-up; not blocking this batch.
+    // Conditional-Having coverage, previously omitted entirely (the old NOTE
+    // here claimed a context-misattribution bug; that no longer reproduces —
+    // per-dialect quoting below is the attribution assertion). What #328 now
+    // tracks is what the pin underneath shows: the conditionally-applied
+    // Having clause is NOT mask-gated and renders unconditionally.
+
+    [Test]
+    public async Task Mask_ConditionalHaving_SplitChain_TakenBranch_CorrectSqlAndRows()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var ltG = Lite.Orders().GroupBy(o => o.Status);
+        var pgG = Pg.Orders().GroupBy(o => o.Status);
+        var myG = My.Orders().GroupBy(o => o.Status);
+        var ssG = Ss.Orders().GroupBy(o => o.Status);
+
+        if (true)
+        {
+            ltG = ltG.Having(o => Sql.Count() > 1);
+            pgG = pgG.Having(o => Sql.Count() > 1);
+            myG = myG.Having(o => Sql.Count() > 1);
+            ssG = ssG.Having(o => Sql.Count() > 1);
+        }
+
+        var lt = ltG.Select(o => (o.Status, Sql.Count())).Prepare();
+        var pg = pgG.Select(o => (o.Status, Sql.Count())).Prepare();
+        var my = myG.Select(o => (o.Status, Sql.Count())).Prepare();
+        var ss = ssG.Select(o => (o.Status, Sql.Count())).Prepare();
+
+        // Correct dialect quoting on each side proves the split chain binds to
+        // the right context (the historical misattribution would render another
+        // context's dialect here).
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"Status\", COUNT(*) AS \"Item2\" FROM \"orders\" GROUP BY \"Status\" HAVING COUNT(*) > 1",
+            pg:     "SELECT \"Status\", COUNT(*) AS \"Item2\" FROM \"orders\" GROUP BY \"Status\" HAVING COUNT(*) > 1",
+            mysql:  "SELECT `Status`, COUNT(*) AS `Item2` FROM `orders` GROUP BY `Status` HAVING COUNT(*) > 1",
+            ss:     "SELECT [Status], COUNT(*) AS [Item2] FROM [orders] GROUP BY [Status] HAVING COUNT(*) > 1");
+
+        var ltRows = await lt.ExecuteFetchAllAsync();
+        var pgRows = await pg.ExecuteFetchAllAsync().SortedByAsync(r => r.Item1);
+        var myRows = await my.ExecuteFetchAllAsync().SortedByAsync(r => r.Item1);
+        var ssRows = await ss.ExecuteFetchAllAsync().SortedByAsync(r => r.Item1);
+
+        foreach (var rows in new[] { ltRows, pgRows, myRows, ssRows })
+        {
+            Assert.That(rows, Has.Count.EqualTo(1),
+                "Only one status group has more than one order in the seed");
+            Assert.That(rows[0].Item2, Is.GreaterThan(1));
+        }
+    }
+
+    /// <summary>
+    /// PINS KNOWN BUG https://github.com/Dtronix/Quarry/issues/328: a
+    /// conditionally-applied <c>.Having(...)</c> on a split GroupBy chain is
+    /// not mask-gated — the HAVING clause renders unconditionally, so the
+    /// untaken branch still filters. When this test FAILS, #328 is likely
+    /// fixed: flip the expectations to no-HAVING SQL and all status groups.
+    /// </summary>
+    [Test]
+    public async Task KnownBug_Issue328_ConditionalHaving_UntakenBranch_StillRendersHaving()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+        var withHaving = int.Parse("0") == 1; // runtime-false without constant-branch analysis
+
+        var ltG = Lite.Orders().GroupBy(o => o.Status);
+        var pgG = Pg.Orders().GroupBy(o => o.Status);
+        var myG = My.Orders().GroupBy(o => o.Status);
+        var ssG = Ss.Orders().GroupBy(o => o.Status);
+
+        if (withHaving)
+        {
+            ltG = ltG.Having(o => Sql.Count() > 1);
+            pgG = pgG.Having(o => Sql.Count() > 1);
+            myG = myG.Having(o => Sql.Count() > 1);
+            ssG = ssG.Having(o => Sql.Count() > 1);
+        }
+
+        var lt = ltG.Select(o => (o.Status, Sql.Count())).Prepare();
+        var pg = pgG.Select(o => (o.Status, Sql.Count())).Prepare();
+        var my = myG.Select(o => (o.Status, Sql.Count())).Prepare();
+        var ss = ssG.Select(o => (o.Status, Sql.Count())).Prepare();
+
+        // Buggy behavior, pinned: HAVING appears although the branch was not
+        // taken, and execution filters accordingly.
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"Status\", COUNT(*) AS \"Item2\" FROM \"orders\" GROUP BY \"Status\" HAVING COUNT(*) > 1",
+            pg:     "SELECT \"Status\", COUNT(*) AS \"Item2\" FROM \"orders\" GROUP BY \"Status\" HAVING COUNT(*) > 1",
+            mysql:  "SELECT `Status`, COUNT(*) AS `Item2` FROM `orders` GROUP BY `Status` HAVING COUNT(*) > 1",
+            ss:     "SELECT [Status], COUNT(*) AS [Item2] FROM [orders] GROUP BY [Status] HAVING COUNT(*) > 1");
+
+        var ltRows = await lt.ExecuteFetchAllAsync();
+        Assert.That(ltRows, Has.Count.EqualTo(1),
+            "Pinned #328: the untaken Having branch is expected to (wrongly) filter groups. " +
+            "If this fails with all status groups present, #328 is likely fixed — flip this pin.");
+    }
 
     #endregion
 }

@@ -87,6 +87,147 @@ internal class CrossDialectStreamingTests
         Assert.That(seen[0], Is.EqualTo("Alice"), $"{label}: ordered first row should be Alice");
     }
 
+    /// <summary>
+    /// Abandoning a stream must release the reader and command. The iterator
+    /// disposes them through <c>await using</c> declarations in its body, but
+    /// <c>FinalizeQuery</c> only runs on natural completion, so the early-break
+    /// path had no coverage at all.
+    /// </summary>
+    /// <remarks>
+    /// A follow-up query on the same connection is the assertion that matters:
+    /// the harness holds one long-lived connection per dialect, and a leaked
+    /// reader poisons it — MySqlConnector refuses a second command while a
+    /// reader is open, and SqlClient does the same without MARS. If disposal
+    /// regressed, this fails at the follow-up rather than at the break.
+    /// </remarks>
+    [Test]
+    public async Task ToAsyncEnumerable_AbandonedAfterFirstRow_LeavesConnectionUsable()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        await ConsumeFirstRowThenBreakAsync(
+            Lite.Users().OrderBy(u => u.UserId).Select(u => u.UserName).ToAsyncEnumerable(), "SQLite");
+        var liteAfter = await Lite.Users().Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(liteAfter, Has.Count.EqualTo(3), "SQLite: query after abandoned stream");
+
+        await ConsumeFirstRowThenBreakAsync(
+            Pg.Users().OrderBy(u => u.UserId).Select(u => u.UserName).ToAsyncEnumerable(), "PostgreSQL");
+        var pgAfter = await Pg.Users().Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(pgAfter, Has.Count.EqualTo(3), "PostgreSQL: query after abandoned stream");
+
+        await ConsumeFirstRowThenBreakAsync(
+            My.Users().OrderBy(u => u.UserId).Select(u => u.UserName).ToAsyncEnumerable(), "MySQL");
+        var myAfter = await My.Users().Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(myAfter, Has.Count.EqualTo(3), "MySQL: query after abandoned stream");
+
+        await ConsumeFirstRowThenBreakAsync(
+            Ss.Users().OrderBy(u => u.UserId).Select(u => u.UserName).ToAsyncEnumerable(), "SQL Server");
+        var ssAfter = await Ss.Users().Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(ssAfter, Has.Count.EqualTo(3), "SQL Server: query after abandoned stream");
+    }
+
+    /// <summary>
+    /// The same abandonment via an explicitly driven enumerator rather than
+    /// <c>await foreach</c>'s generated disposal, so the iterator's own
+    /// <c>DisposeAsync</c> is what releases the reader.
+    /// </summary>
+    [Test]
+    public async Task ToAsyncEnumerable_EnumeratorDisposedEarly_LeavesConnectionUsable()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        await DisposeEnumeratorAfterFirstRowAsync(
+            Lite.Users().OrderBy(u => u.UserId).Select(u => u.UserName).ToAsyncEnumerable(), "SQLite");
+        var liteAfter = await Lite.Users().Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(liteAfter, Has.Count.EqualTo(3), "SQLite: query after disposed enumerator");
+
+        await DisposeEnumeratorAfterFirstRowAsync(
+            Pg.Users().OrderBy(u => u.UserId).Select(u => u.UserName).ToAsyncEnumerable(), "PostgreSQL");
+        var pgAfter = await Pg.Users().Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(pgAfter, Has.Count.EqualTo(3), "PostgreSQL: query after disposed enumerator");
+
+        await DisposeEnumeratorAfterFirstRowAsync(
+            My.Users().OrderBy(u => u.UserId).Select(u => u.UserName).ToAsyncEnumerable(), "MySQL");
+        var myAfter = await My.Users().Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(myAfter, Has.Count.EqualTo(3), "MySQL: query after disposed enumerator");
+
+        await DisposeEnumeratorAfterFirstRowAsync(
+            Ss.Users().OrderBy(u => u.UserId).Select(u => u.UserName).ToAsyncEnumerable(), "SQL Server");
+        var ssAfter = await Ss.Users().Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(ssAfter, Has.Count.EqualTo(3), "SQL Server: query after disposed enumerator");
+    }
+
+    /// <summary>
+    /// Tears the harness down with streams abandoned on all four dialects and
+    /// asserts the PostgreSQL / MySQL / SQL Server rollbacks still complete.
+    /// </summary>
+    /// <remarks>
+    /// This covers teardown, not disposal: forcing a reader leak leaves this
+    /// test passing while the two above fail, because the providers tolerate a
+    /// rollback with a reader outstanding. The follow-up-query tests are what
+    /// detect a leak; this one guards against abandonment breaking teardown for
+    /// some other reason.
+    /// </remarks>
+    [Test]
+    public async Task ToAsyncEnumerable_AbandonedStreams_DoNotBlockHarnessRollback()
+    {
+        var t = await QueryTestHarness.CreateAsync();
+        var disposed = false;
+        try
+        {
+            var (Lite, Pg, My, Ss) = t;
+
+            await ConsumeFirstRowThenBreakAsync(
+                Lite.Users().OrderBy(u => u.UserId).Select(u => u.UserName).ToAsyncEnumerable(), "SQLite");
+            await ConsumeFirstRowThenBreakAsync(
+                Pg.Users().OrderBy(u => u.UserId).Select(u => u.UserName).ToAsyncEnumerable(), "PostgreSQL");
+            await ConsumeFirstRowThenBreakAsync(
+                My.Users().OrderBy(u => u.UserId).Select(u => u.UserName).ToAsyncEnumerable(), "MySQL");
+            await ConsumeFirstRowThenBreakAsync(
+                Ss.Users().OrderBy(u => u.UserId).Select(u => u.UserName).ToAsyncEnumerable(), "SQL Server");
+
+            Assert.DoesNotThrowAsync(async () =>
+            {
+                await t.DisposeAsync();
+                disposed = true;
+            }, "Harness rollback must not be blocked by an abandoned stream");
+        }
+        finally
+        {
+            if (!disposed)
+            {
+                try { await t.DisposeAsync(); } catch { /* teardown already reported above */ }
+            }
+        }
+    }
+
+    private static async Task ConsumeFirstRowThenBreakAsync(IAsyncEnumerable<string> source, string label)
+    {
+        var seen = 0;
+        await foreach (var n in source)
+        {
+            _ = n;
+            seen++;
+            break;
+        }
+        Assert.That(seen, Is.EqualTo(1), $"{label}: expected one row before abandoning the stream");
+    }
+
+    private static async Task DisposeEnumeratorAfterFirstRowAsync(IAsyncEnumerable<string> source, string label)
+    {
+        var enumerator = source.GetAsyncEnumerator();
+        try
+        {
+            Assert.That(await enumerator.MoveNextAsync(), Is.True, $"{label}: expected a first row");
+        }
+        finally
+        {
+            await enumerator.DisposeAsync();
+        }
+    }
+
     [Test]
     public async Task ToAsyncEnumerable_ConditionalWhere_RendersConditionalSql()
     {

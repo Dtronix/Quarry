@@ -387,7 +387,7 @@ internal class CrossDialectWideTupleTests
         Assert.That(results[1].Notes, Is.Null);                  // ordinal 6 — IsDBNull through Item7
         Assert.That(results[1].Reorder, Is.EqualTo(3));         // ordinal 7 — Rest.Item1 for second row
 
-        var pgResults = (await pg.ExecuteFetchAllAsync()).OrderBy(r => r.OrderId).ToList();
+        var pgResults = await pg.ExecuteFetchAllAsync().SortedByAsync(r => r.OrderId);
         Assert.That(pgResults, Has.Count.EqualTo(2));
         Assert.That(pgResults[0].UserKey, Is.EqualTo(1));
         Assert.That(pgResults[0].Notes, Is.EqualTo("Express"));
@@ -395,7 +395,7 @@ internal class CrossDialectWideTupleTests
         Assert.That(pgResults[1].UserKey, Is.EqualTo(2));
         Assert.That(pgResults[1].Notes, Is.Null);
 
-        var myResults = (await my.ExecuteFetchAllAsync()).OrderBy(r => r.OrderId).ToList();
+        var myResults = await my.ExecuteFetchAllAsync().SortedByAsync(r => r.OrderId);
         Assert.That(myResults, Has.Count.EqualTo(2));
         Assert.That(myResults[0].UserKey, Is.EqualTo(1));
         Assert.That(myResults[0].Notes, Is.EqualTo("Express"));
@@ -403,7 +403,7 @@ internal class CrossDialectWideTupleTests
         Assert.That(myResults[1].UserKey, Is.EqualTo(2));
         Assert.That(myResults[1].Notes, Is.Null);
 
-        var ssResults = (await ss.ExecuteFetchAllAsync()).OrderBy(r => r.OrderId).ToList();
+        var ssResults = await ss.ExecuteFetchAllAsync().SortedByAsync(r => r.OrderId);
         Assert.That(ssResults, Has.Count.EqualTo(2));
         Assert.That(ssResults[0].UserKey, Is.EqualTo(1));
         Assert.That(ssResults[0].Notes, Is.EqualTo("Express"));
