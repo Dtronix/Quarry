@@ -43,6 +43,10 @@ The three aggregate variants tie on the aggregate column as well (both Alice row
 Total: 3501, Duration 2m 1s.** No pre-existing failures. Docker was available — nothing was
 `Assert.Ignore`d, so the container-backed dialects really executed.
 
+`dotnet test src/Quarry.Migration.Tests` on the same commit: **Failed: 0, Passed: 201, Skipped: 0.**
+Untouched by this work (it changes only `Quarry.Tests` assertions and `llm-testing.md`), recorded
+for completeness.
+
 Build emits pre-existing warnings unrelated to this work: many `CS0219 __colShift assigned but
 never used` in generated `MyDb.Interceptors.*.g.cs`, and one `NUnit2009` in
 `IR/PipelineModelEqualityTests.cs:331`. Both predate the branch.
@@ -82,7 +86,16 @@ never used` in generated `MyDb.Interceptors.*.g.cs`, and one `NUnit2009` in
   `(User, Amount, Product)` multiset is knowable and assertable.
 - The file carries a `<remarks>` block (lines 9–19) documenting the #332 flake and warning against a
   mechanical `SortedByAsync` fix. `llm-testing.md:135` also points at #332. Both are stale once fixed.
-- No existing `Is.EquivalentTo` call site in the suite compares tuples — all 50 compare strings/ints.
+- **Correction to an earlier note in this file:** I first recorded that no existing `Is.EquivalentTo`
+  call site compares tuples. That was wrong — it came from a truncated grep. `Join_FiveTable_Select`
+  in *this same file* already does exactly what #332 asks for, including a `#332` reference in its
+  comment: a hoisted `var expected = new[] { … }` of 4-tuples asserted with `Is.EquivalentTo`
+  against all three real providers, with the SQLite side left positional. It is the established
+  local pattern and the direct precedent for this work.
+- Because of that precedent, the nine conversions were reworked to hoist a per-test
+  `var expected = new[] { … }` instead of repeating the literal array three times per test. Same
+  assertions, ~3× less text, and consistent with the neighbouring test. Do not hoist this to a
+  fixture-level static — keeping it per-test keeps the expected values visible where they are read.
 - **Confirmed empirically (step 1):** NUnit's `Is.EquivalentTo` *does* compare `ValueTuple` elements
   structurally. Temporarily changing an expected `("Bob", 150.00m)` to `("Bob", 151.00m)` failed
   with a precise diff — `Missing (1): < ("Bob", 151m) >` / `Extra (1): < ("Bob", 150m) >`. So the

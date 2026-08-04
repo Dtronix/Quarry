@@ -110,7 +110,7 @@ value check, which is the point of the projection anyway.
   `Select_Joined_HasManyThrough_Max_OnLeftTable` (`2`/`2`/`1`).
   Preserve each test's existing explanatory comment about what the aggregate column holds.
 
-- [ ] **4. Docs**
+- [x] **4. Docs**
   Rewrite the `CrossDialectJoinTests` `<remarks>` block: it currently declares these an open flake
   tracked in #332 and warns against fixing them. It should instead explain why this file uses
   `Is.EquivalentTo` where the rest of the suite uses `SortedByAsync` — the trap is still worth
