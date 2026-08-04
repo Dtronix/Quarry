@@ -131,6 +131,23 @@ non-friend `CSharpCompilation` is the only mechanism available for a recurrence 
 - Manifest goldens do not move (confirmed `git diff --stat -- src/Quarry.Tests/ManifestOutput` empty).
   The CRLF/LF warnings git prints on that path are a line-ending notice, not a content diff.
 
+### 2026-08-04 — Step 2 notes
+
+**The guard was verified end-to-end, not just asserted.** Temporarily reverted
+`BatchInsertSqlBuilder` to `internal`, re-ran the fixture, and confirmed both `BatchInsert_*` shapes
+fail with the new accessibility message naming `CS0122 'BatchInsertSqlBuilder'` — then restored via
+`git checkout HEAD -- src/Quarry/Internal/BatchInsertSqlBuilder.cs`. Worth repeating if the assertion
+is ever refactored; a guard nobody has watched fail is not known to work.
+
+- Extracted `CompileNonFriend(IEnumerable<string>)` out of `Run` so the negative-control test shares
+  the *exact* references and assembly name as the matrix. Using a separately built compilation would
+  have let the two drift, and the control would stop attesting anything about the matrix.
+- The diagnostic-ID set lives in one `AccessibilityDiagnosticIds` field consumed by both the
+  assertion and the control, for the same reason.
+- `ScalarConverter` is the negative control precisely because it must *stay* internal. If a future
+  change makes it public, `AccessibilityGuard_DetectsAnInaccessibleType` fails loudly rather than
+  silently going vacuous — pick a different still-internal type at that point, do not delete the test.
+
 ## Suspend State
 
 ## Session Log

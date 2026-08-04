@@ -56,7 +56,7 @@ last.
   This must be the same commit as the promotion — the pin asserts the *buggy* behaviour and fails the
   moment the type is public.
 
-- [ ] **2. Add a dedicated accessibility assertion to the guard, and prove it is not vacuous**
+- [x] **2. Add a dedicated accessibility assertion to the guard, and prove it is not vacuous**
 
   In `AssertBindsCleanly`, insert an accessibility check *before* the existing "fixture does not
   compile cleanly" catch-all, so the specific cause wins the failure message:

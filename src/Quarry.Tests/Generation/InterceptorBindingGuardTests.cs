@@ -206,6 +206,14 @@ public class Service
     public void Shape_CrossNamespaceContext_BindsWithoutInterceptorMismatch(Shape shape)
         => AssertBindsCleanly(shape, "TestApp.Sub.SubDbContext", crossContext: true);
 
+    /// <summary>
+    /// Compiler diagnostics that mean "the generated code named something a consumer cannot reach".
+    /// <c>CS0122</c> is the call-site case (#334); the rest are the inconsistent-accessibility
+    /// family, which fires when an emitted member's own signature exposes a less-accessible type.
+    /// </summary>
+    private static readonly string[] AccessibilityDiagnosticIds =
+        { "CS0122", "CS0050", "CS0051", "CS0053", "CS0060" };
+
     private static void AssertBindsCleanly(Shape shape, string contextType, bool crossContext)
     {
         var (generatedSources, diagnostics) = Run(shape, contextType, crossContext);
@@ -221,6 +229,21 @@ public class Service
         Assert.That(mismatches, Is.Empty, () =>
             $"Interceptor binding mismatch on '{shape.Name}' " +
             $"(CS9144 = signature, CS9177 = generic arity): {Describe(mismatches)}");
+
+        // Generated interceptors are emitted into the *consumer's* assembly, so every Quarry
+        // type they name has to be reachable from outside Quarry's InternalsVisibleTo list.
+        // CS0122 here means the emitter referenced a type only a friend assembly can see —
+        // the #334 defect, where InsertBatch simply did not compile for any real consumer.
+        // Checked before the catch-all below so the failure names the actual cause instead of
+        // reporting a generic "fixture does not compile".
+        var inaccessible = diagnostics
+            .Where(d => AccessibilityDiagnosticIds.Contains(d.Id))
+            .ToList();
+        Assert.That(inaccessible, Is.Empty, () =>
+            $"Generated interceptor for '{shape.Name}' names a type that is inaccessible outside " +
+            "Quarry's InternalsVisibleTo list, so this chain does not compile for any ordinary " +
+            "consumer. Every project in this repo is a friend assembly, so no other build can " +
+            $"catch this — make the referenced type public: {Describe(inaccessible)}");
 
         // The compiler only validates [InterceptsLocation] bindings on a compilation it
         // can otherwise bind. An unrelated error in the fixture (a stale type name after
@@ -282,6 +305,49 @@ public class Service
             ".Select(...) workarounds in the Postgres/MySql/SqlServer integration suites.");
     }
 
+    /// <summary>
+    /// Proves the accessibility guard in <see cref="AssertBindsCleanly"/> can actually fire.
+    /// </summary>
+    /// <remarks>
+    /// The guard is only meaningful if this fixture's compilation is genuinely <em>not</em> a friend
+    /// of <c>Quarry</c>. If that ever stopped being true — a stray <c>InternalsVisibleTo</c>, a
+    /// renamed assembly, a reference swapped for the source project — every shape would keep passing
+    /// green while guarding nothing, exactly the blind spot that let #334 ship.
+    /// <para>
+    /// <c>Quarry.Internal.ScalarConverter</c> is the negative control: it is internal
+    /// <em>by design</em> (called only from <c>QueryExecutor</c> inside the runtime assembly, never
+    /// named by emitted code), so it stays internal and this probe stays valid. Note this is why the
+    /// guard cannot be a namespace convention — <c>Quarry.Internal</c> holds both the public emitted
+    /// surface and internal runtime-private helpers.
+    /// </para>
+    /// </remarks>
+    [Test]
+    public void AccessibilityGuard_DetectsAnInaccessibleType()
+    {
+        const string probe = @"
+namespace TestApp.Probe;
+
+public class Probe
+{
+    public int Run(object v) => Quarry.Internal.ScalarConverter.Convert<int>(v);
+}
+";
+        var (_, diagnostics) = CompileNonFriend(new[] { probe });
+
+        var inaccessible = diagnostics
+            .Where(d => AccessibilityDiagnosticIds.Contains(d.Id))
+            .ToList();
+
+        Assert.That(inaccessible, Is.Not.Empty,
+            "Referencing an internal Quarry type from this fixture's compilation produced no " +
+            "accessibility diagnostic, which means the compilation has friend access to Quarry. " +
+            "The accessibility assertion in AssertBindsCleanly is therefore vacuous for every " +
+            $"shape in the matrix. Diagnostics were: {Describe(diagnostics)}");
+
+        Assert.That(Describe(inaccessible), Does.Contain("ScalarConverter"),
+            "Expected the accessibility diagnostic to name the probed internal type.");
+    }
+
     private static CSharpParseOptions FixtureParseOptions =>
         new CSharpParseOptions(LanguageVersion.Latest)
             .WithFeatures(new[]
@@ -296,15 +362,26 @@ public class Service
             .Replace("__CONTEXT__", contextType)
             .Replace("__BODY__", shape.Body);
 
-        // Interceptors are emitted into the context's own namespace, so every
-        // context namespace in the fixture must be enabled for the compiler to
-        // validate (rather than reject) the generated [InterceptsLocation]s.
-        var parseOptions = FixtureParseOptions;
-
         var sources = new List<string> { SharedSource };
         if (crossContext)
             sources.Add(SubContextSource);
         sources.Add(serviceSource);
+
+        return CompileNonFriend(sources);
+    }
+
+    /// <summary>
+    /// Runs the generator over <paramref name="sources"/> in a compilation named
+    /// <c>InterceptorBindingGuardAssembly</c> — deliberately absent from Quarry's
+    /// <c>InternalsVisibleTo</c> list, so it sees exactly what an ordinary consumer sees.
+    /// </summary>
+    private static (IReadOnlyList<string> GeneratedSources, IReadOnlyList<Diagnostic> Diagnostics)
+        CompileNonFriend(IEnumerable<string> sources)
+    {
+        // Interceptors are emitted into the context's own namespace, so every
+        // context namespace in the fixture must be enabled for the compiler to
+        // validate (rather than reject) the generated [InterceptsLocation]s.
+        var parseOptions = FixtureParseOptions;
 
         var trees = sources
             .Select((s, i) => CSharpSyntaxTree.ParseText(s, parseOptions, path: $"Source{i}.cs"))
