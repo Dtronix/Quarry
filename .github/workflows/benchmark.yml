@@ -6,6 +6,14 @@ on:
     types: [completed]
     branches: [master]
   workflow_dispatch:
+    inputs:
+      allow_missing_series:
+        description: >-
+          Accept benchmark series that disappeared since the last published run. Needed once
+          after a deliberate benchmark rename or removal, otherwise every subsequent run keeps
+          failing on the old name and no new baseline can ever be published.
+        type: boolean
+        default: false
 
 concurrency:
   group: benchmark
@@ -68,9 +76,13 @@ jobs:
     needs: check
     if: needs.check.outputs.should_run == 'true'
     runs-on: debian-benchmark
+    # Deliberately read-only. Filing the regression issue needs `issues: write`, but this job
+    # also runs arbitrary project and NuGet code on a persistent self-hosted runner, so the
+    # write scope lives in the separate `alert` job below instead.
     permissions:
       contents: read
-      issues: write
+    outputs:
+      breaches: ${{ steps.perfgate.outputs.breaches }}
 
     steps:
       - uses: actions/checkout@v5
@@ -196,7 +208,7 @@ jobs:
             fi
             echo
             if [ "$MISSING_COUNT" -gt 0 ]; then
-              echo "**Missing expected benchmark series — this run will fail:**"
+              echo "**Missing expected benchmark series:**"
               echo
               jq -r '.missing[] | "- `\(.)`"' perf-gate.json
             fi
@@ -208,47 +220,39 @@ jobs:
           echo "breaches=$BREACH_COUNT" >> "$GITHUB_OUTPUT"
           echo "status=compared" >> "$GITHUB_OUTPUT"
 
-      - name: Open performance regression issue
-        if: steps.perfgate.outputs.breaches != '' && steps.perfgate.outputs.breaches != '0'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          TITLE="Performance regression detected in benchmarks"
-
-          # Dedupe on the title alone (not on the label) so a manually
-          # relabelled issue still suppresses a duplicate.
-          EXISTING=$(curl -fsS \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues?state=open&per_page=100" \
-            | jq -r --arg t "$TITLE" \
-                '[.[] | select(.pull_request == null) | select(.title == $t) | .number] | first // empty')
-
-          if [ -n "$EXISTING" ]; then
-            echo "Open issue #${EXISTING} already tracks \"${TITLE}\" — not filing a duplicate."
-            echo "Regression details for this run are in the job summary above." >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-
-          jq -n --arg t "$TITLE" --rawfile b perf-gate.md \
-            '{title: $t, body: $b, labels: ["performance-regression"]}' > issue.json
-
-          curl -fsS -X POST \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues" \
-            -d @issue.json \
-            | jq -r '"Opened issue #\(.number): \(.html_url)"'
+      # Handed to the `alert` job, which owns the issues: write scope. Uploaded even when
+      # there are no breaches so a run's comparison is always retrievable after the fact.
+      - name: Upload perf-gate result
+        if: steps.perfgate.outputs.status == 'compared'
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-gate
+          path: |
+            perf-gate.md
+            perf-gate.json
+          retention-days: 30
 
       - name: Fail on missing benchmark series
-        if: steps.perfgate.outputs.missing != '' && steps.perfgate.outputs.missing != '0'
+        if: >-
+          steps.perfgate.outputs.missing != '' && steps.perfgate.outputs.missing != '0' &&
+          inputs.allow_missing_series != true
         run: |
           set -euo pipefail
           echo "::error::Benchmark series present in the last published run are absent from this one." \
-               "That is a crashed or dropped benchmark, not a performance result."
+               "That is a crashed or dropped benchmark, not a performance result. If the series was" \
+               "renamed or removed on purpose, re-run this workflow via workflow_dispatch with" \
+               "allow_missing_series enabled once, so a new baseline can be published."
           jq -r '.missing[] | "::error::missing benchmark series: \(.)"' perf-gate.json
           exit 1
+
+      - name: Note accepted missing series
+        if: >-
+          steps.perfgate.outputs.missing != '' && steps.perfgate.outputs.missing != '0' &&
+          inputs.allow_missing_series == true
+        run: |
+          set -euo pipefail
+          echo "::warning::allow_missing_series was set — publishing a new baseline without these series."
+          jq -r '.missing[] | "::warning::dropped benchmark series: \(.)"' perf-gate.json
 
       - name: Generate merged HTML report
         run: |
@@ -402,3 +406,74 @@ jobs:
           fi
         env:
           TOKEN: ${{ secrets.BENCHMARK_TOKEN }}
+
+  # Separate job so `issues: write` is never held by the job that runs project and NuGet code
+  # on the persistent self-hosted runner. It consumes only the perf-gate artifact.
+  alert:
+    needs: benchmark
+    # `always()` so a run that also failed the missing-series check still raises its regressions.
+    # The `breaches` output only exists once the comparison completed, so this implies the artifact.
+    if: >-
+      always() &&
+      needs.benchmark.outputs.breaches != '' &&
+      needs.benchmark.outputs.breaches != '0'
+    runs-on: ubuntu-latest
+    # Alert-only, per the perf-gate decision: a GitHub API blip must not turn a clean benchmark
+    # run red. The benchmark results are already published by the time this runs.
+    continue-on-error: true
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - name: Download perf-gate result
+        uses: actions/download-artifact@v4
+        with:
+          name: perf-gate
+
+      - name: File or update the performance regression issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TITLE="Performance regression detected in benchmarks"
+          API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+
+          # Filter by label rather than paging the whole open-issue list: the label is applied at
+          # creation, so this is bounded and needs no pagination. An unknown label yields [].
+          if ! OPEN=$(curl -fsS \
+                -H "Authorization: Bearer ${GH_TOKEN}" \
+                -H "Accept: application/vnd.github+json" \
+                "${API}/issues?state=open&labels=performance-regression&per_page=100"); then
+            OPEN='[]'
+          fi
+
+          EXISTING=$(jq -r --arg t "$TITLE" \
+            '[.[] | select(.pull_request == null) | select(.title == $t) | .number] | first // empty' \
+            <<<"$OPEN")
+
+          if [ -n "$EXISTING" ]; then
+            # Comment rather than skip. Skipping silently would mean that once one issue is open,
+            # no later regression is ever reported again — and because every successful run
+            # publishes a new baseline, the original regression stops being detected too.
+            jq -n --rawfile b perf-gate.md \
+              '{body: ("Another run breached the thresholds while this issue was open.\n\n" + $b)}' \
+              > comment.json
+            curl -fsS -X POST \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "${API}/issues/${EXISTING}/comments" \
+              -d @comment.json \
+              | jq -r '"Commented on issue #'"${EXISTING}"': \(.html_url)"'
+            exit 0
+          fi
+
+          jq -n --arg t "$TITLE" --rawfile b perf-gate.md \
+            '{title: $t, body: $b, labels: ["performance-regression"]}' > issue.json
+
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "${API}/issues" \
+            -d @issue.json \
+            | jq -r '"Opened issue #\(.number): \(.html_url)"'

@@ -53,14 +53,19 @@ internal class CrossDialectNestedSubqueryTests
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((2, "Bob")));
 
+        // No top-level ORDER BY, so the real providers are asserted as an unordered
+        // collection rather than positionally.
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults, Is.EquivalentTo(new[] { (1, "Alice"), (2, "Bob") }));
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(2));
+        Assert.That(myResults, Is.EquivalentTo(new[] { (1, "Alice"), (2, "Bob") }));
 
         var ssResults = await ss.ExecuteFetchAllAsync();
         Assert.That(ssResults, Has.Count.EqualTo(2));
+        Assert.That(ssResults, Is.EquivalentTo(new[] { (1, "Alice"), (2, "Bob") }));
     }
 
     [Test]
@@ -135,12 +140,15 @@ internal class CrossDialectNestedSubqueryTests
 
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(1));
+        Assert.That(myResults[0], Is.EqualTo((1, "Alice")));
 
         var ssResults = await ss.ExecuteFetchAllAsync();
         Assert.That(ssResults, Has.Count.EqualTo(1));
+        Assert.That(ssResults[0], Is.EqualTo((1, "Alice")));
     }
 
     [Test]
@@ -165,17 +173,24 @@ internal class CrossDialectNestedSubqueryTests
             ss:     "SELECT [UserId], [UserName] FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND (EXISTS (SELECT 1 FROM [order_items] AS [sq1] WHERE [sq1].[OrderId] = [sq0].[OrderId] AND (EXISTS (SELECT 1 FROM [tags] AS [sq2] WHERE [sq2].[OrderItemId] = [sq1].[OrderItemId] AND ([sq2].[TagValue] = @p0))))))");
 
         // P1 tags exist on items 1, 2, 3 — covers Alice (orders 1, 2) and Bob (order 3).
+        // No top-level ORDER BY, so row values are asserted as an unordered collection.
+        // This also pins the captured @p0 binding: a wrong/unbound TagValue would match
+        // a different user set, which a bare count check cannot see.
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results, Is.EquivalentTo(new[] { (1, "Alice"), (2, "Bob") }));
 
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults, Is.EquivalentTo(new[] { (1, "Alice"), (2, "Bob") }));
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(2));
+        Assert.That(myResults, Is.EquivalentTo(new[] { (1, "Alice"), (2, "Bob") }));
 
         var ssResults = await ss.ExecuteFetchAllAsync();
         Assert.That(ssResults, Has.Count.EqualTo(2));
+        Assert.That(ssResults, Is.EquivalentTo(new[] { (1, "Alice"), (2, "Bob") }));
     }
 
     [Test]

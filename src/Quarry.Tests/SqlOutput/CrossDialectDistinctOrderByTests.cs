@@ -63,6 +63,12 @@ internal class CrossDialectDistinctOrderByTests
 
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(3));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(3));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(3));
     }
 
     #endregion
@@ -110,6 +116,12 @@ internal class CrossDialectDistinctOrderByTests
 
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(2));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(2));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(2));
     }
 
     #endregion
@@ -161,6 +173,12 @@ internal class CrossDialectDistinctOrderByTests
 
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(3));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(3));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(3));
     }
 
     #endregion
@@ -213,8 +231,25 @@ internal class CrossDialectDistinctOrderByTests
         Assert.That(liteResults[1], Is.EqualTo("Bob"));
         Assert.That(liteResults[2], Is.EqualTo("Alice"));
 
+        // Top-level ORDER BY "_o0" DESC is present in all four dialects, so positional
+        // assertions are well-defined here (the derived table's _o0 values are distinct).
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(3));
+        Assert.That(pgResults[0], Is.EqualTo("Alice"));
+        Assert.That(pgResults[1], Is.EqualTo("Bob"));
+        Assert.That(pgResults[2], Is.EqualTo("Alice"));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(3));
+        Assert.That(myResults[0], Is.EqualTo("Alice"));
+        Assert.That(myResults[1], Is.EqualTo("Bob"));
+        Assert.That(myResults[2], Is.EqualTo("Alice"));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(3));
+        Assert.That(ssResults[0], Is.EqualTo("Alice"));
+        Assert.That(ssResults[1], Is.EqualTo("Bob"));
+        Assert.That(ssResults[2], Is.EqualTo("Alice"));
     }
 
     #endregion
@@ -271,6 +306,12 @@ internal class CrossDialectDistinctOrderByTests
 
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(3));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(3));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(3));
     }
 
     #endregion
@@ -322,6 +363,12 @@ internal class CrossDialectDistinctOrderByTests
 
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(2));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(2));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(2));
     }
 
     #endregion
@@ -396,6 +443,12 @@ internal class CrossDialectDistinctOrderByTests
 
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(3));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(3));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(3));
     }
 
     private static void AssertOrderByCapturedParamBound(QueryDiagnostics diag, decimal expectedThreshold, decimal expectedBias, string dialect)
@@ -440,6 +493,12 @@ internal class CrossDialectDistinctOrderByTests
 
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(2));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(2));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(2));
     }
 
     #endregion
@@ -493,6 +552,12 @@ internal class CrossDialectDistinctOrderByTests
 
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(2));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(2));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(2));
     }
 
     #endregion

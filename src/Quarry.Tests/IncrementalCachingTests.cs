@@ -16,8 +16,6 @@ namespace Quarry.Tests;
 [TestFixture]
 public class IncrementalCachingTests
 {
-    private static readonly string QuarryCoreAssemblyPath = typeof(Schema).Assembly.Location;
-
     private const string SharedSource = @"
 using Quarry;
 
@@ -70,29 +68,8 @@ public class ServiceB
 
     // Metadata references are built once and shared so re-created compilations
     // differ only by their syntax trees, mirroring a real incremental update.
-    private static readonly IReadOnlyList<MetadataReference> References = BuildReferences();
-
-    private static IReadOnlyList<MetadataReference> BuildReferences()
-    {
-        var references = new List<MetadataReference>
-        {
-            MetadataReference.CreateFromFile(QuarryCoreAssemblyPath),
-            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(System.Data.IDbConnection).Assembly.Location),
-        };
-
-        var runtimeDir = System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory();
-        foreach (var dll in new[]
-        {
-            "System.Runtime.dll", "System.Collections.dll", "System.Linq.dll",
-            "System.Linq.Expressions.dll", "netstandard.dll", "System.Threading.Tasks.dll",
-        })
-        {
-            references.Add(MetadataReference.CreateFromFile(Path.Combine(runtimeDir, dll)));
-        }
-
-        return references;
-    }
+    private static IReadOnlyList<MetadataReference> References =>
+        Testing.GeneratorTestReferences.All;
 
     private static CSharpCompilation CreateCompilation(params (string Source, string Path)[] files)
     {
@@ -186,8 +163,20 @@ public class ServiceB
             TrackingNames.PerFileGroups,
         };
 
-        foreach (var (stage, steps) in result.Results[0].TrackedSteps
-                     .Where(kv => namedStages.Contains(kv.Key)))
+        var tracked = result.Results[0].TrackedSteps
+            .Where(kv => namedStages.Contains(kv.Key))
+            .ToList();
+
+        // Without this, the loop below is vacuous in the one way that matters: if tracking
+        // were switched off, a name were renamed, or the driver were run without
+        // trackIncrementalGeneratorSteps, TrackedSteps would hold none of these stages and
+        // every assertion would pass by iterating nothing. "An absent stage means cached"
+        // is true per-stage, but it cannot also mean "no stage was ever observed".
+        Assert.That(tracked, Is.Not.Empty,
+            "No named pipeline stage was tracked at all — the run reasons below were never " +
+            $"examined. Expected at least one of: {string.Join(", ", namedStages)}.");
+
+        foreach (var (stage, steps) in tracked)
         {
             var reasons = steps.SelectMany(s => s.Outputs).Select(o => o.Reason).ToList();
             Assert.That(reasons, Is.All.Matches<IncrementalStepRunReason>(r =>
@@ -251,7 +240,7 @@ public class ServiceB
     }
 
     [Test]
-    public void ModifyOneFile_OtherFilesGroupCached_TextIdentical()
+    public void ModifyOneFile_OtherFilesGroupPinnedModified_TextIdentical()
     {
         var compilation = CreateCompilation(
             (SharedSource, "Shared.cs"),
@@ -389,6 +378,56 @@ public class ServiceB
 
         // Interceptors must remain real (analysis re-ran against the new registry).
         GetRealInterceptorTexts(result);
+    }
+
+    /// <summary>
+    /// The other half of the schema-edit test above. Invalidation is the easy direction to
+    /// get right; a pipeline that simply rebuilt everything on every run would pass it. This
+    /// asserts the opposite: an edit that changes no semantics — reformatting a file that
+    /// contains no Quarry chain at all — must leave every stage cached and every interceptor
+    /// byte-identical. A false invalidation hides here, not there.
+    /// </summary>
+    [Test]
+    public void WhitespaceEditToUnrelatedFile_LeavesEveryStageCached()
+    {
+        const string unrelatedSource = @"
+namespace TestApp.Services;
+
+public class Unrelated
+{
+    public int Compute(int x) => x + 1;
+}
+";
+
+        var compilation = CreateCompilation(
+            (SharedSource, "Shared.cs"),
+            (FileASource, "ServiceA.cs"),
+            (FileBSource, "ServiceB.cs"),
+            (unrelatedSource, "Unrelated.cs"));
+
+        var driver = CreateDriver().RunGeneratorsAndUpdateCompilation(compilation, out _, out _);
+        AssertHealthyRun(driver.GetRunResult());
+        var initialTexts = GetRealInterceptorTexts(driver.GetRunResult());
+
+        // Reformat only the unrelated file: extra blank lines and indentation, no token change.
+        var reformatted = unrelatedSource
+            .Replace("public int Compute(int x) => x + 1;",
+                     "\r\n        public int Compute(int x)  =>  x + 1;\r\n");
+        Assert.That(reformatted, Is.Not.EqualTo(unrelatedSource));
+
+        var oldTree = compilation.SyntaxTrees.First(t => t.FilePath == "Unrelated.cs");
+        var newTree = CSharpSyntaxTree.ParseText(reformatted,
+            new CSharpParseOptions(LanguageVersion.Latest), path: "Unrelated.cs");
+
+        driver = driver.RunGeneratorsAndUpdateCompilation(
+            compilation.ReplaceSyntaxTree(oldTree, newTree), out _, out _);
+
+        var result = driver.GetRunResult();
+        AssertHealthyRun(result);
+        AssertNoStageRecomputedDifferently(result);
+
+        Assert.That(GetRealInterceptorTexts(result), Is.EqualTo(initialTexts),
+            "Reformatting a file with no Quarry chain must not change any interceptor");
     }
 
     [Test]

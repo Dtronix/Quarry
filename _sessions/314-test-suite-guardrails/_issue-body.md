@@ -1,117 +1,77 @@
 ## Description
 
-Nine tests in `CrossDialectJoinTests` assert row values **positionally** on PostgreSQL, MySQL and
-SQL Server results from a query that carries no `ORDER BY`. They pass today only by accident of each
-planner's chosen access path; a statistics refresh, a parallel scan, or a hash join being picked
-instead of a nested loop can reorder the result set and turn them red with no code change.
+`InsertBatch(...)` interceptors call `Quarry.Internal.BatchInsertSqlBuilder.Build(...)`, but that type
+is `internal` to the `Quarry` assembly. Consumer code that uses `InsertBatch` therefore fails to
+compile:
 
-This is the same defect class as the row-order sweep in #314, but these nine could **not** be fixed
-by that sweep, which is why they are broken out here.
-
-Every one of them projects `(u.UserName, o.Total)` (or a superset) from a `users → orders` join and
-asserts:
-
-```csharp
-Assert.That(pgResults, Has.Count.EqualTo(3));
-Assert.That(pgResults[0], Is.EqualTo(("Alice", 250.00m)));
-Assert.That(pgResults[1], Is.EqualTo(("Alice",  75.50m)));
-Assert.That(pgResults[2], Is.EqualTo(("Bob",   150.00m)));
+```
+error CS0122: 'BatchInsertSqlBuilder' is inaccessible due to its protection level
 ```
 
-The order encoded there is `orders.OrderId` ascending — the seed insertion order. But `OrderId` is
-**not in the projection**, so it cannot be used as a client-side sort key, and the only discriminator
-that *is* projected (`Total`) runs **descending** within the Alice group. Consequently:
+in the generated `*.Interceptors.*.g.cs`.
 
-- `.SortedByAsync(r => r.UserName)` is not a total order — the two Alice rows tie.
-- `.SortedByAsync(r => (r.UserName, r.Total))` is total, but ascending `Total` swaps rows `[0]` and
-  `[1]`, turning the tests red.
+This is invisible inside this repository because **every** project that exercises `InsertBatch` is on
+Quarry's `InternalsVisibleTo` list — `Quarry.Tests`, `Quarry.Benchmarks`, `Quarry.Sample.WebApp`. An
+external consumer has no such grant, so the feature does not compile for them at all.
 
-So no client-side sort over the projected columns can reproduce the asserted sequence. The fix has to
-be query-side or assertion-side.
+Found by the interceptor-binding guard matrix added in #314: the two `InsertBatch` shapes compile in a
+synthetic `CSharpCompilation` that is *not* a friend assembly, which is the only place in the repo
+that models an ordinary consumer.
 
 ## Location
 
-`src/Quarry.Tests/SqlOutput/CrossDialectJoinTests.cs`
-
-| Test | Approx. line (pg / my / ss fetch) |
-|---|---|
-| `Join_InnerJoin_OnClause` | 39 / 45 / 51 |
-| `Join_WithWhere_OnLeftTable` | 87 / 93 / 99 |
-| `Join_InnerJoin_NamedTupleProjection` | 215 / 224 / 233 |
-| `Join_ThreeTable_NamedTupleProjection` | 268 / 274 / 280 |
-| `Join_WithWhere_TwoCapturedParams_BooleanBetween_SequentialIndices` | 561 / 566 / 571 |
-| `Where_BeforeJoin_GetsTableAliasQualification` | 611 / 617 / 623 |
-| `Select_Joined_Many_Sum_OnLeftTable` | 798 / 804 / 810 |
-| `Select_Joined_Many_Count_OnLeftTable` | 847 / 853 / 859 |
-| `Select_Joined_HasManyThrough_Max_OnLeftTable` | 902 / 908 / 914 |
-
-Line numbers are as of the #314 branch.
-
-`Join_ThreeTable_NamedTupleProjection` is the subtlest: it reads only `[0]`, so it looks convertible,
-but that lone `[0]` sits under `Has.Count.EqualTo(3)` and the row it names — `(Alice, 250.00, "Widget")`
-— is not the ascending minimum over any projected column (75.50 < 250.00, "Gadget" < "Widget").
-
-The three aggregate variants (`Select_Joined_Many_Sum_OnLeftTable`,
-`Select_Joined_Many_Count_OnLeftTable`, `Select_Joined_HasManyThrough_Max_OnLeftTable`) are worse
-still: the two Alice rows tie on the aggregate column as well (`OrderTotal` 325.50 for both,
-`OrderCount` 2 for both, `MaxAddrId` 2 for both), so the aggregate does not break the tie either.
+- Emission: `src/Quarry.Generator/CodeGen/TerminalBodyEmitter.cs:518` and `:559` — both emit
+  `Quarry.Internal.BatchInsertSqlBuilder.Build(...)` unconditionally.
+- The type: `src/Quarry/Internal/BatchInsertSqlBuilder.cs:10` — `internal static class BatchInsertSqlBuilder`.
+- Friend grants that mask it: `src/Quarry/Quarry.csproj:19-25`.
 
 ## Diagnostics
 
-Seed data (`QueryTestHarness.SeedData`) for the join:
-
 ```
-users:   1 Alice, 2 Bob, 3 Charlie
-orders:  OrderId 1 → UserId 1, Total 250.00
-         OrderId 2 → UserId 1, Total  75.50
-         OrderId 3 → UserId 2, Total 150.00
+TestDbContext.Interceptors.Source1.g.cs(99,35): error CS0122:
+    'BatchInsertSqlBuilder' is inaccessible due to its protection level
 ```
 
-The join yields three rows. The asserted sequence is `OrderId` 1, 2, 3.
+Reproduced by `InterceptorBindingGuardTests` for the shapes `BatchInsert_NonQuery` and
+`BatchInsert_ScalarAsync`, which compile:
 
-`RowOrderExtensions.SortedByAsync` (added in #314) is the standard remedy for this class of test and
-now covers 118 sites across the suite; it simply cannot reach these nine.
+```csharp
+var rows = new[] { new User { UserName = "a", IsActive = true } };
+await db.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(rows).ExecuteNonQueryAsync();
+await db.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(rows).ExecuteScalarAsync<int>();
+```
+
+in an assembly named `InterceptorBindingGuardAssembly` — i.e. not a friend of `Quarry`.
 
 ## What Has Been Tried
 
-- **Client-side sort via `SortedByAsync`** — ruled out above for all nine, by inspecting each test's
-  projection against the seed data rather than by trial.
-- **The #314 sweep deliberately skipped them** rather than converting them with a plausible-looking
-  key, because `(r.UserName, r.Total)` compiles, reads as correct, and silently reorders the
-  assertions.
+- Confirmed the reference is unconditional: both emission sites hard-code the fully qualified
+  `Quarry.Internal.BatchInsertSqlBuilder`, with no public shim and no alternate path.
+- Confirmed the in-repo blind spot: `grep` for `InsertBatch` outside `Quarry.Tests` finds
+  `Quarry.Benchmarks` and `Quarry.Sample.WebApp`, both of which hold `InternalsVisibleTo` grants. So
+  no existing build would ever have caught this.
+- Not yet checked: whether any other generated call target is `internal`. The same audit should be run
+  across `TerminalBodyEmitter`, `JoinBodyEmitter` and `CarrierEmitter` — this one was found by
+  accident, and a second instance would fail the same way.
 
 ## Gathered Information
 
-- 50 `Is.EquivalentTo` call sites already exist in the test suite, so the order-independent assertion
-  style has precedent here.
-- `.OrderBy((u, o) => o.Total)` after a `Join<T>(...)` is supported and renders a top-level `ORDER BY`
-  — see `CrossDialectDistinctOrderByTests.Distinct_OrderBy_NonProjectedColumn_WrapsAcrossAllDialects`.
-  Note that ordering on a **non-projected** column combined with `Distinct()` makes the generator wrap
-  the query in a derived table, which would materially change the SQL these tests pin.
-- These tests' primary purpose is pinning join **SQL rendering** — the `AssertDialects(...)` block is
-  the bulk of each test. Any fix that rewrites the expected SQL dilutes that.
+- The runtime surface a generated interceptor may reference is effectively part of Quarry's public
+  API contract, even though it is emitted rather than hand-written. Nothing currently enforces that.
+- `BatchInsertSqlBuilder.Build` expands a row template per entity (see `SqlAssembler.cs:890`), so it
+  is genuinely runtime-needed, not a codegen-time helper that could be inlined away.
 
 ## Suggested Approach
 
-Preferred: **make the assertions order-independent**, leaving the pinned SQL untouched.
+1. **Make the emitted surface public.** Either promote `BatchInsertSqlBuilder` to `public` (it already
+   lives under a `Quarry.Internal` namespace, which signals "don't call this" without breaking
+   compilation), or add a thin `public` forwarder that the emitter targets instead.
+2. **Then prevent recurrence.** Audit every type a generated interceptor can name and assert
+   accessibility. The natural home is the guard matrix in
+   `src/Quarry.Tests/Generation/InterceptorBindingGuardTests.cs`, which already compiles each shape in
+   a non-friend assembly — it just needs the `InsertBatch` shapes returned to the clean-binding set
+   once this is fixed.
 
-```csharp
-Assert.That(pgResults, Is.EquivalentTo(new[]
-{
-    ("Alice", 250.00m),
-    ("Alice",  75.50m),
-    ("Bob",   150.00m),
-}));
-```
-
-Every row and every value stays asserted; only the accidental ordering assumption is dropped. The
-SQL-rendering pin — the actual point of these tests — is unaffected.
-
-Alternative, if positional assertions are considered worth keeping: add
-`.OrderBy((u, o) => o.OrderId)` to each chain and append the resulting `ORDER BY` to all four expected
-SQL strings per test (36 strings total). This makes the queries genuinely deterministic, at the cost
-of these tests pinning an `ORDER BY` clause unrelated to what they are named for, plus the
-derived-table wrap risk noted above.
-
-Either way the SQLite side should stay positional — its incidental insertion order is the deliberate
-reference shape that the other three dialects mirror.
+The two shapes are currently pinned as `KnownBug_Issue{this}_BatchInsert_ReferencesInternalType`
+in that fixture. **When that pin fails, this bug is fixed** — remove the pin and move the shapes back
+into `GenericTerminalShapes`.

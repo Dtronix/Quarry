@@ -116,7 +116,14 @@ internal class CancellationTests
         await AssertCancelledAsync(
             My.Users().Select(u => u.UserName).ExecuteFetchAllAsync(ct), "MySQL FetchAll");
         await AssertCancelledAsync(
+            My.Users().Update().Set(u => u.UserName = "cancelled").Where(u => u.UserId == 1).ExecuteNonQueryAsync(ct),
+            "MySQL NonQuery");
+
+        await AssertCancelledAsync(
             Ss.Users().Select(u => u.UserName).ExecuteFetchAllAsync(ct), "SQL Server FetchAll");
+        await AssertCancelledAsync(
+            Ss.Users().Update().Set(u => u.UserName = "cancelled").Where(u => u.UserId == 1).ExecuteNonQueryAsync(ct),
+            "SQL Server NonQuery");
 
         // Nothing should have been executed, and every connection must still work.
         var lite = await Lite.Users().Select(u => u.UserName).ExecuteFetchAllAsync();
@@ -130,7 +137,15 @@ internal class CancellationTests
             Assert.That(pg, Has.Count.EqualTo(3), "PostgreSQL usable after cancellation");
             Assert.That(my, Has.Count.EqualTo(3), "MySQL usable after cancellation");
             Assert.That(ss, Has.Count.EqualTo(3), "SQL Server usable after cancellation");
-            Assert.That(lite, Does.Not.Contain("cancelled"), "cancelled UPDATE must not have been applied");
+
+            // The interesting half of "pre-cancelled" is that nothing ran. Each dialect
+            // above cancels an UPDATE that would rename UserId 1 to "cancelled", so the
+            // absence of that value is the actual evidence — assert it on all four, not
+            // just the one that happens to be cheapest.
+            Assert.That(lite, Does.Not.Contain("cancelled"), "SQLite: cancelled UPDATE must not have applied");
+            Assert.That(pg, Does.Not.Contain("cancelled"), "PostgreSQL: cancelled UPDATE must not have applied");
+            Assert.That(my, Does.Not.Contain("cancelled"), "MySQL: cancelled UPDATE must not have applied");
+            Assert.That(ss, Does.Not.Contain("cancelled"), "SQL Server: cancelled UPDATE must not have applied");
         });
     }
 

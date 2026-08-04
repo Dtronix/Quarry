@@ -5,7 +5,7 @@ platform: github
 base-branch: master
 
 ## State
-phase: REVIEW
+phase: REMEDIATE
 status: active
 issue: #314
 pr:
@@ -44,6 +44,34 @@ Note: pre-existing build warnings — NU1903 (System.Security.Cryptography.Xml 9
   on a compiler diagnostic. The guard matrix stays as the regression net for clause shapes.
 
 ## Working Notes
+
+### REMEDIATE (2026-08-03)
+
+- **The F19 fix paid for the whole review immediately.** Adding "assert the guard fixture compiles
+  cleanly" to `InterceptorBindingGuardTests` failed on the two `InsertBatch` shapes with
+  `CS0122 'BatchInsertSqlBuilder' is inaccessible`. `TerminalBodyEmitter.cs:518/:559` hard-codes a
+  call to an `internal` runtime type, so **`InsertBatch` does not compile for any consumer outside
+  Quarry's `InternalsVisibleTo` list**. Invisible in-repo because all three projects that use it
+  (`Quarry.Tests`, `Quarry.Benchmarks`, `Quarry.Sample.WebApp`) hold grants — the guard fixture's
+  synthetic compilation is the only thing in the repo that models an ordinary consumer. Filed as
+  **#334**, pinned by `KnownBug_Issue334_BatchInsert_ReferencesInternalType`, and the two shapes
+  were moved out of the clean-binding matrix (their arity coverage is retained by
+  `Insert_ScalarAsync`/`Insert_NonQuery`).
+- **Benchmark alerting is now a separate job.** `issues: write` on the self-hosted `debian-benchmark`
+  runner was reachable from arbitrary project and NuGet code. The new `alert` job runs on
+  `ubuntu-latest`, consumes only the `perf-gate` artifact, and carries `continue-on-error: true` —
+  which also fixes the alert-only violation, since a GitHub API blip can no longer red the workflow
+  or skip the publish steps.
+- **The manifest gate now deletes the goldens before the build.** `git diff --exit-code` on a
+  directory nothing wrote is empty, so the original check could not tell "verified current" from
+  "never regenerated" — the exact vacuity class this branch exists to remove.
+- **A missing benchmark series needed an escape hatch.** Failing before publish is right (a crashed
+  run must not become the baseline), but with no override a deliberate rename red-locks the pipeline
+  forever: every later run sees the old name missing and refuses to publish a new baseline.
+  `workflow_dispatch` now takes `allow_missing_series`.
+- Perf-issue dedupe now **comments on** an open issue rather than skipping silently. Skipping meant
+  one open issue permanently silenced the channel — and because every successful run advances the
+  baseline, the original regression stopped being detected too.
 
 ### Step 13a (2026-08-03) — row-order sweep, remaining 21 files
 

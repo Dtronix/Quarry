@@ -30,8 +30,8 @@ namespace Quarry.Tests.Integration;
 /// written inside a lambda nested in another lambda (the natural
 /// <c>Select(... => Task.Run(async () => ...))</c> shape) capture their locals
 /// in a display class the generator cannot resolve, and the emitted
-/// interceptor fails to compile with CS0103. See the step-8 note in
-/// <c>workflow.md</c>.
+/// interceptor fails to compile with CS0103. Tracked as issue #333 — if that is
+/// fixed, these worker methods can be inlined again.
 /// </para>
 /// </remarks>
 [TestFixture]
@@ -43,21 +43,63 @@ internal class ConcurrencyTests
     /// </summary>
     private const int Workers = 8;
 
+    /// <summary>
+    /// How long a worker will wait at the shared barrier before failing. The barrier is
+    /// released only once every worker arrives, and each worker occupies a thread-pool
+    /// thread while it waits — so on a small runner the last few depend on thread-pool
+    /// injection. Without a timeout that becomes an indefinite hang and the CI job dies
+    /// with no assertion message.
+    /// </summary>
+    private static readonly TimeSpan BarrierTimeout = TimeSpan.FromSeconds(60);
+
+    /// <summary>
+    /// Creates <paramref name="count"/> harnesses, disposing any already created if one
+    /// throws part-way. Each harness holds an open SQLite connection plus open PG/MySQL/
+    /// SQL Server transactions against the *shared* baseline, so leaking a partial batch
+    /// would cascade into lock timeouts in every fixture that runs afterwards.
+    /// </summary>
     private static async Task<QueryTestHarness[]> CreateHarnessesAsync(int count)
     {
         var harnesses = new QueryTestHarness[count];
-        for (int i = 0; i < count; i++)
-            harnesses[i] = await QueryTestHarness.CreateAsync();
+        try
+        {
+            for (int i = 0; i < count; i++)
+                harnesses[i] = await QueryTestHarness.CreateAsync();
+        }
+        catch
+        {
+            await DisposeAllAsync(harnesses);
+            throw;
+        }
+
         return harnesses;
     }
 
+    /// <summary>
+    /// Disposes every harness even if one throws, so a single bad teardown cannot strand
+    /// the rest. The first failure is rethrown once the whole batch has been attempted.
+    /// </summary>
     private static async Task DisposeAllAsync(QueryTestHarness[] harnesses)
     {
+        List<Exception>? failures = null;
+
         foreach (var harness in harnesses)
         {
-            if (harness is not null)
+            if (harness is null)
+                continue;
+
+            try
+            {
                 await harness.DisposeAsync();
+            }
+            catch (Exception ex)
+            {
+                (failures ??= new List<Exception>()).Add(ex);
+            }
         }
+
+        if (failures is not null)
+            throw new AggregateException("One or more harnesses failed to dispose.", failures);
     }
 
     // ── Mixed read/write ─────────────────────────────────────────────────────
@@ -151,8 +193,15 @@ internal class ConcurrencyTests
         var (Lite, _, _, _) = harness;
 
         // Release every worker into the chain at the same moment so the static
-        // initialization is genuinely contended.
-        gate.SignalAndWait();
+        // initialization is genuinely contended. Bounded so a thread-pool starved
+        // runner fails with a message instead of hanging until the job times out.
+        if (!gate.SignalAndWait(BarrierTimeout))
+        {
+            throw new TimeoutException(
+                $"Workers did not all reach the barrier within {BarrierTimeout.TotalSeconds:F0}s. " +
+                "This is a thread-pool starvation problem in the test host, not a Quarry defect — " +
+                $"each of the {Workers} workers blocks a pool thread while waiting.");
+        }
 
         return await Lite.Orders()
             .Where(o => o.Total > 100.00m)
@@ -211,9 +260,15 @@ internal class ConcurrencyTests
 
     // ── Independent contexts, all dialects ───────────────────────────────────
 
-    private readonly record struct DialectCounts(int Index, int Threshold, int Lite, int Pg, int My, int Ss);
+    private readonly record struct DialectRows(
+        int Index,
+        int Threshold,
+        List<string> Lite,
+        List<string> Pg,
+        List<string> My,
+        List<string> Ss);
 
-    private static async Task<DialectCounts> RunAllDialectsWorkerAsync(QueryTestHarness harness, int index)
+    private static async Task<DialectRows> RunAllDialectsWorkerAsync(QueryTestHarness harness, int index)
     {
         var (Lite, Pg, My, Ss) = harness;
 
@@ -230,7 +285,7 @@ internal class ConcurrencyTests
         var ss = await Ss.Users().Where(u => u.UserId > threshold)
             .Select(u => u.UserName).ExecuteFetchAllAsync();
 
-        return new DialectCounts(index, threshold, lite.Count, pg.Count, my.Count, ss.Count);
+        return new DialectRows(index, threshold, lite, pg, my, ss);
     }
 
     /// <summary>
@@ -244,7 +299,7 @@ internal class ConcurrencyTests
         var harnesses = await CreateHarnessesAsync(Workers);
         try
         {
-            var tasks = new Task<DialectCounts>[Workers];
+            var tasks = new Task<DialectRows>[Workers];
             for (int i = 0; i < Workers; i++)
             {
                 var index = i;
@@ -257,12 +312,18 @@ internal class ConcurrencyTests
             {
                 foreach (var r in results)
                 {
-                    // Seed has three users; threshold 1 excludes UserId 1.
-                    var expected = r.Threshold == 0 ? 3 : 2;
-                    Assert.That(r.Lite, Is.EqualTo(expected), $"worker {r.Index} SQLite");
-                    Assert.That(r.Pg, Is.EqualTo(expected), $"worker {r.Index} PostgreSQL");
-                    Assert.That(r.My, Is.EqualTo(expected), $"worker {r.Index} MySQL");
-                    Assert.That(r.Ss, Is.EqualTo(expected), $"worker {r.Index} SQL Server");
+                    // Seed has three users; threshold 1 excludes UserId 1 (Alice).
+                    // Assert the names, not just the cardinality: cross-talk that returned
+                    // another worker's rows at the same count would be invisible otherwise.
+                    // The query carries no ORDER BY, so compare as an unordered set.
+                    var expected = r.Threshold == 0
+                        ? new[] { "Alice", "Bob", "Charlie" }
+                        : new[] { "Bob", "Charlie" };
+
+                    Assert.That(r.Lite, Is.EquivalentTo(expected), $"worker {r.Index} SQLite");
+                    Assert.That(r.Pg, Is.EquivalentTo(expected), $"worker {r.Index} PostgreSQL");
+                    Assert.That(r.My, Is.EquivalentTo(expected), $"worker {r.Index} MySQL");
+                    Assert.That(r.Ss, Is.EquivalentTo(expected), $"worker {r.Index} SQL Server");
                 }
             });
         }

@@ -2,8 +2,10 @@ using System.Collections.Immutable;
 using System.Threading;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.Text;
 using NUnit.Framework;
 using Quarry.Generators;
+using Quarry.Generators.CodeGen;
 using Quarry.Generators.IR;
 using Quarry.Generators.Models;
 using Quarry.Shared.Migration;
@@ -157,30 +159,8 @@ public class Service
 }
 ";
 
-    private static readonly IReadOnlyList<MetadataReference> References = BuildReferences();
-
-    private static IReadOnlyList<MetadataReference> BuildReferences()
-    {
-        var references = new List<MetadataReference>
-        {
-            MetadataReference.CreateFromFile(typeof(Schema).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(System.Data.IDbConnection).Assembly.Location),
-        };
-
-        var runtimeDir = System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory();
-        foreach (var dll in new[]
-        {
-            "System.Runtime.dll", "System.Collections.dll", "System.Linq.dll",
-            "System.Linq.Expressions.dll", "netstandard.dll", "System.Threading.Tasks.dll",
-        })
-        {
-            references.Add(MetadataReference.CreateFromFile(Path.Combine(runtimeDir, dll)));
-        }
-
-        return references;
-    }
-
+    private static IReadOnlyList<MetadataReference> References =>
+        Testing.GeneratorTestReferences.All;
     /// <summary>
     /// Runs a fresh generator driver over the shared schema plus one service
     /// file and returns that file's <see cref="FileInterceptorGroup"/> from the
@@ -310,4 +290,115 @@ public class Service
             "Groups are keyed per source file — a moved file must not compare equal");
         Assert.That(a.FileTag, Is.Not.EqualTo(b.FileTag));
     }
+
+    // ── Per-field coverage ───────────────────────────────────────────────────
+    //
+    // The whole-graph tests above drive real generator runs, which is the right shape for
+    // proving the models behave under the pipeline — but a real run cannot vary every field
+    // in isolation, and several compared fields were never varied by any of them. Deleting
+    // one of those comparisons would have left the entire file green, which is exactly the
+    // failure class this fixture exists to prevent (a shipped `EntityRegistry.Equals` once
+    // omitted `_allContexts`). These construct the models directly so each compared field is
+    // the *only* difference.
+
+    private static FileInterceptorGroup Group(
+        string contextClassName = "TestDbContext",
+        string? contextNamespace = "TestApp",
+        string sourceFilePath = "Service.cs",
+        string fileTag = "Service",
+        IReadOnlyList<TranslatedCallSite>? sites = null,
+        IReadOnlyList<AssembledPlan>? assembledPlans = null,
+        IReadOnlyList<TranslatedCallSite>? chainMemberSites = null,
+        IReadOnlyList<DiagnosticInfo>? diagnostics = null,
+        IReadOnlyList<CarrierPlan>? carrierPlans = null)
+        => new(
+            contextClassName,
+            contextNamespace,
+            sourceFilePath,
+            fileTag,
+            sites ?? Array.Empty<TranslatedCallSite>(),
+            assembledPlans ?? Array.Empty<AssembledPlan>(),
+            chainMemberSites ?? Array.Empty<TranslatedCallSite>(),
+            diagnostics ?? Array.Empty<DiagnosticInfo>(),
+            carrierPlans ?? Array.Empty<CarrierPlan>());
+
+    [Test]
+    public void Group_IdenticalConstituents_AreEqual()
+    {
+        // The baseline the negative cases below are measured against: if this ever fails,
+        // every "NotEqual" assertion becomes meaningless.
+        Assert.That(Group().Equals(Group()), Is.True);
+        Assert.That(Group().GetHashCode(), Is.EqualTo(Group().GetHashCode()));
+    }
+
+    [Test]
+    public void Group_DifferentContextClassName_NotEqual()
+        => Assert.That(Group().Equals(Group(contextClassName: "OtherDbContext")), Is.False,
+            "Two contexts can emit for the same file — the class name must participate");
+
+    [Test]
+    public void Group_DifferentContextNamespace_NotEqual()
+        => Assert.That(Group().Equals(Group(contextNamespace: "TestApp.Sub")), Is.False,
+            "Interceptors are emitted into the context's namespace, so it must participate");
+
+    [Test]
+    public void Group_NullVersusNonNullContextNamespace_NotEqual()
+        => Assert.That(Group(contextNamespace: null).Equals(Group()), Is.False);
+
+    [Test]
+    public void Group_DifferentFileTag_NotEqual()
+        => Assert.That(Group().Equals(Group(fileTag: "Other")), Is.False,
+            "FileTag names the output file — a collision would overwrite a sibling's interceptors");
+
+    [Test]
+    public void Group_DifferentDiagnostics_NotEqual()
+    {
+        var withDiagnostic = Group(diagnostics: new[]
+        {
+            new DiagnosticInfo(
+                "QRY032",
+                new DiagnosticLocation("Service.cs", line: 10, column: 5, span: new TextSpan(0, 1)),
+                "Chain disqualified"),
+        });
+
+        Assert.That(Group().Equals(withDiagnostic), Is.False,
+            "Diagnostics are emitted from the group — dropping them from equality would let a " +
+            "cached group suppress a newly reported error");
+    }
+
+    [Test]
+    public void CarrierPlan_IdenticalConstituents_AreEqual()
+        => Assert.That(new CarrierPlan(isEligible: true).Equals(new CarrierPlan(isEligible: true)),
+            Is.True);
+
+    [Test]
+    public void CarrierPlan_DifferentEligibility_NotEqual()
+        => Assert.That(
+            new CarrierPlan(isEligible: true).Equals(new CarrierPlan(isEligible: false)),
+            Is.False,
+            "Eligibility decides whether a carrier is emitted at all");
+
+    [Test]
+    public void CarrierPlan_DifferentIneligibleReason_NotEqual()
+        => Assert.That(
+            new CarrierPlan(isEligible: false, ineligibleReason: "forked chain")
+                .Equals(new CarrierPlan(isEligible: false, ineligibleReason: "captured in lambda")),
+            Is.False,
+            "The reason reaches the user as diagnostic text");
+
+    [Test]
+    public void CarrierPlan_DifferentMaskType_NotEqual()
+        => Assert.That(
+            new CarrierPlan(isEligible: true, maskType: "byte")
+                .Equals(new CarrierPlan(isEligible: true, maskType: "ushort")),
+            Is.False,
+            "The mask field's CLR type is emitted into the carrier");
+
+    [Test]
+    public void CarrierPlan_DifferentMaskBitCount_NotEqual()
+        => Assert.That(
+            new CarrierPlan(isEligible: true, maskType: "byte", maskBitCount: 2)
+                .Equals(new CarrierPlan(isEligible: true, maskType: "byte", maskBitCount: 3)),
+            Is.False,
+            "Bit count drives the number of pre-rendered SQL variants");
 }

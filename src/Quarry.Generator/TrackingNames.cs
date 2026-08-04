@@ -6,7 +6,7 @@ namespace Quarry.Generators;
 /// run reasons (New/Modified/Cached/Unchanged) through
 /// <c>GeneratorRunResult.TrackedSteps[name]</c>.
 /// </summary>
-public static class TrackingNames
+internal static class TrackingNames
 {
     /// <summary>Per-context [QuarryContext] discovery (Pipeline 1 root).</summary>
     public const string ContextDeclarations = nameof(ContextDeclarations);

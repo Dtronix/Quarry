@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Quarry.Generators;
@@ -29,6 +30,20 @@ namespace Quarry.Tests.Generation;
 /// only at runtime). The fixture also carries one bug pin — see
 /// <see cref="KnownBug_Issue329_EntityTerminal_EmitsTwoArityReceiver"/>, which
 /// asserts a mismatch the compiler does <em>not</em> report here.
+/// </para>
+/// <para>
+/// <b>Which assertion is load-bearing for which shape.</b> The CS9144/CS9177
+/// check is not uniformly strong. For <em>clause</em> shapes it is: mutating
+/// <c>CarrierEmitter.ResolveCarrierReceiverType</c> to emit a two-arity receiver
+/// makes the real project fail to build with CS9144 on <c>Distinct()</c>,
+/// <c>Limit(int)</c> and <c>Union(...)</c> — which is why the matrix includes
+/// those shapes. For the <em>entity-terminal</em> shapes it is not: an isolated
+/// compilation does not report CS9144 for a wrong-arity terminal receiver at all
+/// (a hand-written <c>[InterceptsLocation]</c> with a deliberately wrong receiver
+/// arity is also accepted silently), which is the whole reason the #329 pin below
+/// asserts on emitted text instead. For those nine shapes the load-bearing checks
+/// are the "an interceptor was emitted for this terminal" probe and the
+/// error-free-compilation assertion — not the diagnostic filter.
 /// </para>
 /// <para>
 /// The assertions are deliberately independent of <c>Quarry.Tests.csproj</c>:
@@ -145,14 +160,25 @@ public class Service
             @"await db.Users().Insert(new User { UserName = ""a"", IsActive = true }).ExecuteScalarAsync<int>();"),
         new("Insert_NonQuery", "ExecuteNonQueryAsync",
             @"await db.Users().Insert(new User { UserName = ""a"", IsActive = true }).ExecuteNonQueryAsync();"),
+        new("Projected_ScalarAsync", "ExecuteScalarAsync",
+            "await db.Users().Where(u => u.UserId > 0).Select(u => u.UserId).ExecuteScalarAsync<int>();"),
+    };
+
+    /// <summary>
+    /// The two <c>InsertBatch</c> shapes. Held out of <see cref="AllShapes"/> because they do not
+    /// compile in a non-friend assembly at all — see
+    /// <see cref="KnownBug_Issue334_BatchInsert_ReferencesInternalType"/>. Their arity coverage is
+    /// not lost: <c>Insert_ScalarAsync</c> and <c>Insert_NonQuery</c> exercise the same
+    /// generic-terminal-on-generic-receiver family.
+    /// </summary>
+    private static readonly Shape[] BatchInsertShapes =
+    {
         new("BatchInsert_NonQuery", "ExecuteNonQueryAsync",
             @"var rows = new[] { new User { UserName = ""a"", IsActive = true } };
         await db.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(rows).ExecuteNonQueryAsync();"),
         new("BatchInsert_ScalarAsync", "ExecuteScalarAsync",
             @"var rows = new[] { new User { UserName = ""a"", IsActive = true } };
         await db.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(rows).ExecuteScalarAsync<int>();"),
-        new("Projected_ScalarAsync", "ExecuteScalarAsync",
-            "await db.Users().Where(u => u.UserId > 0).Select(u => u.UserId).ExecuteScalarAsync<int>();"),
     };
 
     // ── Modification terminals ───────────────────────────────────────────────
@@ -173,6 +199,37 @@ public class Service
         EntityTerminalShapes.Concat(GenericTerminalShapes).Concat(ModificationShapes);
 
     public static IEnumerable<Shape> EntityTerminalOnlyShapes => EntityTerminalShapes;
+
+    public static IEnumerable<Shape> BatchInsertOnlyShapes => BatchInsertShapes;
+
+    /// <summary>
+    /// Bug pin for #334. The emitter hard-codes a call to
+    /// <c>Quarry.Internal.BatchInsertSqlBuilder.Build(...)</c>
+    /// (<c>TerminalBodyEmitter.cs:518</c> and <c>:559</c>), but that type is <c>internal</c> to the
+    /// Quarry assembly — so an <c>InsertBatch</c> chain does not compile for any consumer outside
+    /// Quarry's <c>InternalsVisibleTo</c> list. Every in-repo project that uses <c>InsertBatch</c>
+    /// happens to be on that list, which is why nothing caught it before this fixture, whose
+    /// synthetic compilation is deliberately not a friend assembly.
+    /// </summary>
+    /// <remarks>
+    /// When this test fails, #334 is fixed: delete the pin, delete
+    /// <see cref="BatchInsertShapes"/>, and move those two shapes back into
+    /// <c>GenericTerminalShapes</c> so they rejoin the clean-binding matrix.
+    /// </remarks>
+    [TestCaseSource(nameof(BatchInsertOnlyShapes))]
+    public void KnownBug_Issue334_BatchInsert_ReferencesInternalType(Shape shape)
+    {
+        var (_, diagnostics) = Run(shape, "TestDbContext", crossContext: false);
+
+        var inaccessible = diagnostics
+            .Where(d => d.Id == "CS0122" && d.GetMessage().Contains("BatchInsertSqlBuilder"))
+            .ToList();
+
+        Assert.That(inaccessible, Is.Not.Empty,
+            $"'{shape.Name}' no longer references an inaccessible type from the generated " +
+            "interceptor. If #334 is fixed, remove this pin and return the InsertBatch shapes to " +
+            $"the clean-binding matrix. Diagnostics were: {Describe(diagnostics)}");
+    }
 
     [TestCaseSource(nameof(AllShapes))]
     public void Shape_BindsWithoutInterceptorMismatch(Shape shape)
@@ -203,6 +260,18 @@ public class Service
         Assert.That(mismatches, Is.Empty, () =>
             $"Interceptor binding mismatch on '{shape.Name}' " +
             $"(CS9144 = signature, CS9177 = generic arity): {Describe(mismatches)}");
+
+        // The compiler only validates [InterceptsLocation] bindings on a compilation it
+        // can otherwise bind. An unrelated error in the fixture (a stale type name after
+        // an edit, a missing reference) stops that validation and every shape would then
+        // pass green — so require the fixture itself to be clean before believing the
+        // absence of CS9144/CS9177 above.
+        var errors = diagnostics
+            .Where(d => d.Severity == DiagnosticSeverity.Error)
+            .ToList();
+        Assert.That(errors, Is.Empty, () =>
+            $"Fixture for '{shape.Name}' does not compile cleanly, so interceptor binding was " +
+            $"never validated and the mismatch assertions above are vacuous: {Describe(errors)}");
 
         // Absence of a mismatch is only meaningful if an interceptor was emitted
         // for the terminal at all — an unintercepted call produces no diagnostic
@@ -238,10 +307,18 @@ public class Service
         var (generatedSources, _) = Run(shape, "TestDbContext", crossContext: false);
         var interceptorSource = string.Concat(generatedSources);
 
-        Assert.That(interceptorSource, Does.Contain("this IQueryBuilder<User, User> builder"),
-            $"'{shape.Name}' no longer emits the two-arity receiver for a chain that never " +
-            "projects. If #329 is fixed, remove this pin and the .Select(...) workarounds " +
-            "in the Postgres/MySql/SqlServer integration suites.");
+        // Scoped to *this terminal's own* declaration. Searching the whole generated text
+        // for the two-arity receiver would keep passing on any unrelated emission that
+        // happens to carry one — and a bug pin that cannot go green when the bug is fixed
+        // is worse than no pin, because the .Select(...) workarounds would outlive it.
+        var declaration = new Regex(
+            $@"\b{Regex.Escape(shape.Terminal)}_\w*\s*\(\s*this\s+IQueryBuilder<\s*User\s*,\s*User\s*>\s+builder",
+            RegexOptions.Singleline);
+
+        Assert.That(declaration.IsMatch(interceptorSource), Is.True,
+            $"'{shape.Name}' no longer declares {shape.Terminal} with the two-arity receiver " +
+            "for a chain that never projects. If #329 is fixed, remove this pin and the " +
+            ".Select(...) workarounds in the Postgres/MySql/SqlServer integration suites.");
     }
 
     private static CSharpParseOptions FixtureParseOptions =>
@@ -295,31 +372,6 @@ public class Service
     private static string Describe(IEnumerable<Diagnostic> diagnostics)
         => string.Join("; ", diagnostics.Select(d => $"{d.Id} {d.GetMessage()}"));
 
-    private static readonly IReadOnlyList<MetadataReference> References = BuildReferences();
-
-    private static IReadOnlyList<MetadataReference> BuildReferences()
-    {
-        var references = new List<MetadataReference>
-        {
-            MetadataReference.CreateFromFile(typeof(Schema).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(System.Data.IDbConnection).Assembly.Location),
-        };
-
-        var runtimeDir = System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory();
-        foreach (var dll in new[]
-        {
-            "System.Runtime.dll", "System.Collections.dll", "System.Linq.dll",
-            "System.Linq.Expressions.dll", "netstandard.dll", "System.Threading.Tasks.dll",
-            // Without this reference the generator's entity-type resolution
-            // degrades to an identity-projection fallback (see #329 notes), which
-            // would make these shapes fail for a reason unrelated to binding.
-            "System.ComponentModel.Primitives.dll",
-        })
-        {
-            references.Add(MetadataReference.CreateFromFile(Path.Combine(runtimeDir, dll)));
-        }
-
-        return references;
-    }
+    private static IReadOnlyList<MetadataReference> References =>
+        Testing.GeneratorTestReferences.All;
 }

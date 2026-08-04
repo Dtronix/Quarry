@@ -2471,6 +2471,14 @@ UPDATE [users] SET [UserName] = 'x', [IsActive] = 0 WHERE [UserId] = 1
 ### Users().Update().Set(...).Where(...).ExecuteNonQueryAsync()
 
 ```sql
+UPDATE [users] SET [UserName] = 'cancelled' WHERE [UserId] = 1
+```
+
+---
+
+### Users().Update().Set(...).Where(...).ExecuteNonQueryAsync()
+
+```sql
 UPDATE [users]{__PATCH_SET__} WHERE [UserId] = 1
 ```
 
@@ -5370,7 +5378,7 @@ WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 599 |
+| Total discovered | 600 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 112 |
-| Rendered | 487 |
+| Rendered | 488 |

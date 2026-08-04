@@ -1006,14 +1006,26 @@ internal class CrossDialectJoinTests
         Assert.That(results[0], Is.EqualTo(("Alice", 250.00m, "Widget", "West Coast Hub")));
         Assert.That(results[1], Is.EqualTo(("Bob", 150.00m, "Widget", "EU Central")));
 
+        // The join carries no top-level ORDER BY, so the real providers are asserted as
+        // an unordered collection — every column of every row is checked without
+        // depending on the server's row order (see the fixture <remarks> and #332).
+        var expected = new[]
+        {
+            ("Alice", 250.00m, "Widget", "West Coast Hub"),
+            ("Bob", 150.00m, "Widget", "EU Central"),
+        };
+
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults, Is.EquivalentTo(expected));
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(2));
+        Assert.That(myResults, Is.EquivalentTo(expected));
 
         var ssResults = await ss.ExecuteFetchAllAsync();
         Assert.That(ssResults, Has.Count.EqualTo(2));
+        Assert.That(ssResults, Is.EquivalentTo(expected));
     }
 
     #endregion
