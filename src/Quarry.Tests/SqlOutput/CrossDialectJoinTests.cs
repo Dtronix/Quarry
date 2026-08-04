@@ -857,23 +857,34 @@ internal class CrossDialectJoinTests
         Assert.That(results[1], Is.EqualTo(("Alice", 75.50m, 325.50m)));
         Assert.That(results[2], Is.EqualTo(("Bob", 150.00m, 150.00m)));
 
+        // Both Alice rows carry the same OrderTotal (325.50), so the aggregate breaks no tie either
+        // -- the real-provider sides have to be order-independent.
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(3));
-        Assert.That(pgResults[0], Is.EqualTo(("Alice", 250.00m, 325.50m)));
-        Assert.That(pgResults[1], Is.EqualTo(("Alice", 75.50m, 325.50m)));
-        Assert.That(pgResults[2], Is.EqualTo(("Bob", 150.00m, 150.00m)));
+        Assert.That(pgResults, Is.EquivalentTo(new[]
+        {
+            ("Alice", 250.00m, 325.50m),
+            ("Alice", 75.50m, 325.50m),
+            ("Bob", 150.00m, 150.00m),
+        }));
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(3));
-        Assert.That(myResults[0], Is.EqualTo(("Alice", 250.00m, 325.50m)));
-        Assert.That(myResults[1], Is.EqualTo(("Alice", 75.50m, 325.50m)));
-        Assert.That(myResults[2], Is.EqualTo(("Bob", 150.00m, 150.00m)));
+        Assert.That(myResults, Is.EquivalentTo(new[]
+        {
+            ("Alice", 250.00m, 325.50m),
+            ("Alice", 75.50m, 325.50m),
+            ("Bob", 150.00m, 150.00m),
+        }));
 
         var ssResults = await ss.ExecuteFetchAllAsync();
         Assert.That(ssResults, Has.Count.EqualTo(3));
-        Assert.That(ssResults[0], Is.EqualTo(("Alice", 250.00m, 325.50m)));
-        Assert.That(ssResults[1], Is.EqualTo(("Alice", 75.50m, 325.50m)));
-        Assert.That(ssResults[2], Is.EqualTo(("Bob", 150.00m, 150.00m)));
+        Assert.That(ssResults, Is.EquivalentTo(new[]
+        {
+            ("Alice", 250.00m, 325.50m),
+            ("Alice", 75.50m, 325.50m),
+            ("Bob", 150.00m, 150.00m),
+        }));
     }
 
     [Test]
@@ -906,23 +917,33 @@ internal class CrossDialectJoinTests
         Assert.That(results[1], Is.EqualTo(("Alice", 75.50m, 2)));
         Assert.That(results[2], Is.EqualTo(("Bob", 150.00m, 1)));
 
+        // Both Alice rows carry the same OrderCount (2), so the aggregate breaks no tie either.
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(3));
-        Assert.That(pgResults[0], Is.EqualTo(("Alice", 250.00m, 2)));
-        Assert.That(pgResults[1], Is.EqualTo(("Alice", 75.50m, 2)));
-        Assert.That(pgResults[2], Is.EqualTo(("Bob", 150.00m, 1)));
+        Assert.That(pgResults, Is.EquivalentTo(new[]
+        {
+            ("Alice", 250.00m, 2),
+            ("Alice", 75.50m, 2),
+            ("Bob", 150.00m, 1),
+        }));
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(3));
-        Assert.That(myResults[0], Is.EqualTo(("Alice", 250.00m, 2)));
-        Assert.That(myResults[1], Is.EqualTo(("Alice", 75.50m, 2)));
-        Assert.That(myResults[2], Is.EqualTo(("Bob", 150.00m, 1)));
+        Assert.That(myResults, Is.EquivalentTo(new[]
+        {
+            ("Alice", 250.00m, 2),
+            ("Alice", 75.50m, 2),
+            ("Bob", 150.00m, 1),
+        }));
 
         var ssResults = await ss.ExecuteFetchAllAsync();
         Assert.That(ssResults, Has.Count.EqualTo(3));
-        Assert.That(ssResults[0], Is.EqualTo(("Alice", 250.00m, 2)));
-        Assert.That(ssResults[1], Is.EqualTo(("Alice", 75.50m, 2)));
-        Assert.That(ssResults[2], Is.EqualTo(("Bob", 150.00m, 1)));
+        Assert.That(ssResults, Is.EquivalentTo(new[]
+        {
+            ("Alice", 250.00m, 2),
+            ("Alice", 75.50m, 2),
+            ("Bob", 150.00m, 1),
+        }));
     }
 
     /// <summary>
@@ -961,23 +982,33 @@ internal class CrossDialectJoinTests
         Assert.That(results[1], Is.EqualTo(("Alice", 75.50m, 2)));
         Assert.That(results[2], Is.EqualTo(("Bob", 150.00m, 1)));
 
+        // Both Alice rows carry the same MaxAddrId (2), so the aggregate breaks no tie either.
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(3));
-        Assert.That(pgResults[0], Is.EqualTo(("Alice", 250.00m, 2)));
-        Assert.That(pgResults[1], Is.EqualTo(("Alice", 75.50m, 2)));
-        Assert.That(pgResults[2], Is.EqualTo(("Bob", 150.00m, 1)));
+        Assert.That(pgResults, Is.EquivalentTo(new[]
+        {
+            ("Alice", 250.00m, 2),
+            ("Alice", 75.50m, 2),
+            ("Bob", 150.00m, 1),
+        }));
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(3));
-        Assert.That(myResults[0], Is.EqualTo(("Alice", 250.00m, 2)));
-        Assert.That(myResults[1], Is.EqualTo(("Alice", 75.50m, 2)));
-        Assert.That(myResults[2], Is.EqualTo(("Bob", 150.00m, 1)));
+        Assert.That(myResults, Is.EquivalentTo(new[]
+        {
+            ("Alice", 250.00m, 2),
+            ("Alice", 75.50m, 2),
+            ("Bob", 150.00m, 1),
+        }));
 
         var ssResults = await ss.ExecuteFetchAllAsync();
         Assert.That(ssResults, Has.Count.EqualTo(3));
-        Assert.That(ssResults[0], Is.EqualTo(("Alice", 250.00m, 2)));
-        Assert.That(ssResults[1], Is.EqualTo(("Alice", 75.50m, 2)));
-        Assert.That(ssResults[2], Is.EqualTo(("Bob", 150.00m, 1)));
+        Assert.That(ssResults, Is.EquivalentTo(new[]
+        {
+            ("Alice", 250.00m, 2),
+            ("Alice", 75.50m, 2),
+            ("Bob", 150.00m, 1),
+        }));
     }
 
     #endregion

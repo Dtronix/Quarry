@@ -104,7 +104,7 @@ value check, which is the point of the projection anyway.
   projection lambda is what carries it. SQLite side stays positional.
   Depends on step 1 only for the tuple-equality confidence it establishes.
 
-- [ ] **3. Aggregate tests → `Is.EquivalentTo`**
+- [x] **3. Aggregate tests → `Is.EquivalentTo`**
   `Select_Joined_Many_Sum_OnLeftTable` (`325.50m`/`325.50m`/`150.00m`),
   `Select_Joined_Many_Count_OnLeftTable` (`2`/`2`/`1`),
   `Select_Joined_HasManyThrough_Max_OnLeftTable` (`2`/`2`/`1`).

@@ -90,6 +90,11 @@ never used` in generated `MyDb.Interceptors.*.g.cs`, and one `NUnit2009` in
   Also worth noting from that output: decimal scale is not part of the comparison (`150.00m`
   renders and compares as `150m`), which is what we want across four providers with different
   decimal type mappings.
+- Three *other* sites in this file still index `pgResults[0]`/`[1]` positionally (around lines 161,
+  556, 1047 post-change) and are **correct as-is** — each is preceded by
+  `.SortedByAsync(r => r.UserName)` over a two-row result whose usernames are distinct (Alice, Bob),
+  which is a genuine total order. Those were handled by the #314 sweep and are out of scope here.
+  Worth knowing so a future sweep doesn't "finish the job" by converting them too.
 - `Assert.That` throws on first failure rather than collecting, so only the first mutated dialect
   block reported. Not a concern for the real assertions, but it means a multi-dialect row-order
   regression would surface one dialect at a time.
