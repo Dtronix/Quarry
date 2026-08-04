@@ -221,7 +221,7 @@ last.
 
 </details>
 
-- [ ] **8. Document the invariant**
+- [x] **8. Document the invariant**
 
   - `src/Quarry/Internal/BatchInsertSqlBuilder.cs` — already covered by step 1's summary.
   - `llm-testing.md` — extend the `InterceptorBindingGuardTests` note near line 229 with the

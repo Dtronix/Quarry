@@ -539,5 +539,31 @@ QRY073 was introduced then retired in v0.3.0 when cross-entity set operations be
 - `DisplayClassEnricherTests` — closure analysis and type resolution tests
 - `DateTimeOffsetIntegrationTests` — GetFieldValue round-trip tests
 - `IncrementalCachingTests` — per-stage run reasons via the tracking names above; also pins the two #310 defects
-- `InterceptorBindingGuardTests` — compiles a matrix of chain shapes in isolated compilations and asserts no CS8785/CS9144/CS9177 plus that the terminal's interceptor was actually emitted. Do **not** rely on a synthetic compilation to surface a terminal receiver-arity mismatch: the same shape that is a hard CS9144 in the full test project raises nothing in isolation, so assert on the emitted interceptor text instead
+- `InterceptorBindingGuardTests` — compiles a matrix of chain shapes in isolated compilations and asserts no CS8785/CS9144/CS9177/CS0122 plus that the terminal's interceptor was actually emitted. Do **not** rely on a synthetic compilation to surface a terminal receiver-arity mismatch: the same shape that is a hard CS9144 in the full test project raises nothing in isolation, so assert on the emitted interceptor text instead. This is also the repo's only **non-friend** compilation — see the accessibility rule below
 - `IR/PipelineModelEqualityTests` — negative equality + hash consistency for `EntityRegistry`, `AssembledPlan`, `CarrierPlan`, `FileInterceptorGroup`. These implement `IEquatable<T>` by hand and are what gates incremental caching, so a dropped field comparison silently degrades every downstream stage
+
+### Emitted code may name only `public` types and members
+
+Generated interceptors are compiled into the **consumer's** assembly. Every Quarry type, method and
+constructor they reference is therefore part of the public API contract, whether or not it is
+documented as such. An `internal` one compiles fine here and fails for every real consumer.
+
+**Nothing about the ordinary build catches this.** All seven `InternalsVisibleTo` grants
+(`Quarry.csproj`) cover every project in the solution, so `Quarry.Tests`, `Quarry.Benchmarks` and the
+samples are all friend assemblies. `InterceptorBindingGuardTests` is the only non-friend compilation
+in the repo, which makes its shape matrix the sole coverage for this class of defect. **When adding
+an emitter path, add a shape for it** — and add a `RuntimeHelperExpectations` entry pinning the
+helper the shape is supposed to reach, or the shape can silently stop exercising it and still pass.
+
+`Quarry.Internal` is not a licence: it deliberately mixes the public emitted surface
+(`BatchInsertSqlBuilder`, `ThrowHelper`, `CollectionHelper`, `CollectionSqlCache`, `ParameterNames`,
+`QueryExecutor`, `OpId` — all `public` + `[EditorBrowsable(Never)]`) with genuinely internal
+runtime-private helpers (`ScalarConverter`, called only from `QueryExecutor`). Accessibility is
+therefore established by compiling, not by namespace convention.
+
+Two failure signatures, both from #334:
+
+| Diagnostic | Means |
+|---|---|
+| `CS0122 'X' is inaccessible` | emitted code named an `internal` **type** |
+| `CS1729 'X' does not contain a constructor that takes N arguments` | that type's only **constructor** is `internal`, so it is not a candidate at all — *not* an emitter arity bug |
