@@ -313,6 +313,41 @@ public class TestService
     }
 
     [Test]
+    public async Task QRY042_Cte_NoDiagnostic()
+    {
+        // CTEs parse into an AST as of #331 but are not yet convertible.
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(
+            ""WITH recent AS (SELECT UserId FROM users) SELECT UserId FROM recent"");
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Is.Empty);
+    }
+
+    [Test]
+    public async Task QRY042_CteOverConvertibleOuterQuery_NoDiagnostic()
+    {
+        // The outer SELECT on its own is convertible, so without the CTE guard the
+        // converter would offer a chain conversion that silently drops the WITH clause.
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(
+            ""WITH recent AS (SELECT UserId FROM orders) SELECT UserId, UserName FROM users"");
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Is.Empty);
+    }
+
+    [Test]
     public async Task QRY042_CaseExpression_NoDiagnostic()
     {
         var source = ContextAndSchemaPrefix + @"

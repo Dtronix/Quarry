@@ -193,12 +193,22 @@ internal sealed class SqlParser
             return new SqlParseResult(null, _diagnostics, _hasUnsupported);
         }
 
-        // CTE detection: WITH ... AS
+        // Leading WITH clause: WITH [RECURSIVE] name [(col, ...)] AS ( query ) [, ...]
+        List<SqlCommonTableExpression>? ctes = null;
+        var isRecursive = false;
         if (Check(SqlTokenKind.With))
         {
-            _hasUnsupported = true;
-            AddDiagnostic("CTEs (WITH ... AS) are not yet supported");
-            return new SqlParseResult(null, _diagnostics, true);
+            ctes = ParseWithClause(out isRecursive);
+
+            // CTEs are only attached to SELECT. Data-modifying CTEs (WITH ... UPDATE) are
+            // valid in PostgreSQL but no consumer can act on them, so they keep the
+            // pre-existing "unsupported" behaviour rather than growing AST surface.
+            if (!Check(SqlTokenKind.Select))
+            {
+                _hasUnsupported = true;
+                AddDiagnostic("CTEs (WITH ... AS) are only supported on SELECT statements");
+                return new SqlParseResult(null, _diagnostics, true);
+            }
         }
 
         // Dispatch by statement type
@@ -206,7 +216,7 @@ internal sealed class SqlParser
         switch (Current.Kind)
         {
             case SqlTokenKind.Select:
-                stmt = ParseSelectStatement();
+                stmt = ParseSelectStatement(ctes, isRecursive);
                 break;
             case SqlTokenKind.Delete:
                 stmt = ParseDeleteStatement();
@@ -241,9 +251,116 @@ internal sealed class SqlParser
         return new SqlParseResult(stmt, _diagnostics, _hasUnsupported);
     }
 
+    // ─── WITH clause / CTEs ──────────────────────────────
+
+    /// <summary>
+    /// Parses <c>WITH [RECURSIVE] name [(col, …)] AS ( query ) [, …]</c>, leaving the
+    /// position on the statement the clause introduces.
+    /// </summary>
+    private List<SqlCommonTableExpression> ParseWithClause(out bool isRecursive)
+    {
+        Expect(SqlTokenKind.With);
+        isRecursive = Match(SqlTokenKind.Recursive);
+
+        var ctes = new List<SqlCommonTableExpression>();
+        do
+        {
+            ctes.Add(ParseCte());
+        }
+        while (Match(SqlTokenKind.Comma));
+
+        return ctes;
+    }
+
+    private SqlCommonTableExpression ParseCte()
+    {
+        var name = ReadIdentifierName();
+
+        // Optional explicit column list: name (a, b, c) AS (...)
+        List<string>? columnNames = null;
+        if (Match(SqlTokenKind.OpenParen))
+        {
+            columnNames = new List<string>();
+            do
+            {
+                columnNames.Add(ReadIdentifierName());
+            }
+            while (Match(SqlTokenKind.Comma));
+            Expect(SqlTokenKind.CloseParen);
+        }
+
+        Expect(SqlTokenKind.As);
+        Expect(SqlTokenKind.OpenParen);
+        var query = ParseCteBody();
+        Expect(SqlTokenKind.CloseParen);
+
+        return new SqlCommonTableExpression(name, columnNames, query);
+    }
+
+    /// <summary>
+    /// Parses a CTE body: a SELECT, optionally combined with further SELECTs by set
+    /// operators. Set operations are represented in the AST only here — a top-level
+    /// UNION keeps its "unsupported" treatment in <see cref="ParseRoot"/>, because
+    /// enabling it would change behaviour for queries unrelated to CTEs.
+    /// </summary>
+    private SqlStatement ParseCteBody()
+    {
+        SqlStatement left = ParseCteBranch();
+
+        while (TryParseSetOperator(out var op))
+            left = new SqlSetOperationStatement(left, op, ParseCteBranch());
+
+        return left;
+    }
+
+    /// <summary>
+    /// Parses one branch of a CTE body. Each branch may be parenthesised on its own:
+    /// <c>(SELECT …) UNION ALL (SELECT …)</c>.
+    /// </summary>
+    private SqlSelectStatement ParseCteBranch()
+    {
+        if (!Check(SqlTokenKind.OpenParen))
+            return ParseSelectStatement();
+
+        Advance(); // (
+        var select = ParseSelectStatement();
+        Expect(SqlTokenKind.CloseParen);
+        return select;
+    }
+
+    /// <summary>
+    /// Consumes a set operator and its optional ALL modifier, if one is next.
+    /// </summary>
+    private bool TryParseSetOperator(out SqlSetOperator op)
+    {
+        if (Check(SqlTokenKind.Union))
+        {
+            Advance();
+            op = Match(SqlTokenKind.All) ? SqlSetOperator.UnionAll : SqlSetOperator.Union;
+            return true;
+        }
+        if (Check(SqlTokenKind.Intersect))
+        {
+            Advance();
+            op = Match(SqlTokenKind.All) ? SqlSetOperator.IntersectAll : SqlSetOperator.Intersect;
+            return true;
+        }
+        if (Check(SqlTokenKind.Except))
+        {
+            Advance();
+            op = Match(SqlTokenKind.All) ? SqlSetOperator.ExceptAll : SqlSetOperator.Except;
+            return true;
+        }
+
+        op = default;
+        return false;
+    }
+
     // ─── SELECT statement ────────────────────────────────
 
-    private SqlSelectStatement ParseSelectStatement()
+    private SqlSelectStatement ParseSelectStatement(
+        IReadOnlyList<SqlCommonTableExpression>? ctes = null,
+        bool isRecursive = false)
     {
         Expect(SqlTokenKind.Select);
 
@@ -305,7 +422,8 @@ internal sealed class SqlParser
 
         return new SqlSelectStatement(
             isDistinct, columns, from, joins,
-            where, groupBy, having, orderBy, limit, offset);
+            where, groupBy, having, orderBy, limit, offset,
+            ctes, isRecursive);
     }
 
     // ─── DELETE statement ────────────────────────────────

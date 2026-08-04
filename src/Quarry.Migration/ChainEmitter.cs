@@ -55,6 +55,17 @@ internal sealed class ChainEmitter
 
     private ConversionResult TranslateSelect(SqlSelectStatement stmt, DapperCallSite callSite)
     {
+        // CTE queries parse into an AST as of #331, but nothing below understands a WITH
+        // clause yet — emitting a chain here would silently drop it and produce code that
+        // does not match the SQL. Reject until CTE emission lands.
+        if (stmt.Ctes != null)
+        {
+            _diagnostics.Add(new ConversionDiagnostic(
+                ConversionDiagnosticSeverity.Error,
+                "CTEs (WITH ... AS) are not yet convertible to a chain query"));
+            return new ConversionResult(callSite.Sql, null, _diagnostics);
+        }
+
         var sb = new StringBuilder();
 
         // FROM → db.Entity()

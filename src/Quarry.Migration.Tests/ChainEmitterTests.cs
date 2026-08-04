@@ -859,4 +859,39 @@ public class ChainEmitterTests
 
         Assert.That(result.ChainCode, Is.Null);
     }
+
+    // ─── CTEs (#331) ───────────────────────────────────────
+
+    [Test]
+    public void Cte_NotYetConvertible_ReturnsNullWithDiagnostic()
+    {
+        var schema = BuildSchemaMap(UsersEntity(), OrdersEntity());
+        var sql = "WITH recent AS (SELECT user_id FROM orders WHERE total > 100) SELECT user_id FROM recent";
+        var parseResult = SqlParser.Parse(sql, SqlDialect.SQLite);
+        var callSite = FakeCallSite(sql);
+
+        var emitter = new ChainEmitter(schema);
+        var result = emitter.Translate(parseResult, callSite);
+
+        Assert.That(result.ChainCode, Is.Null);
+        Assert.That(result.Diagnostics, Has.Some.Matches<ConversionDiagnostic>(d =>
+            d.Message.Contains("CTEs")));
+    }
+
+    [Test]
+    public void Cte_OuterQueryOverRealTable_IsNotSilentlyDropped()
+    {
+        // The regression this guard exists for: the outer SELECT alone is perfectly
+        // convertible, so without the CTE check the emitter would emit a chain for it and
+        // discard the WITH clause entirely, producing code that does not match the SQL.
+        var schema = BuildSchemaMap(UsersEntity(), OrdersEntity());
+        var sql = "WITH recent AS (SELECT user_id FROM orders) SELECT user_id, user_name FROM users";
+        var parseResult = SqlParser.Parse(sql, SqlDialect.SQLite);
+        var callSite = FakeCallSite(sql);
+
+        var emitter = new ChainEmitter(schema);
+        var result = emitter.Translate(parseResult, callSite);
+
+        Assert.That(result.ChainCode, Is.Null);
+    }
 }

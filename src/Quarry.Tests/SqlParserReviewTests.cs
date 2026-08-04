@@ -103,9 +103,11 @@ public class SqlParserReviewTests
     // ─── T5: Diagnostic message quality ──────────────────
 
     [Test]
-    public void Parse_CteError_HasActionableMessage()
+    public void Parse_CteOnDmlError_HasActionableMessage()
     {
-        var result = Parse("WITH cte AS (SELECT 1) SELECT * FROM cte");
+        // CTEs on SELECT parse as of #331; a data-modifying CTE is the remaining
+        // unsupported form, and its diagnostic must still name the construct.
+        var result = Parse("WITH cte AS (SELECT 1) UPDATE t SET a = 1");
         Assert.That(result.Diagnostics, Has.Count.GreaterThan(0));
         Assert.That(result.Diagnostics[0].Message, Does.Contain("CTEs"));
         Assert.That(result.Diagnostics[0].Message, Does.Contain("WITH"));
@@ -238,6 +240,52 @@ public class SqlParserReviewTests
         Assert.That(result.Success, Is.True);
         var parameters = SqlNodeWalker.FindAll<SqlParameter>(result.SelectStatement!);
         Assert.That(parameters, Has.Count.EqualTo(3));
+    }
+
+    [Test]
+    public void Walker_WalksIntoCteBodies()
+    {
+        var result = Parse("WITH c AS (SELECT a FROM inner_t WHERE x = @p1) SELECT b FROM c WHERE y = @p2");
+        Assert.That(result.Success, Is.True);
+
+        // The CTE body's table and both parameters must be reachable from the outer statement.
+        var tables = SqlNodeWalker.FindAll<SqlTableSource>(result.SelectStatement!);
+        Assert.That(tables.ConvertAll(t => t.TableName), Does.Contain("inner_t"));
+
+        var parameters = SqlNodeWalker.FindAll<SqlParameter>(result.SelectStatement!);
+        Assert.That(parameters, Has.Count.EqualTo(2));
+    }
+
+    [Test]
+    public void Walker_WalksIntoSetOperationBranches()
+    {
+        var result = Parse(
+            "WITH c AS (SELECT a FROM t1 WHERE x = @p1 UNION ALL SELECT b FROM t2 WHERE y = @p2) SELECT * FROM c");
+        Assert.That(result.Success, Is.True);
+
+        var tables = SqlNodeWalker.FindAll<SqlTableSource>(result.SelectStatement!);
+        var names = tables.ConvertAll(t => t.TableName);
+        Assert.That(names, Does.Contain("t1"));
+        Assert.That(names, Does.Contain("t2"));
+
+        var parameters = SqlNodeWalker.FindAll<SqlParameter>(result.SelectStatement!);
+        Assert.That(parameters, Has.Count.EqualTo(2));
+    }
+
+    [Test]
+    public void CommonTableExpression_HasNodeKind()
+    {
+        var result = Parse("WITH c AS (SELECT 1) SELECT * FROM c");
+        Assert.That(result.SelectStatement!.Ctes![0].NodeKind,
+            Is.EqualTo(SqlNodeKind.CommonTableExpression));
+    }
+
+    [Test]
+    public void SetOperation_HasNodeKind()
+    {
+        var result = Parse("WITH c AS (SELECT a FROM t UNION SELECT b FROM u) SELECT * FROM c");
+        Assert.That(result.SelectStatement!.Ctes![0].Query.NodeKind,
+            Is.EqualTo(SqlNodeKind.SetOperation));
     }
 
     // ─── A5: Source positions on nodes ───────────────────

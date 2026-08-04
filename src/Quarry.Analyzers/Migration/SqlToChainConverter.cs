@@ -37,6 +37,12 @@ internal sealed class SqlToChainConverter
     /// </summary>
     public string? CheckConvertibility(SqlSelectStatement stmt)
     {
+        // CTE queries parse into an AST as of #331, but nothing below understands a WITH
+        // clause yet — converting one here would silently drop it and emit a chain that
+        // does not match the SQL. Reject until CTE emission lands.
+        if (stmt.Ctes != null)
+            return "CTEs (WITH ... AS) are not yet convertible to a chain query";
+
         // Must have a FROM clause
         if (stmt.From == null)
             return "No FROM clause";

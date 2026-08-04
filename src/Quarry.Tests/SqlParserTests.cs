@@ -497,14 +497,214 @@ public class SqlParserTests
         Assert.That(or.Operator, Is.EqualTo(SqlBinaryOp.Or));
     }
 
+    // ─── CTEs (WITH ... AS) ──────────────────────────────
+
+    [Test]
+    public void Parse_Cte_BodyIsNestedSelect()
+    {
+        var result = Parse("WITH recent AS (SELECT id, total FROM orders WHERE total > 100) SELECT id FROM recent");
+        Assert.That(result.Success, Is.True);
+
+        var cte = result.SelectStatement!.Ctes![0];
+        var body = (SqlSelectStatement)cte.Query;
+        Assert.That(body.Columns, Has.Count.EqualTo(2));
+        Assert.That(body.From!.TableName, Is.EqualTo("orders"));
+        Assert.That(body.Where, Is.Not.Null);
+    }
+
+    [Test]
+    public void Parse_Cte_MultipleInSourceOrder()
+    {
+        var result = Parse("WITH a AS (SELECT 1), b AS (SELECT 2), c AS (SELECT 3) SELECT * FROM c");
+        Assert.That(result.Success, Is.True);
+
+        var ctes = result.SelectStatement!.Ctes!;
+        Assert.That(ctes, Has.Count.EqualTo(3));
+        Assert.That(ctes[0].Name, Is.EqualTo("a"));
+        Assert.That(ctes[1].Name, Is.EqualTo("b"));
+        Assert.That(ctes[2].Name, Is.EqualTo("c"));
+    }
+
+    [Test]
+    public void Parse_Cte_ExplicitColumnList()
+    {
+        var result = Parse("WITH t(x, y) AS (SELECT a, b FROM src) SELECT x FROM t");
+        Assert.That(result.Success, Is.True);
+
+        var cte = result.SelectStatement!.Ctes![0];
+        Assert.That(cte.ColumnNames, Is.EqualTo(new[] { "x", "y" }));
+    }
+
+    [Test]
+    public void Parse_Cte_OmittedColumnListIsNull()
+    {
+        var result = Parse("WITH t AS (SELECT a FROM src) SELECT a FROM t");
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.SelectStatement!.Ctes![0].ColumnNames, Is.Null);
+    }
+
+    [Test]
+    public void Parse_Cte_QuotedName()
+    {
+        var result = Parse("WITH \"my cte\" AS (SELECT 1) SELECT * FROM \"my cte\"");
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.SelectStatement!.Ctes![0].Name, Is.EqualTo("my cte"));
+    }
+
+    [Test]
+    public void Parse_Cte_OuterClausesStillParse()
+    {
+        var result = Parse(
+            "WITH c AS (SELECT id FROM t) SELECT id FROM c WHERE id > 5 ORDER BY id DESC LIMIT 10");
+        Assert.That(result.Success, Is.True);
+
+        var stmt = result.SelectStatement!;
+        Assert.That(stmt.Ctes, Has.Count.EqualTo(1));
+        Assert.That(stmt.Where, Is.Not.Null);
+        Assert.That(stmt.OrderBy, Has.Count.EqualTo(1));
+        Assert.That(stmt.OrderBy![0].IsDescending, Is.True);
+        Assert.That(stmt.Limit, Is.Not.Null);
+    }
+
+    [Test]
+    public void Parse_Cte_JoinedInOuterQuery()
+    {
+        var result = Parse(
+            "WITH c AS (SELECT user_id FROM orders) SELECT u.name FROM users u JOIN c ON u.id = c.user_id");
+        Assert.That(result.Success, Is.True);
+
+        var stmt = result.SelectStatement!;
+        Assert.That(stmt.From!.TableName, Is.EqualTo("users"));
+        Assert.That(stmt.Joins, Has.Count.EqualTo(1));
+        Assert.That(stmt.Joins[0].Table.TableName, Is.EqualTo("c"));
+    }
+
+    // ─── Recursive CTEs and set-operation bodies ─────────
+
+    [Test]
+    public void Parse_RecursiveCte_UnionAllBody()
+    {
+        var result = Parse(
+            "WITH RECURSIVE nums(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM nums WHERE n < 10) SELECT n FROM nums");
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.HasUnsupported, Is.False);
+
+        var stmt = result.SelectStatement!;
+        Assert.That(stmt.IsRecursive, Is.True);
+
+        var setOp = (SqlSetOperationStatement)stmt.Ctes![0].Query;
+        Assert.That(setOp.Operator, Is.EqualTo(SqlSetOperator.UnionAll));
+        Assert.That(setOp.Left, Is.TypeOf<SqlSelectStatement>());
+        Assert.That(((SqlSelectStatement)setOp.Right).From!.TableName, Is.EqualTo("nums"));
+    }
+
+    [Test]
+    public void Parse_Cte_SetOperatorsAndAllModifier()
+    {
+        var cases = new (string Sql, SqlSetOperator Expected)[]
+        {
+            ("WITH c AS (SELECT a FROM t UNION SELECT b FROM u) SELECT * FROM c", SqlSetOperator.Union),
+            ("WITH c AS (SELECT a FROM t UNION ALL SELECT b FROM u) SELECT * FROM c", SqlSetOperator.UnionAll),
+            ("WITH c AS (SELECT a FROM t INTERSECT SELECT b FROM u) SELECT * FROM c", SqlSetOperator.Intersect),
+            ("WITH c AS (SELECT a FROM t INTERSECT ALL SELECT b FROM u) SELECT * FROM c", SqlSetOperator.IntersectAll),
+            ("WITH c AS (SELECT a FROM t EXCEPT SELECT b FROM u) SELECT * FROM c", SqlSetOperator.Except),
+            ("WITH c AS (SELECT a FROM t EXCEPT ALL SELECT b FROM u) SELECT * FROM c", SqlSetOperator.ExceptAll),
+        };
+
+        foreach (var (sql, expected) in cases)
+        {
+            var result = Parse(sql);
+            Assert.That(result.Success, Is.True, sql);
+            var setOp = (SqlSetOperationStatement)result.SelectStatement!.Ctes![0].Query;
+            Assert.That(setOp.Operator, Is.EqualTo(expected), sql);
+        }
+    }
+
+    [Test]
+    public void Parse_Cte_ChainedSetOperationsNestLeftAssociatively()
+    {
+        var result = Parse(
+            "WITH c AS (SELECT a FROM t UNION SELECT b FROM u UNION SELECT d FROM v) SELECT * FROM c");
+        Assert.That(result.Success, Is.True);
+
+        // (t UNION u) UNION v
+        var outer = (SqlSetOperationStatement)result.SelectStatement!.Ctes![0].Query;
+        Assert.That(((SqlSelectStatement)outer.Right).From!.TableName, Is.EqualTo("v"));
+        var inner = (SqlSetOperationStatement)outer.Left;
+        Assert.That(((SqlSelectStatement)inner.Left).From!.TableName, Is.EqualTo("t"));
+        Assert.That(((SqlSelectStatement)inner.Right).From!.TableName, Is.EqualTo("u"));
+    }
+
+    [Test]
+    public void Parse_Cte_ParenthesisedBranches()
+    {
+        var result = Parse("WITH c AS ((SELECT a FROM t) UNION ALL (SELECT b FROM u)) SELECT * FROM c");
+        Assert.That(result.Success, Is.True);
+
+        var setOp = (SqlSetOperationStatement)result.SelectStatement!.Ctes![0].Query;
+        Assert.That(setOp.Operator, Is.EqualTo(SqlSetOperator.UnionAll));
+        Assert.That(((SqlSelectStatement)setOp.Left).From!.TableName, Is.EqualTo("t"));
+        Assert.That(((SqlSelectStatement)setOp.Right).From!.TableName, Is.EqualTo("u"));
+    }
+
+    [Test]
+    public void Parse_TopLevelSetOperation_StillUnsupportedAfterCte()
+    {
+        // Set operations are represented in the AST only inside CTE bodies (issue #331,
+        // decision D5). A top-level UNION keeps its pre-existing treatment.
+        var result = Parse("WITH c AS (SELECT a FROM t) SELECT a FROM c UNION SELECT b FROM u");
+        Assert.That(result.HasUnsupported, Is.True);
+    }
+
+    // ─── CTE error recovery ──────────────────────────────
+
+    [Test]
+    public void Parse_Cte_OnDmlStatement_Rejected()
+    {
+        var result = Parse("WITH c AS (SELECT 1) DELETE FROM t WHERE a = 1");
+        Assert.That(result.Statement, Is.Null);
+        Assert.That(result.HasUnsupported, Is.True);
+        Assert.That(result.Diagnostics, Has.Count.GreaterThan(0));
+    }
+
+    [Test]
+    public void Parse_Cte_MissingAs_HasDiagnostics()
+    {
+        var result = Parse("WITH c (SELECT 1) SELECT * FROM c");
+        Assert.That(result.Diagnostics, Has.Count.GreaterThan(0));
+    }
+
+    [Test]
+    public void Parse_Cte_MissingCloseParen_HasDiagnostics()
+    {
+        var result = Parse("WITH c AS (SELECT 1 SELECT * FROM c");
+        Assert.That(result.Diagnostics, Has.Count.GreaterThan(0));
+    }
+
+    [Test]
+    public void Parse_Cte_UnterminatedWithClause_Terminates()
+    {
+        // Must not spin: Expect() advances past unexpected tokens to guarantee progress.
+        var result = Parse("WITH");
+        Assert.That(result.Diagnostics, Has.Count.GreaterThan(0));
+    }
+
     // ─── Unsupported constructs ──────────────────────────
 
     [Test]
-    public void Parse_CTE_MarkedAsUnsupported()
+    public void Parse_CTE_NowSupported()
     {
+        // Was rejected outright before #331. A fully-parsed CTE must leave HasUnsupported
+        // false — that flag is what gates RawSqlColumnResolver's hardcoded-ordinal path.
         var result = Parse("WITH cte AS (SELECT 1) SELECT * FROM cte");
-        Assert.That(result.HasUnsupported, Is.True);
-        Assert.That(result.Statement, Is.Null);
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.HasUnsupported, Is.False);
+
+        var stmt = result.SelectStatement!;
+        Assert.That(stmt.Ctes, Has.Count.EqualTo(1));
+        Assert.That(stmt.Ctes![0].Name, Is.EqualTo("cte"));
+        Assert.That(stmt.IsRecursive, Is.False);
+        Assert.That(stmt.From!.TableName, Is.EqualTo("cte"));
     }
 
     [Test]
