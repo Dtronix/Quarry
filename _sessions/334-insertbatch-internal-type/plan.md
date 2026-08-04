@@ -171,7 +171,12 @@ last.
 
   *Tests:* as above, via `Shape_BindsWithoutInterceptorMismatch`.
 
-- [ ] **6. Add raw-SQL shapes**
+- [x] **6. Add raw-SQL shapes**
+
+  *Deviation:* `RawSql_NonQuery` dropped — `RawSqlNonQueryAsync` is never intercepted, so it has no
+  emitted surface. Also required adding `Quarry.Generated` to the fixture's `InterceptorsNamespaces`,
+  since raw-SQL interceptors are emitted there rather than into the context's namespace.
+
 
   `RawSqlBodyEmitter` is a wholly separate emission path with its own reader-strategy branches
   (static lambda for literal SQL vs. `file struct IRowReader<T>` fallback), and it is currently

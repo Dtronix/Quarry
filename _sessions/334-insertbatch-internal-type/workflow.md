@@ -233,6 +233,23 @@ Take-away for anyone extending the matrix: **add the expectation entry at the sa
 shape.** Without it there is no signal distinguishing "this shape guards the helper" from "this
 shape happens to compile", and the latter looks identical in a green run.
 
+### 2026-08-04 — Step 6: two facts about raw SQL that are not obvious from the source
+
+1. **Raw-SQL interceptors are emitted into `Quarry.Generated`, not the context's namespace.** Chain
+   interceptors go to the context namespace, so the fixture's `InterceptorsNamespaces` feature only
+   listed `TestApp;TestApp.Sub` and the first raw-SQL shape failed with `CS9137` ("the 'interceptors'
+   feature is not enabled in this namespace"). Added `Quarry.Generated` to the list. This is not
+   loosening the fixture — real consumers get exactly that namespace registered automatically by the
+   build targets Quarry ships (`src/Quarry/build/**`, wired at `Quarry.csproj:32-36`), so the fixture
+   now matches an ordinary consumer's project more closely than before.
+
+2. **`RawSqlNonQueryAsync` is never intercepted.** Only `RawSqlAsync` and `RawSqlScalarAsync` have an
+   `InterceptorKind` (`InterceptorRouter.cs:74-75`, `FileEmitter.cs:875-886`); `RawSqlNonQueryAsync`
+   is a plain public method on `QuarryContext` (`Context/QuarryContext.cs:230`). It emits nothing
+   into the consumer's assembly, so there is no emitted surface to guard and the shape was dropped.
+   `llm.md:279-289` lists all three together under "Raw SQL", which makes it easy to assume all three
+   are generated — they are not.
+
 ## Suspend State
 
 ## Session Log

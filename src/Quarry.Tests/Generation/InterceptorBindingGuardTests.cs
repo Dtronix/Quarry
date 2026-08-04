@@ -89,6 +89,14 @@ public class OrderSchema : Schema
     public One<UserSchema> User { get; }
 }
 
+// Row shape for the RawSqlAsync shapes: concrete class, parameterless ctor, public get/set
+// properties — the materializability contract QRY043 enforces.
+public class UserRow
+{
+    public int UserId { get; set; }
+    public string UserName { get; set; } = null!;
+}
+
 [QuarryContext(Dialect = SqlDialect.SQLite)]
 public partial class TestDbContext : QuarryContext
 {
@@ -271,6 +279,23 @@ public class Service
             ".ExecuteFetchAllAsync();"),
     };
 
+    // ── Raw SQL ──────────────────────────────────────────────────────────────
+    // RawSqlBodyEmitter is a wholly separate emission path from the chain emitters,
+    // with its own reader strategies, and had no non-friend coverage at all.
+
+    private static readonly Shape[] RawSqlShapes =
+    {
+        new("RawSql_FetchAll", "RawSqlAsync",
+            "await foreach (var r in db.RawSqlAsync<UserRow>(\"SELECT UserId, UserName FROM users\"))" +
+            " { _ = r; }"),
+        new("RawSql_Scalar", "RawSqlScalarAsync",
+            "await db.RawSqlScalarAsync<int>(\"SELECT COUNT(*) FROM users\");"),
+        // RawSqlNonQueryAsync is deliberately absent: only RawSqlAsync and RawSqlScalarAsync have
+        // an InterceptorKind (see InterceptorRouter.cs:74-75). RawSqlNonQueryAsync is an ordinary
+        // public method on QuarryContext that is never intercepted, so it emits nothing into the
+        // consumer's assembly and has no emitted-surface accessibility risk to guard.
+    };
+
     // ── Modification terminals ───────────────────────────────────────────────
 
     private static readonly Shape[] ModificationShapes =
@@ -290,6 +315,7 @@ public class Service
             .Concat(GenericTerminalShapes)
             .Concat(JoinShapes)
             .Concat(RuntimeHelperShapes)
+            .Concat(RawSqlShapes)
             .Concat(ModificationShapes);
 
     public static IEnumerable<Shape> EntityTerminalOnlyShapes => EntityTerminalShapes;
@@ -512,7 +538,13 @@ public class Probe
         new CSharpParseOptions(LanguageVersion.Latest)
             .WithFeatures(new[]
             {
-                new KeyValuePair<string, string>("InterceptorsNamespaces", "TestApp;TestApp.Sub"),
+                // Chain interceptors land in the context's own namespace; raw-SQL interceptors land
+                // in Quarry.Generated. Real consumers get the latter registered automatically by
+                // the build targets Quarry ships (src/Quarry/build/**, see Quarry.csproj), so
+                // enabling it here matches an ordinary consumer's project rather than relaxing the
+                // fixture.
+                new KeyValuePair<string, string>(
+                    "InterceptorsNamespaces", "TestApp;TestApp.Sub;Quarry.Generated"),
             });
 
     private static (IReadOnlyList<string> GeneratedSources, IReadOnlyList<Diagnostic> Diagnostics) Run(
