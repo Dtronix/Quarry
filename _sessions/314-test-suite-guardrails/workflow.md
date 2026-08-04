@@ -5,10 +5,10 @@ platform: github
 base-branch: master
 
 ## State
-phase: REMEDIATE
+phase: FINALIZE
 status: active
 issue: #314
-pr:
+pr: #335
 
 ## Problem Statement
 Issue #314 — Test suite guardrails, from the 2026-07-07 multi-agent deep review (tests perspective, grade B+). Seven findings plus bundled low items:
@@ -426,3 +426,4 @@ into REVIEW are listed below.)_
 | 2026-08-03 | IMPLEMENT | Steps 11, 14, 12 done. 11: 87 sites swept in Select/Subquery/Join; found two clusters sorting cannot fix (9 JoinTests encoding order via an unprojected column, 4 LIMIT/OFFSET pagination tests) → deferred to 13b. 14: alert-only benchmark regression gate, jq dry-run verified. 12: 27 sites in Where/Cte/WideTuple; WideTuple and SetOperation needed nothing. Suite 3484/201/146 green. Suspended per ≥3-step check; branch pushed. |
 | 2026-08-03 | IMPLEMENT (resumed) | Resumed same-session from suspend at step 13/15 (baseline still green from the pre-suspend full run). |
 | 2026-08-03 | IMPLEMENT→REVIEW | Steps 13 and 15 done, all 15 complete. 13a: 31 sites across the remaining 21 files (16 needed nothing). 13b: six query-side ORDER BY fixes; nine unfixable JoinTests filed as #332 per user decision, with a `<remarks>` pointer in the fixture; manifest goldens regenerated. 15: full suite 3484/201/146 green; llm-testing.md and generator llm.md updated. → REVIEW. |
+| 2026-08-03 | REVIEW→REMEDIATE→FINALIZE | Rebased onto origin/master (manifest goldens conflicted — resolved by rebuild, `4edf182`). Analysis pass: 34 findings, 0H/12M/22L. Classified 15A/12B/0C/7D (user: C→A, ignore F16). All A and B items implemented. The F19 fix (assert guard fixtures compile cleanly) found #334 — InsertBatch interceptors reference an internal type, so the feature does not compile for consumers outside InternalsVisibleTo; pinned. Also filed #333. Suite 3501/201/146 green; PR #335 opened; CI green. |
