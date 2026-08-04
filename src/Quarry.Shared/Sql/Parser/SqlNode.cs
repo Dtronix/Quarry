@@ -39,6 +39,19 @@ internal enum SqlNodeKind
     UpdateStatement,
     InsertStatement,
     Assignment,
+    CommonTableExpression,
+    SetOperation,
+}
+
+/// <summary>Set operation kinds combining two queries.</summary>
+internal enum SqlSetOperator
+{
+    Union,
+    UnionAll,
+    Intersect,
+    IntersectAll,
+    Except,
+    ExceptAll,
 }
 
 /// <summary>Binary operator kinds.</summary>
@@ -132,6 +145,19 @@ internal sealed class SqlSelectStatement : SqlStatement
     public SqlExpr? Limit { get; }
     public SqlExpr? Offset { get; }
 
+    /// <summary>
+    /// Common table expressions declared by a leading <c>WITH</c> clause, or null when
+    /// the statement has none. The list is in source order; a later CTE may reference an
+    /// earlier one by name.
+    /// </summary>
+    public IReadOnlyList<SqlCommonTableExpression>? Ctes { get; }
+
+    /// <summary>
+    /// True when the <c>WITH</c> clause was written <c>WITH RECURSIVE</c>. The flag belongs
+    /// to the clause as a whole, not to an individual CTE, matching standard SQL.
+    /// </summary>
+    public bool IsRecursive { get; }
+
     public SqlSelectStatement(
         bool isDistinct,
         IReadOnlyList<SqlNode> columns,
@@ -142,7 +168,9 @@ internal sealed class SqlSelectStatement : SqlStatement
         SqlExpr? having,
         IReadOnlyList<SqlOrderTerm>? orderBy,
         SqlExpr? limit,
-        SqlExpr? offset)
+        SqlExpr? offset,
+        IReadOnlyList<SqlCommonTableExpression>? ctes = null,
+        bool isRecursive = false)
     {
         IsDistinct = isDistinct;
         Columns = columns;
@@ -154,6 +182,58 @@ internal sealed class SqlSelectStatement : SqlStatement
         OrderBy = orderBy;
         Limit = limit;
         Offset = offset;
+        Ctes = ctes;
+        IsRecursive = isRecursive;
+    }
+}
+
+/// <summary>
+/// A single common table expression: <c>name [(col, …)] AS ( query )</c>.
+/// </summary>
+internal sealed class SqlCommonTableExpression : SqlNode
+{
+    public override SqlNodeKind NodeKind => SqlNodeKind.CommonTableExpression;
+
+    /// <summary>The CTE name, as written (quotes stripped).</summary>
+    public string Name { get; }
+
+    /// <summary>
+    /// The explicit column list, if the CTE declared one. Null when omitted, in which case
+    /// the column names come from <see cref="Query"/>'s select list.
+    /// </summary>
+    public IReadOnlyList<string>? ColumnNames { get; }
+
+    /// <summary>
+    /// The CTE body. A <see cref="SqlSelectStatement"/> normally, or a
+    /// <see cref="SqlSetOperationStatement"/> for the UNION-joined body of a recursive CTE.
+    /// </summary>
+    public SqlStatement Query { get; }
+
+    public SqlCommonTableExpression(string name, IReadOnlyList<string>? columnNames, SqlStatement query)
+    {
+        Name = name;
+        ColumnNames = columnNames;
+        Query = query;
+    }
+}
+
+/// <summary>
+/// Two queries combined by a set operator: <c>left UNION [ALL] right</c> and friends.
+/// Chains nest left-associatively, so <c>a UNION b UNION c</c> is <c>(a UNION b) UNION c</c>.
+/// </summary>
+internal sealed class SqlSetOperationStatement : SqlStatement
+{
+    public override SqlNodeKind NodeKind => SqlNodeKind.SetOperation;
+
+    public SqlStatement Left { get; }
+    public SqlSetOperator Operator { get; }
+    public SqlStatement Right { get; }
+
+    public SqlSetOperationStatement(SqlStatement left, SqlSetOperator op, SqlStatement right)
+    {
+        Left = left;
+        Operator = op;
+        Right = right;
     }
 }
 

@@ -24,6 +24,8 @@ internal static class SqlNodeWalker
         switch (node)
         {
             case SqlSelectStatement s:
+                if (s.Ctes != null)
+                    foreach (var cte in s.Ctes) Walk(cte, visitor);
                 foreach (var col in s.Columns) Walk(col, visitor);
                 Walk(s.From, visitor);
                 foreach (var join in s.Joins) Walk(join, visitor);
@@ -35,6 +37,15 @@ internal static class SqlNodeWalker
                     foreach (var o in s.OrderBy) Walk(o, visitor);
                 Walk(s.Limit, visitor);
                 Walk(s.Offset, visitor);
+                break;
+
+            case SqlCommonTableExpression cte:
+                Walk(cte.Query, visitor);
+                break;
+
+            case SqlSetOperationStatement so:
+                Walk(so.Left, visitor);
+                Walk(so.Right, visitor);
                 break;
 
             case SqlDeleteStatement d:
