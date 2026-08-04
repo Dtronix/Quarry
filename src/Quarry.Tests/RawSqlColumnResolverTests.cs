@@ -109,6 +109,135 @@ public class RawSqlColumnResolverTests
 
     #endregion
 
+    #region CTE Cases (#331)
+
+    [Test]
+    public void Resolve_Cte_ResolvesOuterSelectOrdinals()
+    {
+        // The headline win of #331. Before the parser understood WITH, this returned a
+        // null AST, HasUnsupported was set, and the generator fell back to the runtime
+        // ordinal IRowReader<T> path instead of emitting hardcoded ordinals.
+        var result = RawSqlColumnResolver.Resolve(
+            "WITH recent AS (SELECT UserId, UserName, Email FROM users WHERE IsActive = 1) " +
+            "SELECT UserId, UserName, Email FROM recent",
+            GenDialect.SQLite,
+            SampleProperties);
+
+        Assert.That(result.IsResolved, Is.True);
+        Assert.That(result.Columns, Has.Count.EqualTo(3));
+        Assert.That(result.Columns![0].PropertyName, Is.EqualTo("UserId"));
+        Assert.That(result.Columns[0].Ordinal, Is.EqualTo(0));
+        Assert.That(result.Columns[1].Ordinal, Is.EqualTo(1));
+        Assert.That(result.Columns[2].Ordinal, Is.EqualTo(2));
+    }
+
+    [Test]
+    public void Resolve_Cte_OrdinalsComeFromOuterSelectNotCteBody()
+    {
+        // The CTE body's column order must not leak into the result ordinals — only the
+        // outer SELECT determines what the reader sees.
+        var result = RawSqlColumnResolver.Resolve(
+            "WITH recent AS (SELECT Email, UserName, UserId FROM users) " +
+            "SELECT UserId, UserName FROM recent",
+            GenDialect.SQLite,
+            SampleProperties);
+
+        Assert.That(result.IsResolved, Is.True);
+        Assert.That(result.Columns, Has.Count.EqualTo(2));
+        Assert.That(result.Columns![0].PropertyName, Is.EqualTo("UserId"));
+        Assert.That(result.Columns[0].Ordinal, Is.EqualTo(0));
+        Assert.That(result.Columns[1].PropertyName, Is.EqualTo("UserName"));
+        Assert.That(result.Columns[1].Ordinal, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void Resolve_MultipleCtes_ResolvesOrdinals()
+    {
+        var result = RawSqlColumnResolver.Resolve(
+            "WITH a AS (SELECT UserId FROM users), b AS (SELECT UserName FROM users) " +
+            "SELECT UserId, UserName FROM a JOIN b ON 1 = 1",
+            GenDialect.SQLite,
+            SampleProperties);
+
+        Assert.That(result.IsResolved, Is.True);
+        Assert.That(result.Columns, Has.Count.EqualTo(2));
+    }
+
+    [Test]
+    public void Resolve_RecursiveCte_ResolvesOrdinals()
+    {
+        // A recursive body is UNION-joined. It parses into a set-operation node as of
+        // #331, so the query no longer degrades to the runtime-ordinal path.
+        var result = RawSqlColumnResolver.Resolve(
+            "WITH RECURSIVE tree AS (" +
+            "SELECT UserId, UserName FROM users WHERE UserId = 1 " +
+            "UNION ALL SELECT u.UserId, u.UserName FROM users u JOIN tree t ON u.UserId = t.UserId) " +
+            "SELECT UserId, UserName FROM tree",
+            GenDialect.SQLite,
+            SampleProperties);
+
+        Assert.That(result.IsResolved, Is.True);
+        Assert.That(result.Columns, Has.Count.EqualTo(2));
+        Assert.That(result.Columns![0].PropertyName, Is.EqualTo("UserId"));
+        Assert.That(result.Columns[1].PropertyName, Is.EqualTo("UserName"));
+    }
+
+    [Test]
+    public void Resolve_CteWithAliasedOuterColumns_UsesAliases()
+    {
+        var result = RawSqlColumnResolver.Resolve(
+            "WITH recent AS (SELECT id, name FROM users) " +
+            "SELECT id AS UserId, name AS UserName FROM recent",
+            GenDialect.SQLite,
+            SampleProperties);
+
+        Assert.That(result.IsResolved, Is.True);
+        Assert.That(result.Columns, Has.Count.EqualTo(2));
+        Assert.That(result.Columns![0].PropertyName, Is.EqualTo("UserId"));
+        Assert.That(result.Columns[1].PropertyName, Is.EqualTo("UserName"));
+    }
+
+    [Test]
+    public void Resolve_CteWithSelectStarOuter_FallsBack()
+    {
+        // Parsing the CTE does not exempt the outer query from the SELECT * rule.
+        var result = RawSqlColumnResolver.Resolve(
+            "WITH recent AS (SELECT UserId FROM users) SELECT * FROM recent",
+            GenDialect.SQLite,
+            SampleProperties);
+
+        Assert.That(result.IsResolved, Is.False);
+        Assert.That(result.FallbackReason, Does.Contain("SELECT *"));
+    }
+
+    [Test]
+    public void Resolve_CteWithUnaliasedExpressionOuter_FallsBackWithPosition()
+    {
+        // QRY041 still fires for a genuinely unresolvable outer column.
+        var result = RawSqlColumnResolver.Resolve(
+            "WITH recent AS (SELECT UserId, price, quantity FROM orders) " +
+            "SELECT UserId, price * quantity FROM recent",
+            GenDialect.SQLite,
+            SampleProperties);
+
+        Assert.That(result.IsResolved, Is.False);
+        Assert.That(result.UnresolvableColumnPosition, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void Resolve_CteOnDmlStatement_FallsBack()
+    {
+        // Data-modifying CTEs remain unsupported (decision D6).
+        var result = RawSqlColumnResolver.Resolve(
+            "WITH recent AS (SELECT UserId FROM users) UPDATE users SET UserName = 'x'",
+            GenDialect.SQLite,
+            SampleProperties);
+
+        Assert.That(result.IsResolved, Is.False);
+    }
+
+    #endregion
+
     #region Fallback Cases
 
     [Test]

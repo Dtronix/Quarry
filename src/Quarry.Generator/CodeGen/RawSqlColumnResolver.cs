@@ -81,8 +81,10 @@ internal static class RawSqlColumnResolver
         if (!parseResult.Success)
             return ColumnResolutionResult.Fallback("SQL parse failed");
 
+        // CTEs are parsed as of #331 and no longer set this flag — the outer SELECT's
+        // columns are the result columns regardless of any WITH clause.
         if (parseResult.HasUnsupported)
-            return ColumnResolutionResult.Fallback("SQL contains unsupported constructs (CTEs, UNION, window functions)");
+            return ColumnResolutionResult.Fallback("SQL contains unsupported constructs (UNION, window functions, subqueries)");
 
         var statement = parseResult.SelectStatement;
         if (statement == null)
