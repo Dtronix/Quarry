@@ -272,6 +272,11 @@ public class Service
             "var prepared = db.Users().Where(u => u.IsActive).Select(u => u.UserName).Prepare();\n" +
             "        _ = prepared.ToDiagnostics().Sql;\n" +
             "        await prepared.ExecuteFetchAllAsync();"),
+        // CTE. Note this needs only the non-generic QuarryContext — QuarryContext<TSelf> is
+        // required for typed post-With accessors, not for FromCte<T>().
+        new("Cte_FromCte_FetchAll", "ExecuteFetchAllAsync",
+            "await db.With<Order>(orders => orders.Where(o => o.Total > 100))" +
+            ".FromCte<Order>().Select(o => (o.OrderId, o.Total)).ExecuteFetchAllAsync();"),
         // Window function in a projection.
         new("Window_RowNumber_FetchAll", "ExecuteFetchAllAsync",
             "await db.Orders()" +

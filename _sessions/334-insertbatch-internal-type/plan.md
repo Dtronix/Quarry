@@ -192,6 +192,17 @@ last.
   *Tests:* as above. Expect `site.MethodName` to be `RawSqlAsync` / `RawSqlScalarAsync` /
   `RawSqlNonQueryAsync` for the interceptor-emitted probe — verify rather than assume.
 
+- [x] **7. Add CTE shapes** *(no dedicated context needed — see deviation)*
+
+  **Deviation from plan:** the planned `CteContextSource` and the `Run` refactor were both dropped as
+  unnecessary. The plan asserted CTEs require `QuarryContext<TSelf>`, reading `llm.md:196`. That
+  applies only to *typed post-`With` accessors*; `FromCte<T>()` works on the plain non-generic
+  `QuarryContext` — `Quarry.Tests`' own `TestDbContext` derives from it (`Samples/TestDbContext.cs:10`)
+  and `SqlOutput/CrossDialectCteTests.cs` drives CTEs through it. So the shape went straight onto the
+  existing shared context, and `Run` keeps its `crossContext` bool.
+
+<details><summary>Original step 7 text</summary>
+
 - [ ] **7. Add CTE shapes on a dedicated `QuarryContext<TSelf>` context**
 
   CTEs require `QuarryContext<TSelf>` for the typed post-`With` accessors (`llm.md:196`), which the
@@ -207,6 +218,8 @@ last.
   *Tests:* the shape, plus confirm the refactor of `Run` leaves
   `Shape_CrossNamespaceContext_BindsWithoutInterceptorMismatch` behaviourally identical (same
   `SubContextSource`, same context type, same assertions).
+
+</details>
 
 - [ ] **8. Document the invariant**
 

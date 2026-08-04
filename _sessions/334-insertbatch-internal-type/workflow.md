@@ -250,6 +250,21 @@ shape happens to compile", and the latter looks identical in a green run.
    `llm.md:279-289` lists all three together under "Raw SQL", which makes it easy to assume all three
    are generated — they are not.
 
+### 2026-08-04 — Step 7: CTEs do not need `QuarryContext<TSelf>`
+
+The plan budgeted a separate `CteDbContext` source and a refactor of `Run` (replacing its
+`crossContext` bool with an extra-sources list) on the premise that CTEs require
+`QuarryContext<TSelf>`. That premise was wrong, and both were dropped.
+
+`llm.md:196` says `QuarryContext<TSelf>` is needed "for typed post-`With` accessors" — that is
+narrower than "for CTEs". `FromCte<T>()` works fine on the plain non-generic `QuarryContext`:
+`Quarry.Tests`' own `TestDbContext` derives from it (`Samples/TestDbContext.cs:10`) and
+`SqlOutput/CrossDialectCteTests.cs:20` drives CTEs through exactly that. The shape went onto the
+existing shared context unchanged.
+
+Worth remembering generally: the fixture's `Run` still takes a `crossContext` bool. If a future shape
+genuinely needs different sources, that is the point to generalize it — not before.
+
 ## Suspend State
 
 ## Session Log
