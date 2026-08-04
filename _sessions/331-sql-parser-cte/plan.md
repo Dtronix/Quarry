@@ -52,10 +52,10 @@ db.With<Order, RecentOrders>(o => o.Where(o => o.Total > 100)
 - [x] **5. QRY041/QRY042 analyzer hardening.** Depends on 3. Add the missing `HasUnsupported` check to `RawSqlMigrationAnalyzer.cs:112-113` — it currently lets window functions and subqueries through to the converter, relying on `SqlToChainConverter`'s `case SqlUnsupported` as an incidental net. Pre-existing gap, but this change widens what reaches that path, so it is in scope here rather than deferred.
   *Tests:* `RawSqlMigrationAnalyzerTests.cs` — QRY042 does not fire for a window-function query.
 
-- [ ] **6. `SqlToChainConverter`: CTE convertibility.** Depends on 3. Replace the step-3 blanket rejection with the convertibility rules above: register CTE names in a set distinct from `_tableToEntity`, validate each body, reject recursive and CTE-as-join-target, resolve an outer `FROM <cte>` against the CTE list.
+- [x] **6. `SqlToChainConverter`: CTE convertibility.** *(merged into one commit with step 7 — see deviation note below)* Depends on 3. Replace the step-3 blanket rejection with the convertibility rules above: register CTE names in a set distinct from `_tableToEntity`, validate each body, reject recursive and CTE-as-join-target, resolve an outer `FROM <cte>` against the CTE list.
   *Tests:* `RawSqlMigrationAnalyzerTests.cs` — convertible whole-entity CTE fires QRY042; recursive CTE does not; CTE-as-join-target does not; CTE body with a join does not.
 
-- [ ] **7. `SqlToChainConverter`: CTE emission + DTO synthesis.** Depends on 6. Emit `.With<TEntity>(…)` for whole-entity bodies and `.With<TEntity, TDto>(… .Select(e => new TDto { … }))` for projected bodies, followed by `.FromCte<T>()` when the outer FROM is a CTE. Synthesize the DTO class text (`{ get; set; }` properties per `CteDtoResolver.cs:28`) and carry it on a new `DtoDeclaration` diagnostic property. Extend `RawSqlToChainCodeFix` to insert it into the compilation unit, with collision handling against existing type names.
+- [x] **7. `SqlToChainConverter`: CTE emission + DTO synthesis.** Depends on 6. Emit `.With<TEntity>(…)` for whole-entity bodies and `.With<TEntity, TDto>(… .Select(e => new TDto { … }))` for projected bodies, followed by `.FromCte<T>()` when the outer FROM is a CTE. Synthesize the DTO class text (`{ get; set; }` properties per `CteDtoResolver.cs:28`) and carry it on a new `DtoDeclaration` diagnostic property. Extend `RawSqlToChainCodeFix` to insert it into the compilation unit, with collision handling against existing type names.
   *Tests:* analyzer tests asserting `ChainCode` and `DtoDeclaration` property contents; a code-fix test asserting the declaration is inserted and the result compiles.
 
 - [ ] **8. `ConversionResult` + `ChainEmitter`: CTE convertibility.** Depends on 3. Add `GeneratedTypeDeclarations` (`IReadOnlyList<string>`) to `ConversionResult.cs`. Replace the step-3 blanket rejection in `ChainEmitter` with the same convertibility rules, registering CTE names alongside `_tables` without letting them collide with real schema tables.
@@ -69,6 +69,15 @@ db.With<Order, RecentOrders>(o => o.Where(o => o.Total > 100)
 
 - [ ] **11. Documentation.** Depends on all. Update the "Shared SQL Parser" section of `src/Quarry.Generator/llm.md:311-313` (it currently lists CTEs as an unsupported construct), `src/Quarry.Migration/README.md:31`, and any diagnostic-table wording that claims CTEs are unparseable.
   *Tests:* none; if manifest goldens shift, rebuild rather than hand-edit them.
+
+## Deviations
+
+- **Steps 6 and 7 were committed together**, and steps 8 and 9 will be too. The split was not shippable: a commit that makes CTE queries pass `CheckConvertibility` while `Convert` still ignores the WITH clause re-opens exactly the silent-drop regression step 3 exists to prevent. Convertibility and emission have to land atomically in each converter.
+- **Step 10's QRY042 half moved into step 7.** `RawSqlToChainCodeFix` had to learn to insert the synthesized DTO in the same commit that started emitting `DtoDeclarations`, for the same reason. Step 10 now covers only the Dapper and ADO.NET code fixes.
+- **Convertibility is narrower than the plan's rules described.** Two additional restrictions emerged from reading the runtime:
+  - The outer query must read *from a CTE*, not from a real entity. Starting the chain with an entity accessor after `.With<>()` requires the context to derive from `QuarryContext<TSelf>` (`QuarryContext.cs:140-151`), which the analyzer cannot verify — emitting it would risk a runtime `NotSupportedException`. `.FromCte<T>()` is declared on the base `QuarryContext`, so the CTE-first shape is always safe.
+  - CTE bodies are restricted to `WHERE` plus a column projection. `DISTINCT`, `GROUP BY`, `HAVING`, `ORDER BY`, `LIMIT` and `OFFSET` in a body are rejected rather than silently dropped, since `With<>`'s inner builder is a Where + Select chain.
+  - Foreign-key columns are rejected in projections: they surface as wrapper types (`o.UserId.Id` in `CteWithEntityAccessorTests.cs:70`) that cannot be reliably reproduced in a synthesized DTO.
 
 ## Dependencies
 

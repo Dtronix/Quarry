@@ -120,7 +120,7 @@ internal sealed class RawSqlMigrationAnalyzer : DiagnosticAnalyzer
 
         // Check if the parsed SQL is convertible to a chain query
         var converter = new SqlToChainConverter(contextInfo);
-        var convertError = converter.CheckConvertibility(parseResult.SelectStatement);
+        var convertError = converter.CheckConvertibility(parseResult.SelectStatement, out var cteBindings);
         if (convertError != null)
             return;
 
@@ -135,13 +135,20 @@ internal sealed class RawSqlMigrationAnalyzer : DiagnosticAnalyzer
 
         // Generate the chain code
         var chainCode = converter.Convert(
-            parseResult.SelectStatement, contextVarName, parameterArgs, useExecuteFetchAll);
+            parseResult.SelectStatement, contextVarName, parameterArgs, useExecuteFetchAll, cteBindings);
+
+        // Projected CTEs need a DTO type that does not exist in the user's source. The code
+        // fix inserts these declarations alongside the expression replacement.
+        var dtoDeclarations = SqlToChainConverter.BuildDtoDeclarations(cteBindings);
 
         var properties = ImmutableDictionary<string, string?>.Empty
             .Add("Sql", sql)
             .Add("ContextClass", contextInfo.ClassName)
             .Add("ChainCode", chainCode)
             .Add("UseExecuteFetchAll", useExecuteFetchAll.ToString());
+
+        if (dtoDeclarations.Count > 0)
+            properties = properties.Add("DtoDeclarations", string.Join("\n\n", dtoDeclarations));
 
         var diagnostic = Diagnostic.Create(
             AnalyzerDiagnosticDescriptors.RawSqlConvertibleToChain,

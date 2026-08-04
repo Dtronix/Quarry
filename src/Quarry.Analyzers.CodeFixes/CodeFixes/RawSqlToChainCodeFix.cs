@@ -34,10 +34,13 @@ public sealed class RawSqlToChainCodeFix : CodeFixProvider
         var invocation = node.AncestorsAndSelf().OfType<InvocationExpressionSyntax>().FirstOrDefault();
         if (invocation == null) return;
 
+        // Projected CTEs need a DTO type that does not exist in the user's source.
+        diagnostic.Properties.TryGetValue("DtoDeclarations", out var dtoDeclarations);
+
         context.RegisterCodeFix(
             CodeAction.Create(
                 "Replace with chain query",
-                ct => ReplaceWithChainAsync(context.Document, invocation, chainCode!, ct),
+                ct => ReplaceWithChainAsync(context.Document, invocation, chainCode!, dtoDeclarations, ct),
                 equivalenceKey: "QRY042_RawSqlToChain"),
             diagnostic);
     }
@@ -46,6 +49,7 @@ public sealed class RawSqlToChainCodeFix : CodeFixProvider
         Document document,
         InvocationExpressionSyntax invocation,
         string chainCode,
+        string? dtoDeclarations,
         CancellationToken cancellationToken)
     {
         var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
@@ -69,6 +73,38 @@ public sealed class RawSqlToChainCodeFix : CodeFixProvider
         replacement = replacement.WithTriviaFrom(nodeToReplace);
 
         var newRoot = root.ReplaceNode(nodeToReplace, replacement);
+
+        if (!string.IsNullOrEmpty(dtoDeclarations) && newRoot is CompilationUnitSyntax compilationUnit)
+            newRoot = AddDtoDeclarations(compilationUnit, dtoDeclarations!);
+
         return document.WithSyntaxRoot(newRoot);
+    }
+
+    /// <summary>
+    /// Appends the synthesized CTE DTO classes to the compilation unit, skipping any whose
+    /// name is already declared so the fix cannot introduce a duplicate type.
+    /// </summary>
+    private static CompilationUnitSyntax AddDtoDeclarations(CompilationUnitSyntax root, string dtoDeclarations)
+    {
+        var existingNames = root.DescendantNodes()
+            .OfType<BaseTypeDeclarationSyntax>()
+            .Select(t => t.Identifier.Text)
+            .ToImmutableHashSet();
+
+        foreach (var declarationText in dtoDeclarations.Split(new[] { "\n\n" }, System.StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parsed = SyntaxFactory.ParseMemberDeclaration(declarationText);
+            if (parsed is not BaseTypeDeclarationSyntax typeDeclaration)
+                continue;
+
+            if (existingNames.Contains(typeDeclaration.Identifier.Text))
+                continue;
+
+            root = root.AddMembers(typeDeclaration
+                .WithLeadingTrivia(SyntaxFactory.CarriageReturnLineFeed)
+                .WithTrailingTrivia(SyntaxFactory.CarriageReturnLineFeed));
+        }
+
+        return root;
     }
 }

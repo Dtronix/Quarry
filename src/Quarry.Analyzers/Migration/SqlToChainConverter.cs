@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using Quarry.Generators.Models;
 using Quarry.Generators.Sql.Parser;
+using Quarry.Shared.Migration;
 
 namespace Quarry.Analyzers.Migration;
 
@@ -37,19 +38,46 @@ internal sealed class SqlToChainConverter
     /// </summary>
     public string? CheckConvertibility(SqlSelectStatement stmt)
     {
-        // CTE queries parse into an AST as of #331, but nothing below understands a WITH
-        // clause yet — converting one here would silently drop it and emit a chain that
-        // does not match the SQL. Reject until CTE emission lands.
+        return CheckConvertibility(stmt, out _);
+    }
+
+    /// <summary>
+    /// Checks convertibility and, on success, hands back the CTE bindings the emitter needs.
+    /// Returns null when convertible, or an error reason string.
+    /// </summary>
+    public string? CheckConvertibility(SqlSelectStatement stmt, out IReadOnlyList<CteBinding> cteBindings)
+    {
+        cteBindings = Array.Empty<CteBinding>();
+
         if (stmt.Ctes != null)
-            return "CTEs (WITH ... AS) are not yet convertible to a chain query";
+        {
+            var cteError = TryBindCtes(stmt, out cteBindings);
+            if (cteError != null) return cteError;
+        }
 
         // Must have a FROM clause
         if (stmt.From == null)
             return "No FROM clause";
 
-        // FROM table must resolve to a known entity
-        if (!_tableToEntity.ContainsKey(stmt.From.TableName))
+        // FROM table must resolve to a known entity, or to a CTE declared by this statement
+        var fromIsCte = TryFindBinding(cteBindings, stmt.From.TableName) != null;
+        if (!fromIsCte && !_tableToEntity.ContainsKey(stmt.From.TableName))
             return $"Unknown table '{stmt.From.TableName}'";
+
+        if (cteBindings.Count > 0)
+        {
+            // The outer query must read from a CTE, so the chain can start with
+            // FromCte<T>(). Starting from an entity accessor after With<>() instead would
+            // require the context to derive from QuarryContext<TSelf>, which is not
+            // verifiable here — emitting it would risk a NotSupportedException at runtime.
+            if (!fromIsCte)
+                return $"Outer query reads from '{stmt.From.TableName}' rather than a CTE";
+
+            // Joining a CTE resolves against the underlying table rather than the CTE name
+            // in the current runtime, so a converted join would emit different SQL.
+            if (stmt.Joins.Count > 0)
+                return "Joins are not supported alongside a CTE";
+        }
 
         // Max 4 tables (1 primary + 3 joins) — chain query limit
         if (stmt.Joins.Count > 3)
@@ -63,7 +91,7 @@ internal sealed class SqlToChainConverter
         }
 
         // Build alias-to-entity map for column resolution
-        var aliasMap = BuildAliasMap(stmt);
+        var aliasMap = BuildAliasMap(stmt, cteBindings);
 
         // Walk the AST to check all nodes are convertible
         foreach (var col in stmt.Columns)
@@ -130,8 +158,21 @@ internal sealed class SqlToChainConverter
     /// Builds a mapping from table alias (or table name if no alias) to EntityInfo.
     /// </summary>
     internal Dictionary<string, EntityInfo> BuildAliasMap(SqlSelectStatement stmt)
+        => BuildAliasMap(stmt, Array.Empty<CteBinding>());
+
+    internal Dictionary<string, EntityInfo> BuildAliasMap(
+        SqlSelectStatement stmt,
+        IReadOnlyList<CteBinding> cteBindings)
     {
         var map = new Dictionary<string, EntityInfo>(StringComparer.OrdinalIgnoreCase);
+
+        // A CTE in the FROM resolves against the shape the CTE exposes, not the raw entity.
+        var fromBinding = stmt.From != null ? TryFindBinding(cteBindings, stmt.From.TableName) : null;
+        if (fromBinding != null)
+        {
+            map[stmt.From!.Alias ?? stmt.From.TableName] = fromBinding.ExposedEntity;
+            return map;
+        }
 
         if (stmt.From != null && _tableToEntity.TryGetValue(stmt.From.TableName, out var fromEntry))
         {
@@ -149,6 +190,221 @@ internal sealed class SqlToChainConverter
         }
 
         return map;
+    }
+
+    // ─── CTE binding (#331) ──────────────────────────────
+
+    internal static CteBinding? TryFindBinding(IReadOnlyList<CteBinding> bindings, string name)
+    {
+        foreach (var b in bindings)
+        {
+            if (string.Equals(b.CteName, name, StringComparison.OrdinalIgnoreCase))
+                return b;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Validates every CTE on the statement and builds the bindings the emitter needs.
+    /// Returns null when all CTEs are convertible, or an error reason string.
+    /// </summary>
+    private string? TryBindCtes(SqlSelectStatement stmt, out IReadOnlyList<CteBinding> bindings)
+    {
+        bindings = Array.Empty<CteBinding>();
+
+        // A recursive CTE has no chain equivalent — the runtime has no recursive With<>.
+        if (stmt.IsRecursive)
+            return "Recursive CTEs are not convertible to a chain query";
+
+        var result = new List<CteBinding>();
+        var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var cte in stmt.Ctes!)
+        {
+            if (!seenNames.Add(cte.Name))
+                return $"Duplicate CTE name '{cte.Name}'";
+
+            // A set-operation body is only produced for recursive CTEs, but guard anyway.
+            if (cte.Query is not SqlSelectStatement body)
+                return $"CTE '{cte.Name}' uses a set operation, which is not convertible";
+
+            var error = BindCte(cte, body, out var binding);
+            if (error != null) return error;
+
+            result.Add(binding!);
+        }
+
+        bindings = result;
+        return null;
+    }
+
+    private string? BindCte(SqlCommonTableExpression cte, SqlSelectStatement body, out CteBinding? binding)
+    {
+        binding = null;
+
+        if (body.Ctes != null)
+            return $"CTE '{cte.Name}' nests a further WITH clause";
+
+        if (body.From == null)
+            return $"CTE '{cte.Name}' has no FROM clause";
+
+        if (!_tableToEntity.TryGetValue(body.From.TableName, out var source))
+            return $"CTE '{cte.Name}' reads from unknown table '{body.From.TableName}'";
+
+        if (body.Joins.Count > 0)
+            return $"CTE '{cte.Name}' contains a join";
+
+        // With<>'s inner builder is a Where + projection chain. Anything else in the body
+        // would be dropped, so reject rather than emit a query that differs from the SQL.
+        if (body.IsDistinct)
+            return $"CTE '{cte.Name}' uses DISTINCT";
+        if (body.GroupBy != null || body.Having != null)
+            return $"CTE '{cte.Name}' uses GROUP BY or HAVING";
+        if (body.OrderBy != null || body.Limit != null || body.Offset != null)
+            return $"CTE '{cte.Name}' uses ORDER BY, LIMIT or OFFSET";
+
+        var bodyAliasMap = new Dictionary<string, EntityInfo>(StringComparer.OrdinalIgnoreCase)
+        {
+            [body.From.Alias ?? body.From.TableName] = source.Entity
+        };
+
+        if (body.Where != null)
+        {
+            var whereError = CheckExpr(body.Where, bodyAliasMap);
+            if (whereError != null) return $"CTE '{cte.Name}': {whereError}";
+        }
+
+        // SELECT * maps onto With<TEntity>, which needs no synthesized type.
+        var isWholeEntity = body.Columns.Count == 1 && body.Columns[0] is SqlStarColumn;
+
+        if (isWholeEntity)
+        {
+            if (cte.ColumnNames != null)
+                return $"CTE '{cte.Name}' declares a column list over SELECT *";
+
+            binding = new CteBinding(
+                cte.Name, source.Entity.EntityName, source.Entity, source.Mapping,
+                isWholeEntity: true, Array.Empty<CteProjection>(), source.Entity, body);
+            return null;
+        }
+
+        var dtoTypeName = ToPascalCase(cte.Name);
+        if (dtoTypeName.Length == 0)
+            return $"CTE '{cte.Name}' has no usable type name";
+
+        // A synthesized DTO must not shadow an existing entity type.
+        foreach (var entry in _tableToEntity.Values)
+        {
+            if (string.Equals(entry.Entity.EntityName, dtoTypeName, StringComparison.Ordinal))
+                return $"CTE '{cte.Name}' would need a DTO named '{dtoTypeName}', which already exists";
+        }
+
+        if (cte.ColumnNames != null && cte.ColumnNames.Count != body.Columns.Count)
+            return $"CTE '{cte.Name}' column list does not match its SELECT list";
+
+        var projections = new List<CteProjection>(body.Columns.Count);
+        var exposedColumns = new List<ColumnInfo>(body.Columns.Count);
+
+        for (var i = 0; i < body.Columns.Count; i++)
+        {
+            if (body.Columns[i] is not SqlSelectColumn selectCol)
+                return $"CTE '{cte.Name}' selects a star column alongside other columns";
+
+            if (selectCol.Expression is not SqlColumnRef colRef)
+                return $"CTE '{cte.Name}' projects an expression, which is not convertible";
+
+            if (colRef.ColumnName == "*")
+                return $"CTE '{cte.Name}' selects a star column alongside other columns";
+
+            var sourceColumn = FindColumn(source.Entity, colRef.ColumnName);
+            if (sourceColumn == null)
+                return $"CTE '{cte.Name}' references unknown column '{colRef.ColumnName}'";
+
+            // Foreign-key columns surface as wrapper types; synthesizing an equivalent DTO
+            // property is not something this converter can do reliably.
+            if (sourceColumn.Kind == ColumnKind.ForeignKey)
+                return $"CTE '{cte.Name}' projects reference column '{colRef.ColumnName}'";
+
+            // The name the CTE exposes: explicit column list, then alias, then source column.
+            var exposedName = cte.ColumnNames != null
+                ? cte.ColumnNames[i]
+                : selectCol.Alias ?? sourceColumn.ColumnName;
+
+            var dtoPropertyName = cte.ColumnNames != null || selectCol.Alias != null
+                ? ToPascalCase(exposedName)
+                : sourceColumn.PropertyName;
+
+            if (dtoPropertyName.Length == 0)
+                return $"CTE '{cte.Name}' exposes a column with no usable property name";
+
+            projections.Add(new CteProjection(sourceColumn.PropertyName, dtoPropertyName, sourceColumn));
+            exposedColumns.Add(CloneColumnAs(sourceColumn, dtoPropertyName, exposedName));
+        }
+
+        if (projections.Count == 0)
+            return $"CTE '{cte.Name}' projects no columns";
+
+        var exposedEntity = new EntityInfo(
+            entityName: dtoTypeName,
+            schemaClassName: dtoTypeName,
+            schemaNamespace: source.Entity.SchemaNamespace,
+            tableName: dtoTypeName,
+            namingStyle: source.Entity.NamingStyle,
+            columns: exposedColumns,
+            navigations: Array.Empty<NavigationInfo>(),
+            indexes: Array.Empty<IndexInfo>(),
+            location: source.Entity.Location);
+
+        binding = new CteBinding(
+            cte.Name, dtoTypeName, source.Entity, source.Mapping,
+            isWholeEntity: false, projections, exposedEntity, body);
+        return null;
+    }
+
+    private static ColumnInfo? FindColumn(EntityInfo entity, string columnName)
+    {
+        foreach (var col in entity.Columns)
+        {
+            if (string.Equals(col.ColumnName, columnName, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(col.PropertyName, columnName, StringComparison.OrdinalIgnoreCase))
+                return col;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Copies a column, re-pointing it at the name the CTE exposes it under.
+    /// </summary>
+    private static ColumnInfo CloneColumnAs(ColumnInfo source, string propertyName, string columnName)
+        => new ColumnInfo(
+            propertyName, columnName, source.ClrType, source.FullClrType,
+            source.IsNullable, ColumnKind.Standard, referencedEntityName: null, source.Modifiers,
+            source.IsValueType, source.ReaderMethodName, source.IsEnum);
+
+    /// <summary>
+    /// Converts a SQL identifier (snake_case, kebab, spaces) to a PascalCase C# name.
+    /// </summary>
+    internal static string ToPascalCase(string name)
+    {
+        var sb = new StringBuilder(name.Length);
+        var upperNext = true;
+
+        foreach (var ch in name)
+        {
+            if (ch == '_' || ch == '-' || ch == ' ')
+            {
+                upperNext = true;
+                continue;
+            }
+
+            if (sb.Length == 0 && !char.IsLetter(ch))
+                continue; // a C# identifier cannot start with a digit
+
+            sb.Append(upperNext ? char.ToUpperInvariant(ch) : ch);
+            upperNext = false;
+        }
+
+        return sb.ToString();
     }
 
     /// <summary>
@@ -183,8 +439,21 @@ internal sealed class SqlToChainConverter
     /// <param name="parameterArgs">The argument expressions from the RawSqlAsync call site (positional).</param>
     /// <param name="useExecuteFetchAll">If true, ends with ExecuteFetchAllAsync() instead of ToAsyncEnumerable().</param>
     public string Convert(SqlSelectStatement stmt, string contextVarName, IReadOnlyList<string> parameterArgs, bool useExecuteFetchAll)
+        => Convert(stmt, contextVarName, parameterArgs, useExecuteFetchAll, Array.Empty<CteBinding>());
+
+    /// <param name="cteBindings">
+    /// The bindings produced by <see cref="CheckConvertibility(SqlSelectStatement, out IReadOnlyList{CteBinding})"/>.
+    /// Must be supplied whenever the statement declares CTEs, or the WITH clause is dropped.
+    /// </param>
+    /// <inheritdoc cref="Convert(SqlSelectStatement, string, IReadOnlyList{string}, bool)"/>
+    public string Convert(
+        SqlSelectStatement stmt,
+        string contextVarName,
+        IReadOnlyList<string> parameterArgs,
+        bool useExecuteFetchAll,
+        IReadOnlyList<CteBinding> cteBindings)
     {
-        var aliasMap = BuildAliasMap(stmt);
+        var aliasMap = BuildAliasMap(stmt, cteBindings);
 
         // Build ordered alias list: FROM table first, then JOINs in order
         var orderedAliases = new List<string>();
@@ -203,12 +472,21 @@ internal sealed class SqlToChainConverter
 
         var sb = new StringBuilder();
 
-        // FROM → ctx.Accessor()
-        var fromEntry = _tableToEntity[stmt.From!.TableName];
-        sb.Append(contextVarName);
-        sb.Append('.');
-        sb.Append(fromEntry.Mapping.PropertyName);
-        sb.Append("()");
+        var fromBinding = stmt.From != null ? TryFindBinding(cteBindings, stmt.From.TableName) : null;
+        if (fromBinding != null)
+        {
+            // WITH ... → ctx.With<...>(...) ... .FromCte<T>()
+            AppendCteHeader(sb, contextVarName, cteBindings, fromBinding, parameterArgs);
+        }
+        else
+        {
+            // FROM → ctx.Accessor()
+            var fromEntry = _tableToEntity[stmt.From!.TableName];
+            sb.Append(contextVarName);
+            sb.Append('.');
+            sb.Append(fromEntry.Mapping.PropertyName);
+            sb.Append("()");
+        }
 
         // WHERE (pre-join: only if no joins, or WHERE only references primary table)
         if (stmt.Where != null && stmt.Joins.Count == 0)
@@ -343,6 +621,116 @@ internal sealed class SqlToChainConverter
             sb.Append("\n    .ToAsyncEnumerable()");
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Emits <c>ctx.With&lt;…&gt;(…)</c> for every declared CTE, then <c>.FromCte&lt;T&gt;()</c> for
+    /// the one the outer query reads from.
+    /// </summary>
+    private void AppendCteHeader(
+        StringBuilder sb,
+        string contextVarName,
+        IReadOnlyList<CteBinding> cteBindings,
+        CteBinding fromBinding,
+        IReadOnlyList<string> parameterArgs)
+    {
+        sb.Append(contextVarName);
+
+        foreach (var binding in cteBindings)
+        {
+            // The body's own lambda scope: accessor param, then the entity param the Where
+            // and Select expressions bind to.
+            var used = new HashSet<string>(StringComparer.Ordinal);
+            var entityParam = PickParamName(binding.SourceEntity.EntityName, used);
+            used.Add(entityParam);
+            var accessorParam = PickParamName(binding.SourceMapping.PropertyName, used);
+
+            var bodyAlias = binding.Body.From!.Alias ?? binding.Body.From.TableName;
+            var bodyAliasMap = new Dictionary<string, EntityInfo>(StringComparer.OrdinalIgnoreCase)
+            {
+                [bodyAlias] = binding.SourceEntity
+            };
+            var bodyAliasToParam = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                [bodyAlias] = entityParam
+            };
+
+            sb.Append("\n    .With<");
+            sb.Append(binding.SourceEntity.EntityName);
+            if (!binding.IsWholeEntity)
+            {
+                sb.Append(", ");
+                sb.Append(binding.DtoTypeName);
+            }
+            sb.Append(">(");
+            sb.Append(accessorParam);
+            sb.Append(" => ");
+            sb.Append(accessorParam);
+
+            if (binding.Body.Where != null)
+            {
+                sb.Append(".Where(");
+                sb.Append(entityParam);
+                sb.Append(" => ");
+                sb.Append(TranslateExpr(binding.Body.Where, bodyAliasMap, bodyAliasToParam, parameterArgs));
+                sb.Append(')');
+            }
+
+            if (!binding.IsWholeEntity)
+            {
+                sb.Append("\n        .Select(");
+                sb.Append(entityParam);
+                sb.Append(" => new ");
+                sb.Append(binding.DtoTypeName);
+                sb.Append(" { ");
+                for (var i = 0; i < binding.Projections.Count; i++)
+                {
+                    if (i > 0) sb.Append(", ");
+                    var p = binding.Projections[i];
+                    sb.Append(p.DtoPropertyName);
+                    sb.Append(" = ");
+                    sb.Append(entityParam);
+                    sb.Append('.');
+                    sb.Append(p.SourcePropertyName);
+                }
+                sb.Append(" })");
+            }
+
+            sb.Append(')');
+        }
+
+        sb.Append("\n    .FromCte<");
+        sb.Append(fromBinding.DtoTypeName);
+        sb.Append(">()");
+    }
+
+    /// <summary>
+    /// Renders the C# class declaration for every CTE that needs a synthesized DTO.
+    /// Whole-entity CTEs reuse their entity type and contribute nothing.
+    /// </summary>
+    public static IReadOnlyList<string> BuildDtoDeclarations(IReadOnlyList<CteBinding> cteBindings)
+    {
+        var declarations = new List<string>();
+
+        foreach (var binding in cteBindings)
+        {
+            if (binding.IsWholeEntity) continue;
+
+            var sb = new StringBuilder();
+            sb.Append("public class ").Append(binding.DtoTypeName).Append('\n').Append("{\n");
+            foreach (var p in binding.Projections)
+            {
+                sb.Append("    public ").Append(p.SourceColumn.FullClrType);
+                if (p.SourceColumn.IsNullable && !p.SourceColumn.FullClrType.EndsWith("?", StringComparison.Ordinal))
+                    sb.Append('?');
+                sb.Append(' ').Append(p.DtoPropertyName).Append(" { get; set; }\n");
+            }
+            sb.Append('}');
+
+            declarations.Add(sb.ToString());
+        }
+
+        return declarations;
     }
 
     private static List<string> GenerateLambdaParams(SqlSelectStatement stmt, Dictionary<string, EntityInfo> aliasMap)

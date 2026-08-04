@@ -140,6 +140,90 @@ public class CodeFixTests
         Assert.That(actions[0].Title, Is.EqualTo("Replace with chain query"));
     }
 
+    [Test]
+    public async Task RawSqlToChainCodeFix_InsertsSynthesizedCteDto()
+    {
+        // A projected CTE needs a DTO type that does not exist in the source, so the fix
+        // must add the declaration as well as replacing the expression (#331).
+        var fix = new RawSqlToChainCodeFix();
+        var source = @"class C { void M() { db.RawSqlAsync<User>(""WITH a AS (SELECT x FROM t) SELECT x FROM a""); } }";
+        var tree = CSharpSyntaxTree.ParseText(source);
+
+        var workspace = new AdhocWorkspace();
+        var project = workspace.AddProject("TestProject", LanguageNames.CSharp);
+        project = project.AddMetadataReference(MetadataReference.CreateFromFile(typeof(object).Assembly.Location));
+        var document = project.AddDocument("Test.cs", SourceText.From(source));
+
+        var descriptor = Quarry.Analyzers.AnalyzerDiagnosticDescriptors.RawSqlConvertibleToChain;
+        var root = await tree.GetRootAsync();
+        var invocation = root.DescendantNodes()
+            .OfType<Microsoft.CodeAnalysis.CSharp.Syntax.InvocationExpressionSyntax>().First();
+
+        var properties = ImmutableDictionary<string, string?>.Empty
+            .Add("ChainCode", "db.With<T, A>(t => t.Select(x => new A { X = x.X }))\n    .FromCte<A>()\n    .Select(a => a.X)\n    .ToAsyncEnumerable()")
+            .Add("DtoDeclarations", "public class A\n{\n    public int X { get; set; }\n}");
+
+        var diagnostic = Diagnostic.Create(descriptor, invocation.GetLocation(), properties);
+
+        var actions = new List<CodeAction>();
+        var context = new CodeFixContext(document, diagnostic,
+            (action, _) => actions.Add(action), default);
+
+        await fix.RegisterCodeFixesAsync(context);
+        Assert.That(actions, Has.Count.EqualTo(1));
+
+        var operations = await actions[0].GetOperationsAsync(default);
+        var applied = operations.OfType<ApplyChangesOperation>().Single();
+        var changedDocument = applied.ChangedSolution.GetDocument(document.Id)!;
+        var text = (await changedDocument.GetTextAsync()).ToString();
+
+        Assert.That(text, Does.Contain(".FromCte<A>()"));
+        Assert.That(text, Does.Contain("public class A"));
+        Assert.That(text, Does.Contain("public int X { get; set; }"));
+    }
+
+    [Test]
+    public async Task RawSqlToChainCodeFix_SkipsDtoWhenTypeAlreadyDeclared()
+    {
+        // The fix must never introduce a duplicate type declaration.
+        var fix = new RawSqlToChainCodeFix();
+        var source = @"class A { public int X { get; set; } }
+class C { void M() { db.RawSqlAsync<User>(""WITH a AS (SELECT x FROM t) SELECT x FROM a""); } }";
+        var tree = CSharpSyntaxTree.ParseText(source);
+
+        var workspace = new AdhocWorkspace();
+        var project = workspace.AddProject("TestProject", LanguageNames.CSharp);
+        project = project.AddMetadataReference(MetadataReference.CreateFromFile(typeof(object).Assembly.Location));
+        var document = project.AddDocument("Test.cs", SourceText.From(source));
+
+        var descriptor = Quarry.Analyzers.AnalyzerDiagnosticDescriptors.RawSqlConvertibleToChain;
+        var root = await tree.GetRootAsync();
+        var invocation = root.DescendantNodes()
+            .OfType<Microsoft.CodeAnalysis.CSharp.Syntax.InvocationExpressionSyntax>().First();
+
+        var properties = ImmutableDictionary<string, string?>.Empty
+            .Add("ChainCode", "db.FromCte<A>()\n    .Select(a => a.X)\n    .ToAsyncEnumerable()")
+            .Add("DtoDeclarations", "public class A\n{\n    public int X { get; set; }\n}");
+
+        var diagnostic = Diagnostic.Create(descriptor, invocation.GetLocation(), properties);
+
+        var actions = new List<CodeAction>();
+        var context = new CodeFixContext(document, diagnostic,
+            (action, _) => actions.Add(action), default);
+
+        await fix.RegisterCodeFixesAsync(context);
+
+        var operations = await actions[0].GetOperationsAsync(default);
+        var applied = operations.OfType<ApplyChangesOperation>().Single();
+        var changedDocument = applied.ChangedSolution.GetDocument(document.Id)!;
+        var changedRoot = (await changedDocument.GetSyntaxRootAsync())!;
+
+        var classCount = changedRoot.DescendantNodes()
+            .OfType<Microsoft.CodeAnalysis.CSharp.Syntax.ClassDeclarationSyntax>()
+            .Count(c => c.Identifier.Text == "A");
+        Assert.That(classCount, Is.EqualTo(1));
+    }
+
     // ── ThenByToOrderByCodeFix ──
 
     [Test]

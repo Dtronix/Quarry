@@ -346,17 +346,89 @@ public class TestService
         Assert.That(diagnostics, Is.Empty);
     }
 
+    // ── CTEs (#331) ──
+
     [Test]
-    public async Task QRY042_Cte_NoDiagnostic()
+    public async Task QRY042_WholeEntityCte_EmitsWithAndFromCte()
     {
-        // CTEs parse into an AST as of #331 but are not yet convertible.
+        // SELECT * maps onto With<TEntity>, so no DTO synthesis is needed.
         var source = ContextAndSchemaPrefix + @"
 public class TestService
 {
     public void Run(TestDbContext db)
     {
         var results = db.RawSqlAsync<User>(
-            ""WITH recent AS (SELECT UserId FROM users) SELECT UserId FROM recent"");
+            ""WITH recent AS (SELECT * FROM users WHERE IsActive = 1) SELECT UserId, UserName FROM recent"");
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Has.Length.EqualTo(1));
+        Assert.That(diagnostics[0].Id, Is.EqualTo("QRY042"));
+
+        var chainCode = diagnostics[0].Properties["ChainCode"];
+        Assert.That(chainCode, Does.Contain(".With<User>("));
+        Assert.That(chainCode, Does.Contain(".FromCte<User>()"));
+        Assert.That(chainCode, Does.Contain(".Where("));
+
+        // A whole-entity CTE reuses the entity type, so nothing is synthesized.
+        Assert.That(diagnostics[0].Properties.ContainsKey("DtoDeclarations"), Is.False);
+    }
+
+    [Test]
+    public async Task QRY042_ProjectedCte_EmitsDtoDeclaration()
+    {
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(
+            ""WITH active_users AS (SELECT UserId, UserName FROM users WHERE IsActive = 1) SELECT UserId, UserName FROM active_users"");
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Has.Length.EqualTo(1));
+
+        var chainCode = diagnostics[0].Properties["ChainCode"];
+        Assert.That(chainCode, Does.Contain(".With<User, ActiveUsers>("));
+        Assert.That(chainCode, Does.Contain("new ActiveUsers {"));
+        Assert.That(chainCode, Does.Contain(".FromCte<ActiveUsers>()"));
+
+        var dto = diagnostics[0].Properties["DtoDeclarations"];
+        Assert.That(dto, Does.Contain("public class ActiveUsers"));
+        Assert.That(dto, Does.Contain("UserId { get; set; }"));
+        Assert.That(dto, Does.Contain("UserName { get; set; }"));
+    }
+
+    [Test]
+    public async Task QRY042_RecursiveCte_NoDiagnostic()
+    {
+        // The runtime has no recursive With<>, so a recursive CTE can never convert.
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(
+            ""WITH RECURSIVE t AS (SELECT UserId FROM users UNION ALL SELECT UserId FROM users) SELECT UserId FROM t"");
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Is.Empty);
+    }
+
+    [Test]
+    public async Task QRY042_CteAsJoinTarget_NoDiagnostic()
+    {
+        // Join<TCte> resolves against the underlying table rather than the CTE name in the
+        // current runtime, so converting this would emit different SQL.
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(
+            ""WITH recent AS (SELECT * FROM orders) SELECT u.UserId FROM users u JOIN recent r ON u.UserId = r.UserId"");
     }
 }";
         var diagnostics = await GetMigrationDiagnosticsAsync(source);
@@ -366,15 +438,66 @@ public class TestService
     [Test]
     public async Task QRY042_CteOverConvertibleOuterQuery_NoDiagnostic()
     {
-        // The outer SELECT on its own is convertible, so without the CTE guard the
-        // converter would offer a chain conversion that silently drops the WITH clause.
+        // The outer SELECT reads a real table while a CTE is declared. Converting would
+        // need an entity accessor after With<>(), which requires QuarryContext<TSelf> —
+        // not verifiable here, so it must not be offered.
         var source = ContextAndSchemaPrefix + @"
 public class TestService
 {
     public void Run(TestDbContext db)
     {
         var results = db.RawSqlAsync<User>(
-            ""WITH recent AS (SELECT UserId FROM orders) SELECT UserId, UserName FROM users"");
+            ""WITH recent AS (SELECT * FROM orders) SELECT UserId, UserName FROM users"");
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Is.Empty);
+    }
+
+    [Test]
+    public async Task QRY042_CteBodyWithJoin_NoDiagnostic()
+    {
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(
+            ""WITH j AS (SELECT u.UserId FROM users u JOIN orders o ON u.UserId = o.OrderId) SELECT UserId FROM j"");
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Is.Empty);
+    }
+
+    [Test]
+    public async Task QRY042_CteBodyWithAggregate_NoDiagnostic()
+    {
+        // GROUP BY in a CTE body would be dropped by With<>'s Where + Select shape.
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(
+            ""WITH g AS (SELECT UserId FROM users GROUP BY UserId) SELECT UserId FROM g"");
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Is.Empty);
+    }
+
+    [Test]
+    public async Task QRY042_CteDtoNameCollidesWithEntity_NoDiagnostic()
+    {
+        // A CTE named "user" would need a DTO called User, shadowing the real entity.
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(
+            ""WITH user AS (SELECT UserId, UserName FROM users) SELECT UserId FROM user"");
     }
 }";
         var diagnostics = await GetMigrationDiagnosticsAsync(source);
