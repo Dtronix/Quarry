@@ -82,7 +82,34 @@ than the issue's "526 positional assertions" headline implies:
   after confirming no existing issue covered it). Both candidate fixes are written up in the issue
   with the seed-data analysis; the key point recorded there is that
   `.SortedByAsync(r => (r.UserName, r.Total))` compiles, reads as correct, and silently swaps rows
-  `[0]` and `[1]` — so a future sweep must not "fix" these mechanically.
+  `[0]` and `[1]` — so a future sweep must not "fix" these mechanically. A `<remarks>` block on
+  `CrossDialectJoinTests` now says exactly that and points at #332, so the trap is documented where
+  someone would hit it rather than only in the tracker.
+- **Six query-side ORDER BY fixes applied** (user-approved): the four `Pagination_*` tests with
+  `LIMIT/OFFSET`, `NoSelect_ExecuteFetchFirstAsync_ReturnsFirstEntity`, and
+  `Where_CollectionPlusScalar_WithPagination_ReturnsCorrectRows`.
+- **`OrderBy` goes *after* `Select` in this API** and takes the source-entity lambda, not the
+  projected tuple: `Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserId)` renders
+  `... ORDER BY "UserId" ASC ...`. Pattern taken from `CrossDialectOrderByTests:20`.
+- **The rendered SQL matched prediction exactly on all four dialects** — no derived-table wrap
+  (that only happens with `Distinct()` over a non-projected order column), and **parameter indices
+  are unchanged** (`$1`/`$2`, `@p0`/`@p1`) because ordering on a literal column adds no parameter.
+  So the mixed literal/parameterized pagination tests still pin the same index assignment they
+  were written to pin.
+- **SQL Server gains real coverage here**: `ORDER BY (SELECT NULL) OFFSET n ROWS FETCH NEXT m ROWS`
+  became `ORDER BY [UserId] ASC OFFSET n ROWS FETCH NEXT m ROWS`. The old form satisfies the T-SQL
+  grammar requirement for OFFSET/FETCH while imposing no order at all, so those tests were
+  asserting against an ordering the query never promised.
+- `Where_CollectionPlusScalar_WithPagination_ReturnsCorrectRows` asserted only a row count, so the
+  ORDER BY let it be **strengthened** with an actual value assertion rather than merely stabilised.
+- **These edits DO regenerate the `ManifestOutput` goldens** (unlike the pure sweep, which only
+  appends post-terminal calls). All four dialect goldens are committed with the change; the diff is
+  large because entries are keyed by chain signature and adding `.OrderBy(...)` re-sorts them.
+  Five `ORDER BY (SELECT NULL)` entries remain in the SQL Server golden — those belong to
+  count-only `Limit`/`Offset` tests in Complex/Where deliberately left alone (see below).
+- **Deliberately not fixed** — `CrossDialectComplexTests.Where_Select_Limit` (`Limit(5)` over 2 rows)
+  and `_LimitOffset` (`Limit(10).Offset(20)`, returns nothing): the limit exceeds the row count, so
+  nothing is actually nondeterministic, and adding an ORDER BY would churn pinned SQL for no gain.
 
 ### Step 12 (2026-08-03) — row-order sweep, second file group
 

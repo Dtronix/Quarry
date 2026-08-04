@@ -1922,51 +1922,6 @@ SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM 
 
 ---
 
-### Users().Select(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT [UserId], [UserName] FROM [users] ORDER BY (SELECT NULL) OFFSET 1 ROWS FETCH NEXT 2 ROWS ONLY
-```
-
----
-
-### Users().Select(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT [UserId], [UserName] FROM [users] ORDER BY (SELECT NULL) OFFSET 1 ROWS FETCH NEXT @p0 ROWS ONLY
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `int` |
-
----
-
-### Users().Select(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT [UserId], [UserName] FROM [users] ORDER BY (SELECT NULL) OFFSET @p0 ROWS FETCH NEXT 2 ROWS ONLY
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `int` |
-
----
-
-### Users().Select(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT [UserId], [UserName] FROM [users] ORDER BY (SELECT NULL) OFFSET @p1 ROWS FETCH NEXT @p0 ROWS ONLY
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `int` |
-| `@p1` | `int` |
-
----
-
 ### Users().Select(...).Limit(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -1996,6 +1951,51 @@ SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM 
 -- +skipFirst
 SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] ORDER BY [UserId] ASC OFFSET 1 ROWS FETCH NEXT 10 ROWS ONLY
 ```
+
+---
+
+### Users().Select(...).OrderBy(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [UserId], [UserName] FROM [users] ORDER BY [UserId] ASC OFFSET 1 ROWS FETCH NEXT 2 ROWS ONLY
+```
+
+---
+
+### Users().Select(...).OrderBy(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [UserId], [UserName] FROM [users] ORDER BY [UserId] ASC OFFSET 1 ROWS FETCH NEXT @p0 ROWS ONLY
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Users().Select(...).OrderBy(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [UserId], [UserName] FROM [users] ORDER BY [UserId] ASC OFFSET @p0 ROWS FETCH NEXT 2 ROWS ONLY
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Users().Select(...).OrderBy(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [UserId], [UserName] FROM [users] ORDER BY [UserId] ASC OFFSET @p1 ROWS FETCH NEXT @p0 ROWS ONLY
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `int` |
 
 ---
 
@@ -2735,6 +2735,14 @@ SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM 
 
 ---
 
+### Users().Where(...).OrderBy(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [IsActive] = 1 ORDER BY [UserId] ASC
+```
+
+---
+
 ### Users().Where(...).OrderBy(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -3179,20 +3187,6 @@ SELECT [UserName] FROM [users] WHERE [UserId] = -999
 
 ---
 
-### Users().Where(...).Select(...).Limit(...).ExecuteFetchAllAsync()
-
-```sql
-SELECT [UserName] FROM [users] WHERE [UserId] IN ({__COL_P0__}) AND [UserId] > @p1 ORDER BY (SELECT NULL) OFFSET 0 ROWS FETCH NEXT @p2 ROWS ONLY
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `int[]` |
-| `@p1` | `int` |
-| `@p2` | `int` |
-
----
-
 ### Users().Where(...).Select(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -3206,6 +3200,20 @@ SELECT [UserName], [Email] FROM [users] WHERE [IsActive] = 1 ORDER BY (SELECT NU
 ```sql
 SELECT [UserId], [UserName] FROM [users] WHERE [IsActive] = 1 ORDER BY (SELECT NULL) OFFSET 0 ROWS FETCH NEXT 5 ROWS ONLY
 ```
+
+---
+
+### Users().Where(...).Select(...).OrderBy(...).Limit(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT [UserName] FROM [users] WHERE [UserId] IN ({__COL_P0__}) AND [UserId] > @p1 ORDER BY [UserId] ASC OFFSET 0 ROWS FETCH NEXT @p2 ROWS ONLY
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int[]` |
+| `@p1` | `int` |
+| `@p2` | `int` |
 
 ---
 
@@ -5337,5 +5345,5 @@ WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [Ord
 |--------|------:|
 | Total discovered | 597 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 113 |
-| Rendered | 484 |
+| Consolidated (deduped) | 112 |
+| Rendered | 485 |

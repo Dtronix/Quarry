@@ -6,6 +6,17 @@ using Ss = Quarry.Tests.Samples.Ss;
 namespace Quarry.Tests.SqlOutput;
 
 
+/// <remarks>
+/// Nine tests here assert <c>pgResults[0] == ("Alice", 250.00m)</c> style sequences on a
+/// <c>users → orders</c> join that carries no <c>ORDER BY</c>. They are tracked as a known
+/// row-order flake in issue #332 and were deliberately left out of the #314
+/// <see cref="RowOrderExtensions.SortedByAsync{T, TKey}"/> sweep: the order they encode is
+/// <c>orders.OrderId</c> ascending, which is not in the projection, and the only projected
+/// discriminator (<c>Total</c>) runs *descending* within the Alice group. So
+/// <c>.SortedByAsync(r => (r.UserName, r.Total))</c> compiles, reads as correct, and silently
+/// swaps rows <c>[0]</c> and <c>[1]</c>. Do not "fix" these mechanically — see #332 for the
+/// two viable remedies.
+/// </remarks>
 [TestFixture]
 internal class CrossDialectJoinTests
 {

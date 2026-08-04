@@ -624,18 +624,22 @@ internal class CrossDialectSelectTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lt = Lite.Users().Select(u => (u.UserId, u.UserName)).Limit(2).Offset(1).Prepare();
-        var pg = Pg.Users().Select(u => (u.UserId, u.UserName)).Limit(2).Offset(1).Prepare();
-        var my = My.Users().Select(u => (u.UserId, u.UserName)).Limit(2).Offset(1).Prepare();
-        var ss = Ss.Users().Select(u => (u.UserId, u.UserName)).Limit(2).Offset(1).Prepare();
+        // OFFSET without ORDER BY selects an arbitrary window: PG and MySQL may return any two
+        // of the three rows, and the ORDER BY (SELECT NULL) that SQL Server needs for the
+        // OFFSET/FETCH grammar imposes no order either. The ordering is part of the query under
+        // test, not a client-side fixup — sorting the fetched list could not fix it.
+        var lt = Lite.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserId).Limit(2).Offset(1).Prepare();
+        var pg = Pg.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserId).Limit(2).Offset(1).Prepare();
+        var my = My.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserId).Limit(2).Offset(1).Prepare();
+        var ss = Ss.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserId).Limit(2).Offset(1).Prepare();
 
         QueryTestHarness.AssertDialects(
             lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
-            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" LIMIT 2 OFFSET 1",
-            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" LIMIT 2 OFFSET 1",
-            mysql:  "SELECT `UserId`, `UserName` FROM `users` LIMIT 2 OFFSET 1",
-            ss:     "SELECT [UserId], [UserName] FROM [users] ORDER BY (SELECT NULL) OFFSET 1 ROWS FETCH NEXT 2 ROWS ONLY");
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" ORDER BY \"UserId\" ASC LIMIT 2 OFFSET 1",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" ORDER BY \"UserId\" ASC LIMIT 2 OFFSET 1",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` ORDER BY `UserId` ASC LIMIT 2 OFFSET 1",
+            ss:     "SELECT [UserId], [UserName] FROM [users] ORDER BY [UserId] ASC OFFSET 1 ROWS FETCH NEXT 2 ROWS ONLY");
 
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
@@ -715,18 +719,18 @@ internal class CrossDialectSelectTests
         // Use a variable (not const) so the generator treats offset as parameterized
         int offset = 1;
 
-        var lt = Lite.Users().Select(u => (u.UserId, u.UserName)).Limit(2).Offset(offset).Prepare();
-        var pg = Pg.Users().Select(u => (u.UserId, u.UserName)).Limit(2).Offset(offset).Prepare();
-        var my = My.Users().Select(u => (u.UserId, u.UserName)).Limit(2).Offset(offset).Prepare();
-        var ss = Ss.Users().Select(u => (u.UserId, u.UserName)).Limit(2).Offset(offset).Prepare();
+        var lt = Lite.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserId).Limit(2).Offset(offset).Prepare();
+        var pg = Pg.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserId).Limit(2).Offset(offset).Prepare();
+        var my = My.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserId).Limit(2).Offset(offset).Prepare();
+        var ss = Ss.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserId).Limit(2).Offset(offset).Prepare();
 
         QueryTestHarness.AssertDialects(
             lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
-            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" LIMIT 2 OFFSET @p0",
-            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" LIMIT 2 OFFSET $1",
-            mysql:  "SELECT `UserId`, `UserName` FROM `users` LIMIT 2 OFFSET ?",
-            ss:     "SELECT [UserId], [UserName] FROM [users] ORDER BY (SELECT NULL) OFFSET @p0 ROWS FETCH NEXT 2 ROWS ONLY");
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" ORDER BY \"UserId\" ASC LIMIT 2 OFFSET @p0",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" ORDER BY \"UserId\" ASC LIMIT 2 OFFSET $1",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` ORDER BY `UserId` ASC LIMIT 2 OFFSET ?",
+            ss:     "SELECT [UserId], [UserName] FROM [users] ORDER BY [UserId] ASC OFFSET @p0 ROWS FETCH NEXT 2 ROWS ONLY");
 
         // Execution: skip 1 user, take 2 → should get Bob and Charlie
         var results = await lt.ExecuteFetchAllAsync();
@@ -759,18 +763,18 @@ internal class CrossDialectSelectTests
         // Inverse mixed case: parameterized limit, literal offset
         int limit = 2;
 
-        var lt = Lite.Users().Select(u => (u.UserId, u.UserName)).Limit(limit).Offset(1).Prepare();
-        var pg = Pg.Users().Select(u => (u.UserId, u.UserName)).Limit(limit).Offset(1).Prepare();
-        var my = My.Users().Select(u => (u.UserId, u.UserName)).Limit(limit).Offset(1).Prepare();
-        var ss = Ss.Users().Select(u => (u.UserId, u.UserName)).Limit(limit).Offset(1).Prepare();
+        var lt = Lite.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserId).Limit(limit).Offset(1).Prepare();
+        var pg = Pg.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserId).Limit(limit).Offset(1).Prepare();
+        var my = My.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserId).Limit(limit).Offset(1).Prepare();
+        var ss = Ss.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserId).Limit(limit).Offset(1).Prepare();
 
         QueryTestHarness.AssertDialects(
             lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
-            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" LIMIT @p0 OFFSET 1",
-            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" LIMIT $1 OFFSET 1",
-            mysql:  "SELECT `UserId`, `UserName` FROM `users` LIMIT ? OFFSET 1",
-            ss:     "SELECT [UserId], [UserName] FROM [users] ORDER BY (SELECT NULL) OFFSET 1 ROWS FETCH NEXT @p0 ROWS ONLY");
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" ORDER BY \"UserId\" ASC LIMIT @p0 OFFSET 1",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" ORDER BY \"UserId\" ASC LIMIT $1 OFFSET 1",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` ORDER BY `UserId` ASC LIMIT ? OFFSET 1",
+            ss:     "SELECT [UserId], [UserName] FROM [users] ORDER BY [UserId] ASC OFFSET 1 ROWS FETCH NEXT @p0 ROWS ONLY");
 
         // Execution: skip 1, take 2 → should get Bob and Charlie
         var results = await lt.ExecuteFetchAllAsync();
@@ -804,18 +808,18 @@ internal class CrossDialectSelectTests
         int limit = 2;
         int offset = 1;
 
-        var lt = Lite.Users().Select(u => (u.UserId, u.UserName)).Limit(limit).Offset(offset).Prepare();
-        var pg = Pg.Users().Select(u => (u.UserId, u.UserName)).Limit(limit).Offset(offset).Prepare();
-        var my = My.Users().Select(u => (u.UserId, u.UserName)).Limit(limit).Offset(offset).Prepare();
-        var ss = Ss.Users().Select(u => (u.UserId, u.UserName)).Limit(limit).Offset(offset).Prepare();
+        var lt = Lite.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserId).Limit(limit).Offset(offset).Prepare();
+        var pg = Pg.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserId).Limit(limit).Offset(offset).Prepare();
+        var my = My.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserId).Limit(limit).Offset(offset).Prepare();
+        var ss = Ss.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserId).Limit(limit).Offset(offset).Prepare();
 
         QueryTestHarness.AssertDialects(
             lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
-            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" LIMIT @p0 OFFSET @p1",
-            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" LIMIT $1 OFFSET $2",
-            mysql:  "SELECT `UserId`, `UserName` FROM `users` LIMIT ? OFFSET ?",
-            ss:     "SELECT [UserId], [UserName] FROM [users] ORDER BY (SELECT NULL) OFFSET @p1 ROWS FETCH NEXT @p0 ROWS ONLY");
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" ORDER BY \"UserId\" ASC LIMIT @p0 OFFSET @p1",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" ORDER BY \"UserId\" ASC LIMIT $1 OFFSET $2",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` ORDER BY `UserId` ASC LIMIT ? OFFSET ?",
+            ss:     "SELECT [UserId], [UserName] FROM [users] ORDER BY [UserId] ASC OFFSET @p1 ROWS FETCH NEXT @p0 ROWS ONLY");
 
         // Execution: skip 1, take 2 → should get Bob and Charlie
         var results = await lt.ExecuteFetchAllAsync();
@@ -897,18 +901,21 @@ internal class CrossDialectSelectTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lt = Lite.Users().Where(u => u.IsActive).Prepare();
-        var pg = Pg.Users().Where(u => u.IsActive).Prepare();
-        var my = My.Users().Where(u => u.IsActive).Prepare();
-        var ss = Ss.Users().Where(u => u.IsActive).Prepare();
+        // IsActive matches two rows (Alice and Bob), so "first" is only well-defined with an
+        // ORDER BY: without one, PG/MySQL/SQL Server may hand back either. A client-side sort
+        // cannot fix a First terminal, so the ordering belongs in the query.
+        var lt = Lite.Users().Where(u => u.IsActive).OrderBy(u => u.UserId).Prepare();
+        var pg = Pg.Users().Where(u => u.IsActive).OrderBy(u => u.UserId).Prepare();
+        var my = My.Users().Where(u => u.IsActive).OrderBy(u => u.UserId).Prepare();
+        var ss = Ss.Users().Where(u => u.IsActive).OrderBy(u => u.UserId).Prepare();
 
         QueryTestHarness.AssertDialects(
             lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
-            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"IsActive\" = 1",
-            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"IsActive\" = TRUE",
-            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `IsActive` = 1",
-            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [IsActive] = 1");
+            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"IsActive\" = 1 ORDER BY \"UserId\" ASC",
+            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"IsActive\" = TRUE ORDER BY \"UserId\" ASC",
+            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `IsActive` = 1 ORDER BY `UserId` ASC",
+            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [IsActive] = 1 ORDER BY [UserId] ASC");
 
         var result = await lt.ExecuteFetchFirstAsync();
         Assert.That(result.UserId, Is.EqualTo(1));
