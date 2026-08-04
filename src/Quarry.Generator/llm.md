@@ -312,6 +312,8 @@ The discovery stage builds a supplemental compilation containing Pipeline-A outp
 
 `Quarry.Shared/Sql/Parser/` (tokenizer, recursive-descent parser, AST, walker) is `#if QUARRY_GENERATOR`-gated — consumed by the generator, excluded from the runtime assembly. Powers: RawSqlAsync compile-time column resolution, QRY042 convertibility detection, and the `Quarry.Migration` converters.
 
+**CTEs (#331):** `WITH [RECURSIVE] name [(col, …)] AS ( … ) [, …] SELECT …` parses into `SqlSelectStatement.Ctes` / `.IsRecursive`. A fully parsed CTE query leaves `HasUnsupported` **false**, so `RawSqlAsync` still gets hardcoded ordinals from the outer SELECT. Set operations have real AST nodes (`SqlSetOperationStatement`) but are parsed **only inside CTE bodies** — a recursive body is UNION-joined; a top-level `UNION`/`INTERSECT`/`EXCEPT` keeps its diagnostic and `HasUnsupported` flag. Data-modifying CTEs (`WITH … UPDATE`) remain unsupported. Both chain converters emit `.With<…>()` / `.FromCte<T>()` for the convertible subset and synthesize a DTO for projected bodies; see `Quarry.Migration/README.md` for the exact convertibility rules.
+
 ### Carrier Dedup
 
 Structurally-identical carrier classes are merged at emission time. Carrier class numbering (`Chain_N`) may have gaps and is not a stable contract. Dedup checks `CarrierPlan` equality (fields, parameters, extraction plans, SQL variants). Diagnostics still reference the canonical carrier name.

@@ -67,7 +67,7 @@ db.With<Order, RecentOrders>(o => o.Where(o => o.Total > 100)
 - [x] **10. Code fixes insert synthesized types.** Depends on 9. Extend `DapperMigrationCodeFix.ConvertToQuarryAsync` (`:70-96`) and the ADO.NET equivalent to add `GeneratedTypeDeclarations` to the compilation unit next to the expression replacement, reusing the existing `EnsureUsing` pattern. Skip declarations whose name already exists in the compilation.
   *Tests:* `DapperMigrationCodeFixTests` / `AdoNetMigrationCodeFixTests` — applying the fix yields a document containing both the chain and the declaration.
 
-- [ ] **11. Documentation.** Depends on all. Update the "Shared SQL Parser" section of `src/Quarry.Generator/llm.md:311-313` (it currently lists CTEs as an unsupported construct), `src/Quarry.Migration/README.md:31`, and any diagnostic-table wording that claims CTEs are unparseable.
+- [x] **11. Documentation.** Depends on all. Update the "Shared SQL Parser" section of `src/Quarry.Generator/llm.md:311-313` (it currently lists CTEs as an unsupported construct), `src/Quarry.Migration/README.md:31`, and any diagnostic-table wording that claims CTEs are unparseable.
   *Tests:* none; if manifest goldens shift, rebuild rather than hand-edit them.
 
 ## Deviations

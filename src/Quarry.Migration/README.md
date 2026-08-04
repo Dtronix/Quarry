@@ -47,8 +47,50 @@ For all four source tools, the converter covers the common relational query surf
 - `ORDER BY` (ascending/descending), `LIMIT` / `OFFSET`.
 - `DELETE` and `UPDATE` with matching `WHERE`. DELETE/UPDATE without a `WHERE` emits `.All()` with a warning.
 - `INSERT` — emits a TODO comment, since Quarry's `Insert` requires an entity object rather than positional column values. Review manually.
+- `WITH … AS (…)` common table expressions — see below.
 
 Constructs that fall outside the converter's grammar are emitted as `Sql.Raw` fragments so the query still runs; the analyzer flags them with a QRM00x-warnings diagnostic so you can review.
+
+### Common Table Expressions
+
+A `WITH` query converts to `.With<…>(…)` plus `.FromCte<T>()`. Quarry names a CTE after the C# type passed to `With<T>`, so the emitted `WITH` name is the type name rather than the original SQL name — harmless, because the outer `FROM` reference changes with it.
+
+A `SELECT *` body reuses the source entity type and needs nothing new:
+
+```sql
+WITH recent AS (SELECT * FROM orders WHERE total > 100) SELECT order_id FROM recent
+```
+```csharp
+db.With<Order>(o => o.Where(o => o.Total > 100))
+    .FromCte<Order>()
+    .Select(o => o.OrderId)
+```
+
+A body that projects a subset of columns needs a DTO, which the code fix synthesizes and inserts into the file alongside the rewritten call:
+
+```sql
+WITH recent_orders AS (SELECT order_id, total FROM orders) SELECT total FROM recent_orders
+```
+```csharp
+db.With<Order, RecentOrders>(o => o
+        .Select(o => new RecentOrders { OrderId = o.OrderId, Total = o.Total }))
+    .FromCte<RecentOrders>()
+    .Select(r => r.Total)
+
+public class RecentOrders
+{
+    public int OrderId { get; set; }
+    public decimal Total { get; set; }
+}
+```
+
+A CTE query is reported not-convertible — rather than converted into something that would produce different SQL — when any of these hold:
+
+- the `WITH` is recursive (the runtime has no recursive `With<>`);
+- the outer query reads from a real table instead of a CTE (that shape needs an entity accessor after `With<>()`, which requires the context to derive from `QuarryContext<TSelf>`);
+- a CTE is used as a join target (`Join<TCte>` currently resolves against the underlying table, not the CTE);
+- a CTE body contains a join, `DISTINCT`, `GROUP BY`, `HAVING`, `ORDER BY`, `LIMIT` or `OFFSET`, or projects an expression rather than plain columns;
+- the synthesized DTO name would collide with an existing entity type.
 
 ---
 
