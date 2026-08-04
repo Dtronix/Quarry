@@ -74,7 +74,7 @@ Implements issue #314 (all 7 findings; the two low items are deferred per Decisi
   After the merge step: jq-compare current combined results vs previous data.js entry per `Quarry_*` series — mean regression >15% or any `allocated` increase ⇒ collect breaches; if any, `gh issue create` (label `performance-regression`, body listing series/old/new/delta; dedupe: skip if an open issue with the same title exists). Separately: expected-series check — every series present in the previous entry must exist in the current results with non-null `Statistics`, else **fail the workflow** (replaces silent `select(.Statistics != null)` drop). Needs `issues: write` permission and jq logic only — no compiled tooling.
   Tests: none runnable locally beyond `jq` dry-runs against committed artifact samples + `act`-style reasoning; validated post-merge. Verify yml with `gh workflow view`/yaml lint.
 
-- [ ] **15. Final pass — full suite, docs touch-ups**
+- [x] **15. Final pass — full suite, docs touch-ups** *(full suite green: Quarry.Tests 3484, Migration.Tests 201, Analyzers.Tests 146, Docker available. `llm-testing.md` gained a row-order section, a runtime-behaviour-suites section, the bug-pin convention, manifest CI enforcement, and three new gotchas; `src/Quarry.Generator/llm.md` gained the tracking-name table plus the two Roslyn semantics that make caching assertions non-vacuous.)*
   Full `dotnet test Quarry.sln`; update `llm-testing.md` (SortedByAsync now the default pattern; concurrency/streaming/cancellation suites; bug-pin convention; manifest CI enforcement) and `src/Quarry.Generator/llm.md` (tracking names). → REVIEW.
 
 ## Step dependencies
