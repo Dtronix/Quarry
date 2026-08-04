@@ -5360,6 +5360,32 @@ WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `Ord
 
 ---
 
+### With(...).FromCte(...).Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `Total` > ?) SELECT `OrderId`, `Total` FROM `Order` WHERE `OrderId` >= ?
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+| `@p1` | `int` |
+
+---
+
+### With(...).FromCte(...).Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `Total` > ?) SELECT `OrderId`, `Total` FROM `Order` WHERE `OrderId` >= ?
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+| `@p1` | `int` |
+
+---
+
 ### With(...).With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -5382,6 +5408,20 @@ WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `Ord
 |-----------|------|
 | `@p0` | `decimal` |
 | `@p1` | `bool` |
+
+---
+
+### With(...).With(...).FromCte(...).Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `Total` > ?), `User` AS (SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `IsActive` = ?) SELECT `OrderId`, `Total` FROM `Order` WHERE `OrderId` >= ?
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+| `@p1` | `bool` |
+| `@p2` | `int` |
 
 ---
 
@@ -5479,7 +5519,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 604 |
+| Total discovered | 607 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 110 |
-| Rendered | 494 |
+| Rendered | 497 |

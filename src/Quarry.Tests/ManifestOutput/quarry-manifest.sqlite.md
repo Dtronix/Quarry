@@ -5926,6 +5926,19 @@ WITH "OrderSummaryDto" AS (SELECT "OrderId", "Total", "Status" FROM "orders" WHE
 
 ---
 
+### With(...).FromCte(...).Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > @p0) SELECT "OrderId", "Total" FROM "Order" WHERE "OrderId" >= @p1
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+| `@p1` | `int` |
+
+---
+
 ### With(...).With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -5951,6 +5964,20 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 ---
 
+### With(...).With(...).FromCte(...).Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > @p0), "User" AS (SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = @p1) SELECT "OrderId", "Total" FROM "Order" WHERE "OrderId" >= @p2
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+| `@p1` | `bool` |
+| `@p2` | `int` |
+
+---
+
 ### With(...).With(...).With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -5969,7 +5996,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 756 |
+| Total discovered | 758 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 212 |
-| Rendered | 544 |
+| Rendered | 546 |
