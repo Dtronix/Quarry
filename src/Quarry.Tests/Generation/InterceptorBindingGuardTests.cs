@@ -162,17 +162,9 @@ public class Service
             @"await db.Users().Insert(new User { UserName = ""a"", IsActive = true }).ExecuteNonQueryAsync();"),
         new("Projected_ScalarAsync", "ExecuteScalarAsync",
             "await db.Users().Where(u => u.UserId > 0).Select(u => u.UserId).ExecuteScalarAsync<int>();"),
-    };
-
-    /// <summary>
-    /// The two <c>InsertBatch</c> shapes. Held out of <see cref="AllShapes"/> because they do not
-    /// compile in a non-friend assembly at all — see
-    /// <see cref="KnownBug_Issue334_BatchInsert_ReferencesInternalType"/>. Their arity coverage is
-    /// not lost: <c>Insert_ScalarAsync</c> and <c>Insert_NonQuery</c> exercise the same
-    /// generic-terminal-on-generic-receiver family.
-    /// </summary>
-    private static readonly Shape[] BatchInsertShapes =
-    {
+        // Batch insert emits a call to Quarry.Internal.BatchInsertSqlBuilder. These two shapes were
+        // held out of the matrix while that type was internal (#334) — an ordinary consumer could
+        // not compile them at all. They are back in the clean-binding set now that it is public.
         new("BatchInsert_NonQuery", "ExecuteNonQueryAsync",
             @"var rows = new[] { new User { UserName = ""a"", IsActive = true } };
         await db.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(rows).ExecuteNonQueryAsync();"),
@@ -199,37 +191,6 @@ public class Service
         EntityTerminalShapes.Concat(GenericTerminalShapes).Concat(ModificationShapes);
 
     public static IEnumerable<Shape> EntityTerminalOnlyShapes => EntityTerminalShapes;
-
-    public static IEnumerable<Shape> BatchInsertOnlyShapes => BatchInsertShapes;
-
-    /// <summary>
-    /// Bug pin for #334. The emitter hard-codes a call to
-    /// <c>Quarry.Internal.BatchInsertSqlBuilder.Build(...)</c>
-    /// (<c>TerminalBodyEmitter.cs:518</c> and <c>:559</c>), but that type is <c>internal</c> to the
-    /// Quarry assembly — so an <c>InsertBatch</c> chain does not compile for any consumer outside
-    /// Quarry's <c>InternalsVisibleTo</c> list. Every in-repo project that uses <c>InsertBatch</c>
-    /// happens to be on that list, which is why nothing caught it before this fixture, whose
-    /// synthetic compilation is deliberately not a friend assembly.
-    /// </summary>
-    /// <remarks>
-    /// When this test fails, #334 is fixed: delete the pin, delete
-    /// <see cref="BatchInsertShapes"/>, and move those two shapes back into
-    /// <c>GenericTerminalShapes</c> so they rejoin the clean-binding matrix.
-    /// </remarks>
-    [TestCaseSource(nameof(BatchInsertOnlyShapes))]
-    public void KnownBug_Issue334_BatchInsert_ReferencesInternalType(Shape shape)
-    {
-        var (_, diagnostics) = Run(shape, "TestDbContext", crossContext: false);
-
-        var inaccessible = diagnostics
-            .Where(d => d.Id == "CS0122" && d.GetMessage().Contains("BatchInsertSqlBuilder"))
-            .ToList();
-
-        Assert.That(inaccessible, Is.Not.Empty,
-            $"'{shape.Name}' no longer references an inaccessible type from the generated " +
-            "interceptor. If #334 is fixed, remove this pin and return the InsertBatch shapes to " +
-            $"the clean-binding matrix. Diagnostics were: {Describe(diagnostics)}");
-    }
 
     [TestCaseSource(nameof(AllShapes))]
     public void Shape_BindsWithoutInterceptorMismatch(Shape shape)

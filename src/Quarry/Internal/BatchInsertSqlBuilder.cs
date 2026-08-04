@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Text;
 using Quarry.Shared.Sql;
 
@@ -7,14 +8,20 @@ namespace Quarry.Internal;
 /// Builds batch INSERT SQL at runtime from compile-time templates.
 /// Called by generated terminal interceptors for batch insert chains.
 /// </summary>
-internal static class BatchInsertSqlBuilder
+/// <remarks>
+/// Public because generated interceptors are emitted into the <em>consumer's</em> assembly and name
+/// this type directly, so it must be reachable without an <c>InternalsVisibleTo</c> grant (#334).
+/// It is not part of Quarry's supported API and may change without notice.
+/// </remarks>
+[EditorBrowsable(EditorBrowsableState.Never)]
+public static class BatchInsertSqlBuilder
 {
     /// <summary>
     /// Maximum number of parameters allowed in a single batch insert statement.
     /// Most databases impose limits (SQL Server: 2100, SQLite: 999 default, MySQL: no hard limit,
     /// PostgreSQL: 65535). We use a conservative default that works across all dialects.
     /// </summary>
-    internal const int MaxParameterCount = 2100;
+    public const int MaxParameterCount = 2100;
 
     /// <summary>
     /// Builds a complete batch INSERT SQL string from a pre-assembled prefix
