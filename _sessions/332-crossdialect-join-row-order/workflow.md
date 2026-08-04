@@ -5,10 +5,10 @@ platform: github
 base-branch: master
 
 ## State
-phase: REVIEW
+phase: REMEDIATE
 status: active
 issue: #332
-pr:
+pr: #337
 
 ## Problem Statement
 
@@ -131,3 +131,5 @@ never used` in generated `MyDb.Interceptors.*.g.cs`, and one `NUnit2009` in
 | 2026-08-04 | INTAKE → DESIGN | Loaded issue #332, created worktree/branch, read all nine test sites and seed data. Baseline 3501/3501. |
 | 2026-08-04 | PLAN → IMPLEMENT | All 4 steps committed (80895b3, 2abee88, ff9d8e2, 7428a1a). Full suite 3501/3501, matching baseline. Manifest goldens unchanged. |
 | 2026-08-04 | → REVIEW | `origin/master` had not moved from b03e246, so no rebase was needed. Delegated analysis pass. |
+| 2026-08-04 | REVIEW → REMEDIATE | 6 findings (1 M, 5 L), classified 4A/2B, none deferred or dismissed. All fixed in 07f445a; full suite 3501/3501. |
+| 2026-08-04 | REMEDIATE | Pushed branch; opened PR #337. |
