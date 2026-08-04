@@ -278,6 +278,75 @@ public class Example
     }
 
     [Test]
+    public async Task ProjectedCte_InsertsSynthesizedDtoDeclaration()
+    {
+        // A projected CTE needs a DTO type the source does not declare, so the fix must add
+        // the declaration as well as replacing the expression (#331).
+        var (source, actions) = await ApplyCodeFixAsync(@"
+using System.Data;
+using Dapper;
+using System.Threading.Tasks;
+using Quarry;
+
+public class OrderSchema : Schema
+{
+    public static string Table => ""orders"";
+    public Key<int> OrderId => Identity<int>();
+    public Col<int> Total => Length<int>(10);
+}
+
+public class Row { public int OrderId { get; set; } }
+
+public class Example
+{
+    public async Task Run(IDbConnection connection)
+    {
+        var results = await connection.QueryAsync<Row>(
+            ""WITH recent_orders AS (SELECT OrderId, Total FROM orders) SELECT OrderId FROM recent_orders"");
+    }
+}
+");
+
+        Assert.That(actions, Has.Count.EqualTo(1));
+        Assert.That(source, Is.Not.Null);
+        Assert.That(source, Does.Contain(".FromCte<RecentOrders>()"));
+        Assert.That(source, Does.Contain("class RecentOrders"));
+        Assert.That(source, Does.Contain("public int OrderId { get; set; }"));
+    }
+
+    [Test]
+    public async Task WholeEntityCte_AddsNoTypeDeclaration()
+    {
+        var (source, _) = await ApplyCodeFixAsync(@"
+using System.Data;
+using Dapper;
+using System.Threading.Tasks;
+using Quarry;
+
+public class OrderSchema : Schema
+{
+    public static string Table => ""orders"";
+    public Key<int> OrderId => Identity<int>();
+}
+
+public class Row { public int OrderId { get; set; } }
+
+public class Example
+{
+    public async Task Run(IDbConnection connection)
+    {
+        var results = await connection.QueryAsync<Row>(
+            ""WITH recent AS (SELECT * FROM orders) SELECT OrderId FROM recent"");
+    }
+}
+");
+
+        Assert.That(source, Is.Not.Null);
+        Assert.That(source, Does.Contain(".FromCte<Order>()"));
+        Assert.That(source, Does.Not.Contain("class Recent\n"));
+    }
+
+    [Test]
     public async Task NonFixableDiagnostic_QRM003_NoCodeAction()
     {
         // INSERT emits IsSuggestionOnly=true → routed to QRM003 → not in FixableDiagnosticIds

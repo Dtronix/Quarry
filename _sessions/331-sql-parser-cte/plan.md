@@ -58,13 +58,13 @@ db.With<Order, RecentOrders>(o => o.Where(o => o.Total > 100)
 - [x] **7. `SqlToChainConverter`: CTE emission + DTO synthesis.** Depends on 6. Emit `.With<TEntity>(…)` for whole-entity bodies and `.With<TEntity, TDto>(… .Select(e => new TDto { … }))` for projected bodies, followed by `.FromCte<T>()` when the outer FROM is a CTE. Synthesize the DTO class text (`{ get; set; }` properties per `CteDtoResolver.cs:28`) and carry it on a new `DtoDeclaration` diagnostic property. Extend `RawSqlToChainCodeFix` to insert it into the compilation unit, with collision handling against existing type names.
   *Tests:* analyzer tests asserting `ChainCode` and `DtoDeclaration` property contents; a code-fix test asserting the declaration is inserted and the result compiles.
 
-- [ ] **8. `ConversionResult` + `ChainEmitter`: CTE convertibility.** Depends on 3. Add `GeneratedTypeDeclarations` (`IReadOnlyList<string>`) to `ConversionResult.cs`. Replace the step-3 blanket rejection in `ChainEmitter` with the same convertibility rules, registering CTE names alongside `_tables` without letting them collide with real schema tables.
+- [x] **8. `ConversionResult` + `ChainEmitter`: CTE convertibility.** Depends on 3. Add `GeneratedTypeDeclarations` (`IReadOnlyList<string>`) to `ConversionResult.cs`. Replace the step-3 blanket rejection in `ChainEmitter` with the same convertibility rules, registering CTE names alongside `_tables` without letting them collide with real schema tables.
   *Tests:* `ChainEmitterTests.cs` — CTE queries that must not convert produce a null chain plus a clear diagnostic.
 
-- [ ] **9. `ChainEmitter`: CTE emission + DTO synthesis.** Depends on 8. Emit both `.With<>` forms and `.FromCte<>`, populate `GeneratedTypeDeclarations`.
+- [x] **9. `ChainEmitter`: CTE emission + DTO synthesis.** Depends on 8. Emit both `.With<>` forms and `.FromCte<>`, populate `GeneratedTypeDeclarations`.
   *Tests:* `ChainEmitterTests.cs` — whole-entity CTE, projected CTE (asserting the synthesized declaration), multi-CTE chain; `DapperConverterTests.cs` / `AdoNetConverterTests.cs` end-to-end.
 
-- [ ] **10. Code fixes insert synthesized types.** Depends on 9. Extend `DapperMigrationCodeFix.ConvertToQuarryAsync` (`:70-96`) and the ADO.NET equivalent to add `GeneratedTypeDeclarations` to the compilation unit next to the expression replacement, reusing the existing `EnsureUsing` pattern. Skip declarations whose name already exists in the compilation.
+- [x] **10. Code fixes insert synthesized types.** Depends on 9. Extend `DapperMigrationCodeFix.ConvertToQuarryAsync` (`:70-96`) and the ADO.NET equivalent to add `GeneratedTypeDeclarations` to the compilation unit next to the expression replacement, reusing the existing `EnsureUsing` pattern. Skip declarations whose name already exists in the compilation.
   *Tests:* `DapperMigrationCodeFixTests` / `AdoNetMigrationCodeFixTests` — applying the fix yields a document containing both the chain and the declaration.
 
 - [ ] **11. Documentation.** Depends on all. Update the "Shared SQL Parser" section of `src/Quarry.Generator/llm.md:311-313` (it currently lists CTEs as an unsupported construct), `src/Quarry.Migration/README.md:31`, and any diagnostic-table wording that claims CTEs are unparseable.

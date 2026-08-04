@@ -19,30 +19,47 @@ public class ChainEmitterTests
         return new SchemaMap(dict);
     }
 
-    private static EntityMapping UsersEntity() => new EntityMapping(
-        "users", null, "UserSchema", "Users",
-        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    /// <summary>
+    /// Builds the column-name and column-detail dictionaries from a single source, so the
+    /// CLR types CTE DTO synthesis needs stay in step with the name mapping.
+    /// </summary>
+    private static (Dictionary<string, string> Names, Dictionary<string, ColumnMapping> Details)
+        BuildColumns(params (string Column, string Property, string ClrType)[] columns)
+    {
+        var names = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var details = new Dictionary<string, ColumnMapping>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (column, property, clrType) in columns)
         {
-            ["user_id"] = "UserId",
-            ["user_name"] = "UserName",
-            ["email"] = "Email",
-            ["is_active"] = "IsActive",
-            ["created_at"] = "CreatedAt",
-            ["last_login"] = "LastLogin",
-            ["salary"] = "Salary",
-            ["dept"] = "Dept",
-        });
+            names[column] = property;
+            details[column] = new ColumnMapping(property, clrType, isForeignKey: false);
+        }
+        return (names, details);
+    }
 
-    private static EntityMapping OrdersEntity() => new EntityMapping(
-        "orders", null, "OrderSchema", "Orders",
-        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["order_id"] = "OrderId",
-            ["user_id"] = "UserId",
-            ["total"] = "Total",
-            ["status"] = "Status",
-            ["order_date"] = "OrderDate",
-        });
+    private static EntityMapping UsersEntity()
+    {
+        var (names, details) = BuildColumns(
+            ("user_id", "UserId", "int"),
+            ("user_name", "UserName", "string"),
+            ("email", "Email", "string"),
+            ("is_active", "IsActive", "bool"),
+            ("created_at", "CreatedAt", "DateTime"),
+            ("last_login", "LastLogin", "DateTime?"),
+            ("salary", "Salary", "decimal"),
+            ("dept", "Dept", "string"));
+        return new EntityMapping("users", null, "UserSchema", "Users", names, details);
+    }
+
+    private static EntityMapping OrdersEntity()
+    {
+        var (names, details) = BuildColumns(
+            ("order_id", "OrderId", "int"),
+            ("user_id", "UserId", "int"),
+            ("total", "Total", "decimal"),
+            ("status", "Status", "string"),
+            ("order_date", "OrderDate", "DateTime"));
+        return new EntityMapping("orders", null, "OrderSchema", "Orders", names, details);
+    }
 
     private static EntityMapping EmployeesEntity() => new EntityMapping(
         "employees", null, "EmployeeSchema", "Employees",
@@ -862,36 +879,232 @@ public class ChainEmitterTests
 
     // ─── CTEs (#331) ───────────────────────────────────────
 
-    [Test]
-    public void Cte_NotYetConvertible_ReturnsNullWithDiagnostic()
+    private static ConversionResult TranslateCte(string sql, params EntityMapping[] entities)
     {
-        var schema = BuildSchemaMap(UsersEntity(), OrdersEntity());
-        var sql = "WITH recent AS (SELECT user_id FROM orders WHERE total > 100) SELECT user_id FROM recent";
+        var schema = BuildSchemaMap(entities.Length > 0 ? entities : new[] { UsersEntity(), OrdersEntity() });
         var parseResult = SqlParser.Parse(sql, SqlDialect.SQLite);
-        var callSite = FakeCallSite(sql);
+        return new ChainEmitter(schema).Translate(parseResult, FakeCallSite(sql));
+    }
 
-        var emitter = new ChainEmitter(schema);
-        var result = emitter.Translate(parseResult, callSite);
+    [Test]
+    public void Cte_WholeEntity_EmitsWithAndFromCte()
+    {
+        var result = TranslateCte(
+            "WITH recent AS (SELECT * FROM orders WHERE total > 100) SELECT order_id, total FROM recent");
+
+        Assert.That(result.ChainCode, Is.Not.Null);
+        Assert.That(result.ChainCode, Does.Contain(".With<Order>("));
+        Assert.That(result.ChainCode, Does.Contain(".Where("));
+        Assert.That(result.ChainCode, Does.Contain(".FromCte<Order>()"));
+
+        // A whole-entity CTE reuses the entity type — nothing is synthesized.
+        Assert.That(result.GeneratedTypeDeclarations, Is.Empty);
+    }
+
+    [Test]
+    public void Cte_Projected_EmitsDtoAndSelect()
+    {
+        var result = TranslateCte(
+            "WITH recent_orders AS (SELECT order_id, total FROM orders WHERE total > 100) " +
+            "SELECT order_id, total FROM recent_orders");
+
+        Assert.That(result.ChainCode, Is.Not.Null);
+        Assert.That(result.ChainCode, Does.Contain(".With<Order, RecentOrders>("));
+        Assert.That(result.ChainCode, Does.Contain("new RecentOrders { OrderId = "));
+        Assert.That(result.ChainCode, Does.Contain(".FromCte<RecentOrders>()"));
+
+        Assert.That(result.GeneratedTypeDeclarations, Has.Count.EqualTo(1));
+        var dto = result.GeneratedTypeDeclarations[0];
+        Assert.That(dto, Does.Contain("public class RecentOrders"));
+        Assert.That(dto, Does.Contain("public int OrderId { get; set; }"));
+        Assert.That(dto, Does.Contain("public decimal Total { get; set; }"));
+    }
+
+    [Test]
+    public void Cte_Projected_OuterColumnsResolveAgainstExposedShape()
+    {
+        // The outer query references the CTE's exposed column names, which must resolve to
+        // the synthesized DTO's properties rather than the source entity's.
+        var result = TranslateCte(
+            "WITH recent_orders AS (SELECT order_id, total FROM orders) SELECT total FROM recent_orders");
+
+        Assert.That(result.ChainCode, Does.Contain(".Select("));
+        Assert.That(result.ChainCode, Does.Contain("Total"));
+    }
+
+    [Test]
+    public void Cte_ExplicitColumnList_RenamesDtoProperties()
+    {
+        var result = TranslateCte(
+            "WITH t(oid, amount) AS (SELECT order_id, total FROM orders) SELECT oid FROM t");
+
+        Assert.That(result.ChainCode, Is.Not.Null);
+        var dto = result.GeneratedTypeDeclarations[0];
+        Assert.That(dto, Does.Contain("public int Oid { get; set; }"));
+        Assert.That(dto, Does.Contain("public decimal Amount { get; set; }"));
+    }
+
+    [Test]
+    public void Cte_MultipleCtes_EmitsEachWith()
+    {
+        var result = TranslateCte(
+            "WITH a AS (SELECT * FROM users), b AS (SELECT * FROM orders) SELECT user_id FROM a");
+
+        Assert.That(result.ChainCode, Is.Not.Null);
+        Assert.That(result.ChainCode, Does.Contain(".With<User>("));
+        Assert.That(result.ChainCode, Does.Contain(".With<Order>("));
+        Assert.That(result.ChainCode, Does.Contain(".FromCte<User>()"));
+    }
+
+    [Test]
+    public void Cte_Recursive_NotConvertible()
+    {
+        // There is no recursive With<> in the runtime.
+        var result = TranslateCte(
+            "WITH RECURSIVE t AS (SELECT order_id FROM orders UNION ALL SELECT order_id FROM orders) " +
+            "SELECT order_id FROM t");
 
         Assert.That(result.ChainCode, Is.Null);
         Assert.That(result.Diagnostics, Has.Some.Matches<ConversionDiagnostic>(d =>
-            d.Message.Contains("CTEs")));
+            d.Message.Contains("Recursive")));
     }
 
     [Test]
     public void Cte_OuterQueryOverRealTable_IsNotSilentlyDropped()
     {
-        // The regression this guard exists for: the outer SELECT alone is perfectly
+        // The regression the guard exists for: the outer SELECT alone is perfectly
         // convertible, so without the CTE check the emitter would emit a chain for it and
         // discard the WITH clause entirely, producing code that does not match the SQL.
-        var schema = BuildSchemaMap(UsersEntity(), OrdersEntity());
-        var sql = "WITH recent AS (SELECT user_id FROM orders) SELECT user_id, user_name FROM users";
-        var parseResult = SqlParser.Parse(sql, SqlDialect.SQLite);
-        var callSite = FakeCallSite(sql);
-
-        var emitter = new ChainEmitter(schema);
-        var result = emitter.Translate(parseResult, callSite);
+        var result = TranslateCte(
+            "WITH recent AS (SELECT user_id FROM orders) SELECT user_id, user_name FROM users");
 
         Assert.That(result.ChainCode, Is.Null);
+    }
+
+    [Test]
+    public void Cte_AsJoinTarget_NotConvertible()
+    {
+        // Join<TCte> resolves against the underlying table in the current runtime.
+        var result = TranslateCte(
+            "WITH recent AS (SELECT * FROM orders) " +
+            "SELECT u.user_id FROM users u JOIN recent r ON u.user_id = r.user_id");
+
+        Assert.That(result.ChainCode, Is.Null);
+    }
+
+    [Test]
+    public void Cte_BodyWithJoin_NotConvertible()
+    {
+        var result = TranslateCte(
+            "WITH j AS (SELECT u.user_id FROM users u JOIN orders o ON u.user_id = o.user_id) " +
+            "SELECT user_id FROM j");
+
+        Assert.That(result.ChainCode, Is.Null);
+    }
+
+    [Test]
+    public void Cte_BodyWithGroupBy_NotConvertible()
+    {
+        var result = TranslateCte(
+            "WITH g AS (SELECT user_id FROM orders GROUP BY user_id) SELECT user_id FROM g");
+
+        Assert.That(result.ChainCode, Is.Null);
+    }
+
+    [Test]
+    public void Cte_BodyWithOrderBy_NotConvertible()
+    {
+        var result = TranslateCte(
+            "WITH o AS (SELECT order_id FROM orders ORDER BY order_id) SELECT order_id FROM o");
+
+        Assert.That(result.ChainCode, Is.Null);
+    }
+
+    [Test]
+    public void Cte_UnknownSourceTable_NotConvertible()
+    {
+        var result = TranslateCte(
+            "WITH x AS (SELECT a FROM nope) SELECT a FROM x");
+
+        Assert.That(result.ChainCode, Is.Null);
+    }
+
+    [Test]
+    public void Cte_DtoNameCollidesWithEntity_NotConvertible()
+    {
+        // A CTE named "order" would need a DTO called Order, shadowing the real entity.
+        var result = TranslateCte(
+            "WITH order AS (SELECT order_id, total FROM orders) SELECT order_id FROM order");
+
+        Assert.That(result.ChainCode, Is.Null);
+    }
+
+    [Test]
+    public void Cte_DuplicateName_NotConvertible()
+    {
+        var result = TranslateCte(
+            "WITH a AS (SELECT * FROM users), a AS (SELECT * FROM orders) SELECT user_id FROM a");
+
+        Assert.That(result.ChainCode, Is.Null);
+    }
+
+    [Test]
+    public void Cte_ProjectedExpression_NotConvertible()
+    {
+        var result = TranslateCte(
+            "WITH x AS (SELECT total * 2 FROM orders) SELECT total FROM x");
+
+        Assert.That(result.ChainCode, Is.Null);
+    }
+
+    [Test]
+    public void Cte_WithoutColumnTypeInfo_ProjectedNotConvertible()
+    {
+        // A mapping built without column detail cannot type a synthesized DTO, so the
+        // projected form must be refused rather than guessed at.
+        var untyped = new EntityMapping(
+            "orders", null, "OrderSchema", "Orders",
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["order_id"] = "OrderId",
+                ["total"] = "Total",
+            });
+
+        var result = TranslateCte(
+            "WITH x AS (SELECT order_id FROM orders) SELECT order_id FROM x", untyped);
+
+        Assert.That(result.ChainCode, Is.Null);
+    }
+
+    [Test]
+    public void Cte_WithoutColumnTypeInfo_WholeEntityStillConvertible()
+    {
+        // SELECT * needs no synthesized type, so it converts even without column detail.
+        var untyped = new EntityMapping(
+            "orders", null, "OrderSchema", "Orders",
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["order_id"] = "OrderId",
+                ["total"] = "Total",
+            });
+
+        var result = TranslateCte(
+            "WITH x AS (SELECT * FROM orders) SELECT order_id FROM x", untyped);
+
+        Assert.That(result.ChainCode, Is.Not.Null);
+        Assert.That(result.ChainCode, Does.Contain(".FromCte<Order>()"));
+        Assert.That(result.GeneratedTypeDeclarations, Is.Empty);
+    }
+
+    [Test]
+    public void NonCteQuery_HasNoGeneratedTypes()
+    {
+        var schema = BuildSchemaMap(UsersEntity());
+        var sql = "SELECT user_id FROM users";
+        var parseResult = SqlParser.Parse(sql, SqlDialect.SQLite);
+        var result = new ChainEmitter(schema).Translate(parseResult, FakeCallSite(sql));
+
+        Assert.That(result.ChainCode, Is.Not.Null);
+        Assert.That(result.GeneratedTypeDeclarations, Is.Empty);
     }
 }

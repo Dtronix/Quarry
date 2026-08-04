@@ -70,6 +70,7 @@ internal sealed class SchemaResolver
         var accessorName = DeriveAccessorName(className);
 
         var columns = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var columnDetails = new Dictionary<string, ColumnMapping>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var member in classDecl.Members)
         {
@@ -95,9 +96,15 @@ internal sealed class SchemaResolver
             var propertyName = propSymbol.Name;
             var columnName = ExtractMapToName(property) ?? ApplyNamingStyle(propertyName, namingStyle);
             columns[columnName] = propertyName;
+
+            // The Col<T> / Key<T> type argument is the CLR type CTE DTO synthesis needs.
+            var clrType = propType.TypeArguments.Length > 0
+                ? propType.TypeArguments[0].ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)
+                : "object";
+            columnDetails[columnName] = new ColumnMapping(propertyName, clrType, typeName == "Ref");
         }
 
-        return new EntityMapping(tableName, schemaName, className, accessorName, columns);
+        return new EntityMapping(tableName, schemaName, className, accessorName, columns, columnDetails);
     }
 
     private static string? ExtractStaticStringProperty(ClassDeclarationSyntax classDecl, string propertyName)

@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Composition;
 using System.Linq;
@@ -91,9 +93,43 @@ internal sealed class DapperMigrationCodeFix : CodeFixProvider
         {
             updatedRoot = EnsureUsing(compilationUnit, "Quarry");
             updatedRoot = EnsureUsing((CompilationUnitSyntax)updatedRoot, "Quarry.Query");
+
+            // Projected CTEs need DTO types the source does not declare (#331).
+            updatedRoot = AddGeneratedTypes(
+                (CompilationUnitSyntax)updatedRoot, result.GeneratedTypeDeclarations);
         }
 
         return document.WithSyntaxRoot(updatedRoot);
+    }
+
+    /// <summary>
+    /// Appends generated type declarations to the compilation unit, skipping any whose name
+    /// is already declared so the fix cannot introduce a duplicate type.
+    /// </summary>
+    internal static CompilationUnitSyntax AddGeneratedTypes(
+        CompilationUnitSyntax root,
+        IReadOnlyList<string> declarations)
+    {
+        if (declarations.Count == 0) return root;
+
+        var existingNames = new HashSet<string>(
+            root.DescendantNodes().OfType<BaseTypeDeclarationSyntax>().Select(t => t.Identifier.Text),
+            StringComparer.Ordinal);
+
+        foreach (var declarationText in declarations)
+        {
+            if (SyntaxFactory.ParseMemberDeclaration(declarationText) is not BaseTypeDeclarationSyntax typeDeclaration)
+                continue;
+
+            if (!existingNames.Add(typeDeclaration.Identifier.Text))
+                continue;
+
+            root = root.AddMembers(typeDeclaration
+                .WithLeadingTrivia(SyntaxFactory.CarriageReturnLineFeed)
+                .WithTrailingTrivia(SyntaxFactory.CarriageReturnLineFeed));
+        }
+
+        return root;
     }
 
     private static CompilationUnitSyntax EnsureUsing(CompilationUnitSyntax root, string namespaceName)

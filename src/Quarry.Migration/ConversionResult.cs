@@ -30,16 +30,26 @@ internal sealed class ConversionResult
     /// </summary>
     public bool IsSuggestionOnly { get; }
 
+    /// <summary>
+    /// C# type declarations the chain code depends on but the user's source does not contain —
+    /// currently the DTOs synthesized for projected CTEs (#331). The IDE code fix must insert
+    /// these alongside the expression replacement or the result will not compile. Empty when
+    /// the conversion needs no new types.
+    /// </summary>
+    public IReadOnlyList<string> GeneratedTypeDeclarations { get; }
+
     public ConversionResult(
         string originalSql,
         string? chainCode,
         IReadOnlyList<ConversionDiagnostic> diagnostics,
-        bool isSuggestionOnly = false)
+        bool isSuggestionOnly = false,
+        IReadOnlyList<string>? generatedTypeDeclarations = null)
     {
         OriginalSql = originalSql;
         ChainCode = chainCode;
         Diagnostics = diagnostics;
         IsSuggestionOnly = isSuggestionOnly;
+        GeneratedTypeDeclarations = generatedTypeDeclarations ?? System.Array.Empty<string>();
     }
 }
 

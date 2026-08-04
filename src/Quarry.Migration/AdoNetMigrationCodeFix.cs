@@ -89,6 +89,10 @@ internal sealed class AdoNetMigrationCodeFix : CodeFixProvider
         {
             updatedRoot = EnsureUsing(compilationUnit, "Quarry");
             updatedRoot = EnsureUsing((CompilationUnitSyntax)updatedRoot, "Quarry.Query");
+
+            // Projected CTEs need DTO types the source does not declare (#331).
+            updatedRoot = DapperMigrationCodeFix.AddGeneratedTypes(
+                (CompilationUnitSyntax)updatedRoot, result.GeneratedTypeDeclarations);
         }
 
         return document.WithSyntaxRoot(updatedRoot);

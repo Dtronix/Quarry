@@ -72,6 +72,9 @@ Build emits pre-existing warnings (CS0219 `__colShift` unused in generated inter
 - 2026-08-04 — **Two compiled copies of the AST exist** (`Quarry.Generators.Sql.Parser` for generator/analyzers under `QUARRY_GENERATOR`, `Quarry.Shared.Sql.Parser` for Quarry.Migration under `QUARRY_MIGRATION`). Instances never cross. Any AST change lands in both automatically, but the two *consumer* implementations (`SqlToChainConverter` vs `ChainEmitter`) are independent and must each be updated.
 - 2026-08-04 — **`SqlNodeWalker` is used by no production code**, only tests (`SqlParserReviewTests.cs:207-241`). All four consumers hand-roll their own recursive switch. Adding a node type to the walker is necessary but not sufficient — each consumer's switch needs its own case.
 
+- 2026-08-04 — **Pre-existing: `ChainEmitter` emits the schema class, not the entity type, for joins.** `ChainEmitter.cs:528,533,537` use `joinEntity.ClassName`, producing `.Join<OrderSchema>(…)`. The chain API takes the entity type (`.Join<Order>(…)`), as `CteWithEntityAccessorTests.cs:70` shows. It is pinned by `ChainEmitterTests.cs:319,334,348,362,376,630`, so the tests encode the bug. Out of scope for #331 — **candidate for a (C) separate issue at REVIEW.** New CTE emission deliberately does *not* copy this: `With<T>` / `FromCte<T>` strip the `Schema` suffix via the same rule `SchemaResolver.DeriveAccessorName` uses.
+- 2026-08-04 — **`EntityMapping` carried no CLR type information** (`SchemaMap.cs:47-90` — column dictionary is `string → string`). DTO synthesis on the migration side needs property types, so `ColumnMapping` was added and `SchemaResolver` now reads `Col<T>` / `Key<T>` type arguments. When a mapping is built without that detail (older ctor), projected CTEs are rejected rather than typed as `object`.
+
 ## Suspend State
 
 **Suspended 2026-08-04 — IMPLEMENT, after step 3 of 11.** Triggered by the workflow context check (≥3 plan steps completed this session), not by a problem.
