@@ -55,7 +55,12 @@ namespace Quarry.Tests.Generation;
 [TestFixture]
 public class InterceptorBindingGuardTests
 {
-    /// <summary>Schema plus the primary context, shared by every case.</summary>
+    /// <summary>
+    /// Schemas plus the primary context, shared by every case. <c>OrderSchema</c> and the
+    /// <c>Orders()</c> accessor exist so the matrix can reach the join, aggregate and
+    /// navigation-subquery emitters; the FK/navigation declarations mirror
+    /// <c>Samples/OrderSchema.cs</c> and <c>Samples/UserSchema.cs</c>.
+    /// </summary>
     private const string SharedSource = @"
 using Quarry;
 
@@ -68,12 +73,27 @@ public class UserSchema : Schema
     public Key<int> UserId => Identity();
     public Col<string> UserName => Length(100);
     public Col<bool> IsActive { get; }
+
+    public Many<OrderSchema> Orders => HasMany<OrderSchema>(o => o.UserId);
+}
+
+public class OrderSchema : Schema
+{
+    public static string Table => ""orders"";
+
+    public Key<int> OrderId => Identity();
+    public Ref<UserSchema, int> UserId => ForeignKey<UserSchema, int>();
+    public Col<decimal> Total => Precision(18, 2);
+    public Col<string> Status { get; }
+
+    public One<UserSchema> User { get; }
 }
 
 [QuarryContext(Dialect = SqlDialect.SQLite)]
 public partial class TestDbContext : QuarryContext
 {
     public partial IEntityAccessor<User> Users();
+    public partial IEntityAccessor<Order> Orders();
 }
 ";
 
@@ -187,6 +207,27 @@ public class Service
         _ = diag.Sql;"),
     };
 
+    // ── Multi-table shapes: joins, aggregates, correlated subqueries ─────────
+    // These reach JoinBodyEmitter and the GroupBy/Having assembly paths, none of
+    // which any other shape in the matrix touches.
+
+    private static readonly Shape[] JoinShapes =
+    {
+        new("Join_Select_FetchAll", "ExecuteFetchAllAsync",
+            "await db.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)" +
+            ".Select((u, o) => (u.UserName, o.Total)).ExecuteFetchAllAsync();"),
+        // LEFT JOIN additionally emits IsDBNull guards for the nullable side's columns.
+        new("LeftJoin_Select_FetchAll", "ExecuteFetchAllAsync",
+            "await db.Users().LeftJoin<Order>((u, o) => u.UserId == o.UserId.Id)" +
+            ".Select((u, o) => (u.UserName, o.Total)).ExecuteFetchAllAsync();"),
+        new("GroupBy_Having_FetchAll", "ExecuteFetchAllAsync",
+            "await db.Orders().GroupBy(o => o.Status).Having(o => Sql.Count() > 5)" +
+            ".Select(o => (o.Status, Sql.Count())).ExecuteFetchAllAsync();"),
+        // Correlated EXISTS subquery off a Many<T> navigation.
+        new("NavigationSubquery_Exists_FetchAll", "ExecuteFetchAllAsync",
+            "await db.Users().Where(u => u.Orders.Any(o => o.Total > 100)).ExecuteFetchAllAsync();"),
+    };
+
     // ── Modification terminals ───────────────────────────────────────────────
 
     private static readonly Shape[] ModificationShapes =
@@ -202,7 +243,10 @@ public class Service
     };
 
     public static IEnumerable<Shape> AllShapes =>
-        EntityTerminalShapes.Concat(GenericTerminalShapes).Concat(ModificationShapes);
+        EntityTerminalShapes
+            .Concat(GenericTerminalShapes)
+            .Concat(JoinShapes)
+            .Concat(ModificationShapes);
 
     public static IEnumerable<Shape> EntityTerminalOnlyShapes => EntityTerminalShapes;
 

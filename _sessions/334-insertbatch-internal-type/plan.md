@@ -130,7 +130,7 @@ last.
 
 </details>
 
-- [ ] **4. Introduce a second entity and add join / navigation / aggregate shapes**
+- [x] **4. Introduce a second entity and add join / navigation / aggregate shapes**
 
   Extend `SharedSource` with an `OrderSchema` (`Key<int> OrderId => Identity()`, a
   `Ref<User> UserId`-style FK matching this repo's `EntityRef` convention, `Col<decimal> Total`,
