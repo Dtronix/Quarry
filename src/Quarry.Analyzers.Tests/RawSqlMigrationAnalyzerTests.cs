@@ -313,6 +313,40 @@ public class TestService
     }
 
     [Test]
+    public async Task QRY042_WindowFunction_NoDiagnostic()
+    {
+        // A window function parses into a SqlUnsupported leaf while Success stays true.
+        // Only HasUnsupported catches it reliably (#331).
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(
+            ""SELECT ROW_NUMBER() OVER (ORDER BY UserId) AS UserId FROM users"");
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Is.Empty);
+    }
+
+    [Test]
+    public async Task QRY042_ScalarSubqueryInSelect_NoDiagnostic()
+    {
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(
+            ""SELECT UserId, (SELECT OrderId FROM orders) AS UserName FROM users"");
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Is.Empty);
+    }
+
+    [Test]
     public async Task QRY042_Cte_NoDiagnostic()
     {
         // CTEs parse into an AST as of #331 but are not yet convertible.

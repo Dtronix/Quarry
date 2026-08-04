@@ -112,6 +112,12 @@ internal sealed class RawSqlMigrationAnalyzer : DiagnosticAnalyzer
         if (!parseResult.Success || parseResult.SelectStatement == null)
             return;
 
+        // Constructs the AST cannot express (window functions, subqueries) parse into a
+        // SqlUnsupported leaf while leaving Success true, so this flag is the only reliable
+        // signal. SqlToChainConverter catches such nodes only where CheckExpr reaches them.
+        if (parseResult.HasUnsupported)
+            return;
+
         // Check if the parsed SQL is convertible to a chain query
         var converter = new SqlToChainConverter(contextInfo);
         var convertError = converter.CheckConvertibility(parseResult.SelectStatement);
