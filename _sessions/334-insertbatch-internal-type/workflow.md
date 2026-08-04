@@ -66,6 +66,26 @@ is public" rule is provably wrong (`ScalarConverter` is a legitimately internal 
 helper in that namespace). Since every in-repo project is a friend assembly, a synthetic non-friend
 `CSharpCompilation` is the only mechanism that can observe this class of defect at all.
 
+### 2026-08-04 — Fix the `QueryDiagnostics` constructor in this branch (scope expansion)
+Make the constructor `public` + `[EditorBrowsable(Never)]` here rather than splitting it to a
+follow-up issue.
+
+**Why:** it is the same root cause as #334 (emitted code naming a surface consumers cannot reach),
+and #334's own text asks for precisely this audit — "a second instance would fail the same way". The
+broadened matrix surfaces it on every `ToDiagnostics` shape in steps 3/5/7 anyway, so splitting would
+mean deliberately pinning a known-broken headline API out of the very guard being built in this PR.
+All six sibling diagnostic types the same emitted code constructs are already public, so this is
+restoring consistency, not widening the API surface by design. PR scope grows beyond the issue title;
+called out explicitly in the PR body.
+
+### 2026-08-04 — Do not add `CS1729` to `AccessibilityDiagnosticIds`
+Keep the accessibility filter to genuine accessibility IDs; extend the catch-all assertion's message
+instead to say that a `CS1729` naming a Quarry type may mean an internal constructor.
+
+**Why:** `CS1729` normally means a real emitter arity bug — one of the defect classes this matrix
+exists to catch. Folding it into the accessibility filter would mislabel those. The catch-all already
+fails the build, so nothing is missed; only the diagnosis hint was missing.
+
 ## Working Notes
 
 ### 2026-08-04 — Accessibility audit of the emitted runtime surface (pre-DESIGN)
@@ -147,6 +167,49 @@ is ever refactored; a guard nobody has watched fail is not known to work.
 - `ScalarConverter` is the negative control precisely because it must *stay* internal. If a future
   change makes it public, `AccessibilityGuard_DetectsAnInaccessibleType` fails loudly rather than
   silently going vacuous — pick a different still-internal type at that point, do not delete the test.
+
+### 2026-08-04 — Step 3 found a second, larger instance: `ToDiagnostics()` is broken for all consumers
+
+Adding the `BatchInsert_ToDiagnostics` shape immediately failed — but **not** with `CS0122`:
+
+```
+error CS1729: 'QueryDiagnostics' does not contain a constructor that takes 5 arguments
+```
+
+`QueryDiagnostics`'s only constructor (`src/Quarry/Query/QueryDiagnostics.cs:12`) is `internal`.
+When no *accessible* overload exists the compiler reports `CS1729`, not `CS0122` — the internal
+constructor is simply never a candidate. Same root cause as #334 (emitted code naming a
+non-consumer-accessible surface), different manifestation.
+
+**Blast radius is far wider than batch insert.** Probed a plain chain
+(`db.Users().Where(...).Select(...).ToDiagnostics()`) in the non-friend compilation:
+
+```
+error CS1729: 'QueryDiagnostics' does not contain a constructor that takes 23 arguments
+```
+
+Three emission sites, all constructing the internal ctor:
+`TerminalEmitHelpers.cs:615` (the general `ToDiagnostics()` path for every chain),
+`CarrierEmitter.cs:1095`, and `TerminalBodyEmitter.cs:519` (batch insert). So `ToDiagnostics()` —
+documented at `llm.md:299` as available on every builder type and "the primary tool for asserting
+generated SQL in tests" — **does not compile for any consumer outside the friend list, on any chain
+shape.**
+
+Strong signal this is an oversight rather than intent: every sibling type the same emitted code
+constructs already has a **public** constructor — `DiagnosticParameter` (:153),
+`ClauseDiagnostic` (:202), `SqlVariantDiagnostic` (:245), `ProjectionColumnDiagnostic` (:261),
+`JoinDiagnostic` (:298), `CollectionSqlCache` (:15). `QueryDiagnostics` is the lone holdout.
+
+**Correction to my earlier audit:** the pre-DESIGN sweep was *type*-level only and therefore could
+not have found this. Member-level re-audit of everything emitted code names — `ThrowHelper.UnenumeratedMask`,
+`CollectionHelper.Materialize`, `ParameterNames.AtP`/`.Dollar`, `OpId.Next`, `QueryExecutor.*`,
+`QueryLog.*`, `ParameterLog.*`, and all six diagnostic-type constructors above — found **no other**
+internal member. The `QueryDiagnostics` constructor is the only one.
+
+**Guard gap this exposes:** `AccessibilityDiagnosticIds` does not include `CS1729`, so the dedicated
+accessibility assertion did not fire — the catch-all "fixture does not compile cleanly" caught it
+instead. `CS1729` is ordinarily a genuine arity bug, so adding it to the accessibility filter
+outright would mislabel real defects. Whatever the scope decision, the filter needs revisiting.
 
 ## Suspend State
 

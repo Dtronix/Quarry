@@ -162,6 +162,12 @@ public class Service
             @"await db.Users().Insert(new User { UserName = ""a"", IsActive = true }).ExecuteNonQueryAsync();"),
         new("Projected_ScalarAsync", "ExecuteScalarAsync",
             "await db.Users().Where(u => u.UserId > 0).Select(u => u.UserId).ExecuteScalarAsync<int>();"),
+        // ToDiagnostics constructs QueryDiagnostics in the consumer's assembly. This shape covers
+        // the general path (TerminalEmitHelpers.EmitDiagnosticsConstruction) that every non-batch
+        // chain uses; BatchInsert_ToDiagnostics below covers the separate batch path. Both were
+        // uncovered, and both were broken by an internal constructor until #334.
+        new("Projected_ToDiagnostics", "ToDiagnostics",
+            "var diag = db.Users().Where(u => u.UserId > 0).Select(u => u.UserName).ToDiagnostics();\n        _ = diag.Sql;"),
         // Batch insert emits a call to Quarry.Internal.BatchInsertSqlBuilder. These two shapes were
         // held out of the matrix while that type was internal (#334) — an ordinary consumer could
         // not compile them at all. They are back in the clean-binding set now that it is public.
@@ -171,6 +177,14 @@ public class Service
         new("BatchInsert_ScalarAsync", "ExecuteScalarAsync",
             @"var rows = new[] { new User { UserName = ""a"", IsActive = true } };
         await db.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(rows).ExecuteScalarAsync<int>();"),
+        // The batch-insert *diagnostics* terminal is emitted by a separate method
+        // (TerminalBodyEmitter.EmitBatchInsertDiagnosticsTerminal) that carries its own
+        // hard-coded BatchInsertSqlBuilder call. The #334 pin only ever reached the carrier
+        // terminal, so this second site shipped the same defect untested.
+        new("BatchInsert_ToDiagnostics", "ToDiagnostics",
+            @"var rows = new[] { new User { UserName = ""a"", IsActive = true } };
+        var diag = db.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(rows).ToDiagnostics();
+        _ = diag.Sql;"),
     };
 
     // ── Modification terminals ───────────────────────────────────────────────
@@ -255,7 +269,15 @@ public class Service
             .ToList();
         Assert.That(errors, Is.Empty, () =>
             $"Fixture for '{shape.Name}' does not compile cleanly, so interceptor binding was " +
-            $"never validated and the mismatch assertions above are vacuous: {Describe(errors)}");
+            $"never validated and the mismatch assertions above are vacuous: {Describe(errors)}" +
+            // CS1729 naming a Quarry type is the accessibility defect in disguise: when a type's
+            // only constructor is internal it is not a candidate at all outside a friend assembly,
+            // so the compiler reports "no constructor takes N arguments" rather than CS0122. That
+            // is how the internal QueryDiagnostics ctor hid (#334). CS1729 is deliberately not in
+            // AccessibilityDiagnosticIds — it usually is a genuine emitter arity bug, and
+            // mislabelling those would blunt this matrix.
+            "\nNote: a CS1729 naming a Quarry type may mean that type's constructor is internal, " +
+            "not that the emitter passed the wrong number of arguments.");
 
         // Absence of a mismatch is only meaningful if an interceptor was emitted
         // for the terminal at all — an unintercepted call produces no diagnostic

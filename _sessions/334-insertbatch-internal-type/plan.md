@@ -84,6 +84,33 @@ last.
   this, the whole broadened matrix could pass green because the fixture accidentally *has* friend
   access, and nobody would know.
 
+- [x] **3. Cover the `ToDiagnostics` terminals — and fix the internal `QueryDiagnostics` constructor**
+
+  *Expanded during implementation.* Adding the batch shape revealed that
+  `QueryDiagnostics`'s only constructor (`src/Quarry/Query/QueryDiagnostics.cs:12`) is `internal`, so
+  **`ToDiagnostics()` fails to compile for every consumer on every chain shape**, not just batch
+  insert — three emission sites (`TerminalEmitHelpers.cs:615` general, `CarrierEmitter.cs:1095`,
+  `TerminalBodyEmitter.cs:519`). Same root cause as #334; reported as `CS1729` rather than `CS0122`
+  because an inaccessible constructor with no accessible overload is not a candidate at all.
+
+  Make the constructor `public` + `[EditorBrowsable(EditorBrowsableState.Never)]`, matching the six
+  sibling diagnostic types the same emitted code already constructs with public constructors.
+
+  Extend the catch-all "fixture does not compile cleanly" message: a `CS1729` naming a Quarry type
+  may mean an internal constructor, not an emitter arity bug. `CS1729` deliberately stays **out** of
+  `AccessibilityDiagnosticIds` — it normally signals a genuine arity defect and mislabelling those
+  would blunt the matrix.
+
+  Add both shapes: `BatchInsert_ToDiagnostics` (covers `TerminalBodyEmitter.cs:519`, the site the
+  original #334 pin never reached) and `Projected_ToDiagnostics` (covers the general
+  `TerminalEmitHelpers.cs:615` path that every non-batch chain uses).
+
+  *Tests:* the two shapes flow through `Shape_BindsWithoutInterceptorMismatch`. Verify the emitted
+  marker comment is `Intercepts ToDiagnostics() call at` (`FileEmitter.cs:702` formats it from
+  `site.MethodName`).
+
+<details><summary>Original step 3 text</summary>
+
 - [ ] **3. Cover the second `BatchInsertSqlBuilder` emission site (`TerminalBodyEmitter.cs:518`)**
 
   Add a `BatchInsert_ToDiagnostics` shape to `GenericTerminalShapes`:
@@ -100,6 +127,8 @@ last.
   (`FileEmitter.cs:702` formats it from `site.MethodName`).
 
   *Tests:* the shape itself is the test — it flows through `Shape_BindsWithoutInterceptorMismatch`.
+
+</details>
 
 - [ ] **4. Introduce a second entity and add join / navigation / aggregate shapes**
 

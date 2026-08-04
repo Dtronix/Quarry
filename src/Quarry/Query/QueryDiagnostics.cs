@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Linq;
 
 namespace Quarry;
@@ -9,7 +10,14 @@ namespace Quarry;
 /// </summary>
 public sealed class QueryDiagnostics
 {
-    internal QueryDiagnostics(
+    /// <summary>
+    /// Constructs a diagnostics snapshot. Called from generated <c>ToDiagnostics()</c> interceptors,
+    /// which are emitted into the <em>consumer's</em> assembly — so this must be reachable without an
+    /// <c>InternalsVisibleTo</c> grant (#334). Not intended to be called directly; construct
+    /// diagnostics by calling <c>ToDiagnostics()</c> on a chain.
+    /// </summary>
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public QueryDiagnostics(
         string sql,
         IReadOnlyList<DiagnosticParameter> parameters,
         DiagnosticQueryKind kind,
