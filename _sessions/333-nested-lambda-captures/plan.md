@@ -99,14 +99,14 @@ Three distinct causes:
   and masks the bug.
   *Depends on:* 5.
 
-- [ ] **7. Revert the `ConcurrencyTests` workaround; correct the docs.** Inline the worker bodies again.
+- [x] **7. Revert the `ConcurrencyTests` workaround; correct the docs.** Inline the worker bodies again.
   Where the separate pre-existing member-access-root bug blocks it, keep the named method and say so in
   the fixture `<remarks>`. Rewrite the `llm-testing.md` gotcha, and update "Display Class Prediction" in
   `src/Quarry.Generator/llm.md` with the scope rules, the `<>4__this` rule, the ground-truth tables, and
   the guarded shape with its upstream justification.
   *Depends on:* 6.
 
-- [ ] **8. Clean up and verify.** Delete every scratch fixture (bisect, runtime probe, flat multi-scope,
+- [x] **8. Clean up and verify.** Delete every scratch fixture (bisect, runtime probe, flat multi-scope,
   display-class dump, chained-accessor spike, hop experiments, guard-scope probe, mechanism probe).
   Rebuild so manifest goldens regenerate from the real chain set, and commit them — CI runs
   `git diff --exit-code -- src/Quarry.Tests/ManifestOutput`. Full `dotnet test Quarry.sln` green against
