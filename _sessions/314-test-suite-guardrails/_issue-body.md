@@ -1,24 +1,117 @@
 ## Description
-Query chains that terminate directly on `IQueryBuilder<T>` (the entity-terminal fallback path — no explicit `.Select(...)` projection) generate an interceptor whose signature/arity does not match the call site. The compiler reports CS9177 (interceptor generic-arity mismatch) and the call is silently NOT intercepted — it falls through to the runtime path. In a carrier-only architecture an unintercepted call is a correctness hole, not a perf footnote.
 
-The test suite works around this everywhere by appending explicit `.Select(...)` projections, and `Quarry.Tests.csproj` carries a blanket `<NoWarn>CS9177</NoWarn>` that also hides any NEW arity mismatch introduced later. Previously noted only as duplicated "tracked separately" comments with no tracking issue — split out of #314's finding 5.
+Nine tests in `CrossDialectJoinTests` assert row values **positionally** on PostgreSQL, MySQL and
+SQL Server results from a query that carries no `ORDER BY`. They pass today only by accident of each
+planner's chosen access path; a statistics refresh, a parallel scan, or a hash join being picked
+instead of a nested loop can reorder the result set and turn them red with no code change.
+
+This is the same defect class as the row-order sweep in #314, but these nine could **not** be fixed
+by that sweep, which is why they are broken out here.
+
+Every one of them projects `(u.UserName, o.Total)` (or a superset) from a `users → orders` join and
+asserts:
+
+```csharp
+Assert.That(pgResults, Has.Count.EqualTo(3));
+Assert.That(pgResults[0], Is.EqualTo(("Alice", 250.00m)));
+Assert.That(pgResults[1], Is.EqualTo(("Alice",  75.50m)));
+Assert.That(pgResults[2], Is.EqualTo(("Bob",   150.00m)));
+```
+
+The order encoded there is `orders.OrderId` ascending — the seed insertion order. But `OrderId` is
+**not in the projection**, so it cannot be used as a client-side sort key, and the only discriminator
+that *is* projected (`Total`) runs **descending** within the Alice group. Consequently:
+
+- `.SortedByAsync(r => r.UserName)` is not a total order — the two Alice rows tie.
+- `.SortedByAsync(r => (r.UserName, r.Total))` is total, but ascending `Total` swaps rows `[0]` and
+  `[1]`, turning the tests red.
+
+So no client-side sort over the projected columns can reproduce the asserted sequence. The fix has to
+be query-side or assertion-side.
 
 ## Location
-- Workaround comments (duplicated): `src/Quarry.Tests/Integration/PostgresIntegrationTests.cs:45-48`, `src/Quarry.Tests/Integration/MySqlIntegrationTests.cs:63-66`, `src/Quarry.Tests/Integration/SqlServerIntegrationTests.cs:42-45`, plus shortened variants at the InsertBatch tests ("Explicit projection avoids the IQueryBuilder<T>-terminal overload mismatch").
-- Blanket suppression: `src/Quarry.Tests/Quarry.Tests.csproj:13-14`.
-- Interceptor arity handling: `src/Quarry.Generator/CodeGen/TerminalBodyEmitter.cs` (arity commentary at ~362-372, 465-466), `src/Quarry.Generator/CodeGen/JoinBodyEmitter.cs:303`.
+
+`src/Quarry.Tests/SqlOutput/CrossDialectJoinTests.cs`
+
+| Test | Approx. line (pg / my / ss fetch) |
+|---|---|
+| `Join_InnerJoin_OnClause` | 39 / 45 / 51 |
+| `Join_WithWhere_OnLeftTable` | 87 / 93 / 99 |
+| `Join_InnerJoin_NamedTupleProjection` | 215 / 224 / 233 |
+| `Join_ThreeTable_NamedTupleProjection` | 268 / 274 / 280 |
+| `Join_WithWhere_TwoCapturedParams_BooleanBetween_SequentialIndices` | 561 / 566 / 571 |
+| `Where_BeforeJoin_GetsTableAliasQualification` | 611 / 617 / 623 |
+| `Select_Joined_Many_Sum_OnLeftTable` | 798 / 804 / 810 |
+| `Select_Joined_Many_Count_OnLeftTable` | 847 / 853 / 859 |
+| `Select_Joined_HasManyThrough_Max_OnLeftTable` | 902 / 908 / 914 |
+
+Line numbers are as of the #314 branch.
+
+`Join_ThreeTable_NamedTupleProjection` is the subtlest: it reads only `[0]`, so it looks convertible,
+but that lone `[0]` sits under `Has.Count.EqualTo(3)` and the row it names — `(Alice, 250.00, "Widget")`
+— is not the ascending minimum over any projected column (75.50 < 250.00, "Gadget" < "Widget").
+
+The three aggregate variants (`Select_Joined_Many_Sum_OnLeftTable`,
+`Select_Joined_Many_Count_OnLeftTable`, `Select_Joined_HasManyThrough_Max_OnLeftTable`) are worse
+still: the two Alice rows tie on the aggregate column as well (`OrderTotal` 325.50 for both,
+`OrderCount` 2 for both, `MaxAddrId` 2 for both), so the aggregate does not break the tie either.
 
 ## Diagnostics
-- Chains like `db.Addresses().Where(...).ExecuteFetchAllAsync()` (no `.Select`) trip the mismatch; adding `.Select(a => a.City)` routes to the `IQueryBuilder<T,TResult>` overload whose interceptor binds correctly.
-- CS9177 = interceptor generic-arity mismatch: a generic terminal on a generic receiver needs the combined arity (e.g. `ExecuteScalarAsync<TKey>` on `IInsertBuilder<T>` needs `<T, TKey>`); the entity-terminal fallback emits an interceptor that doesn't satisfy this for the `IQueryBuilder<T>` overload set.
-- No other project in the repo (including Samples using interceptors) needs the CS9177 suppression — only the test project exercises the fallback path.
+
+Seed data (`QueryTestHarness.SeedData`) for the join:
+
+```
+users:   1 Alice, 2 Bob, 3 Charlie
+orders:  OrderId 1 → UserId 1, Total 250.00
+         OrderId 2 → UserId 1, Total  75.50
+         OrderId 3 → UserId 2, Total 150.00
+```
+
+The join yields three rows. The asserted sequence is `OrderId` 1, 2, 3.
+
+`RowOrderExtensions.SortedByAsync` (added in #314) is the standard remedy for this class of test and
+now covers 118 sites across the suite; it simply cannot reach these nine.
 
 ## What Has Been Tried
-Only avoidance: explicit projections at every affected call site plus the project-wide NoWarn.
+
+- **Client-side sort via `SortedByAsync`** — ruled out above for all nine, by inspecting each test's
+  projection against the seed data rather than by trial.
+- **The #314 sweep deliberately skipped them** rather than converting them with a plausible-looking
+  key, because `(r.UserName, r.Total)` compiles, reads as correct, and silently reorders the
+  assertions.
 
 ## Gathered Information
-- CS9144 (signature-type mismatch) is the related diagnostic family; see `src/Quarry.Generator/IR/CallSiteBinder.cs:93` and `DiagnosticDescriptors.cs:682`.
-- #314 adds (a) a pinning test asserting the entity-terminal call is currently not intercepted — it fails when this is fixed — and (b) a CS9177 guard test asserting the exact expected set of mismatch sites so new regressions surface despite the NoWarn.
+
+- 50 `Is.EquivalentTo` call sites already exist in the test suite, so the order-independent assertion
+  style has precedent here.
+- `.OrderBy((u, o) => o.Total)` after a `Join<T>(...)` is supported and renders a top-level `ORDER BY`
+  — see `CrossDialectDistinctOrderByTests.Distinct_OrderBy_NonProjectedColumn_WrapsAcrossAllDialects`.
+  Note that ordering on a **non-projected** column combined with `Distinct()` makes the generator wrap
+  the query in a derived table, which would materially change the SQL these tests pin.
+- These tests' primary purpose is pinning join **SQL rendering** — the `AssertDialects(...)` block is
+  the bulk of each test. Any fix that rewrites the expected SQL dilutes that.
 
 ## Suggested Approach
-Emit entity-terminal interceptors with the combined generic arity matching the `IQueryBuilder<T>` terminal overloads (mirroring the TerminalBodyEmitter approach used for `PreparedQuery<TResult>.ExecuteScalarAsync<TKey>`), then remove the explicit-projection workarounds and the blanket NoWarn. If some overload genuinely cannot be intercepted, disqualify it with an explicit QRY diagnostic instead of a silent fallback.
+
+Preferred: **make the assertions order-independent**, leaving the pinned SQL untouched.
+
+```csharp
+Assert.That(pgResults, Is.EquivalentTo(new[]
+{
+    ("Alice", 250.00m),
+    ("Alice",  75.50m),
+    ("Bob",   150.00m),
+}));
+```
+
+Every row and every value stays asserted; only the accidental ordering assumption is dropped. The
+SQL-rendering pin — the actual point of these tests — is unaffected.
+
+Alternative, if positional assertions are considered worth keeping: add
+`.OrderBy((u, o) => o.OrderId)` to each chain and append the resulting `ORDER BY` to all four expected
+SQL strings per test (36 strings total). This makes the queries genuinely deterministic, at the cost
+of these tests pinning an `ORDER BY` clause unrelated to what they are named for, plus the
+derived-table wrap risk noted above.
+
+Either way the SQLite side should stay positional — its incidental insertion order is the deliberate
+reference shape that the other three dialects mirror.

@@ -6,7 +6,7 @@ base-branch: master
 
 ## State
 phase: IMPLEMENT
-status: suspended
+status: active
 issue: #314
 pr:
 
@@ -44,6 +44,45 @@ Note: pre-existing build warnings — NU1903 (System.Security.Cryptography.Xml 9
   on a compiler diagnostic. The guard matrix stays as the regression net for clause shapes.
 
 ## Working Notes
+
+### Step 13a (2026-08-03) — row-order sweep, remaining 21 files
+
+**31 sites converted out of ~394 fetch calls.** Five of the eight file groups needed nothing, and
+*why* they needed nothing is the useful part — it says the suite was already far more defensive
+than the issue's "526 positional assertions" headline implies:
+
+- **StringOp / Misc / Aggregate (98 sites, 0 converted)** — no `Has.Count.EqualTo(n)` with n>1
+  exists anywhere in the three files. Everything is count-only, single-row, or `.First(predicate)`.
+- **Composition / WindowFunction (99 sites, 0 converted)** — already written order-independently:
+  count-only, `.All(...)`, `.First(pred)`, or explicitly re-sorted into a second local before the
+  positional asserts. Every `OVER (ORDER BY ...)` is window-internal and correctly does **not**
+  count as a top-level order; only
+  `WindowFunction_ParamArgs_WithParameterizedLimit_NumbersPaginationByGlobalSlot` has a genuine
+  top-level ORDER BY.
+- **ConditionalMask (0 converted)** — every non-inline pg/my/ss chain carries an unconditional
+  `.OrderBy(u => u.UserId)`. Converting them would have masked precisely the mask-gated-pagination
+  regression the fixture exists to catch.
+- **OrderBy / DistinctOrderBy (21 sites, 0 converted)** — all-skip confirmed test by test, as
+  predicted: a top-level ORDER BY is the thing they pin.
+- Converted: Nullable 12, HasMany 6 (incl. 2 single-scalar `s => s` keys), FkKey 6 (normalizations),
+  Prepare 6, EntityReader 3.
+
+- **`Select_HasManyThrough_Max_InTuple` was the trap-1 near-miss in this group**: the obvious
+  "second column" key `MaxAddrId` runs 2 then 1 (descending) and would have flipped the rows.
+  Keyed on `UserName` instead.
+- **Two-statement re-sort idiom left alone** (9 sites in 3 WindowFunction tests): they fetch into
+  `pgResults`, assert `Has.Count` on it, then build `pgByRowNum = pgResults.OrderBy(...).ToList()`
+  for the positional asserts. Semantically identical to `SortedByAsync` but collapsing it means
+  deleting the intermediate local and rewriting assertion lines. Not worth the churn; they are
+  already order-safe.
+
+### Step 13b (2026-08-03) — query-side remediation
+
+- **Nine `CrossDialectJoinTests` → filed as #332 rather than changed** (user decision 2026-08-03,
+  after confirming no existing issue covered it). Both candidate fixes are written up in the issue
+  with the seed-data analysis; the key point recorded there is that
+  `.SortedByAsync(r => (r.UserName, r.Total))` compiles, reads as correct, and silently swaps rows
+  `[0]` and `[1]` — so a future sweep must not "fix" these mechanically.
 
 ### Step 12 (2026-08-03) — row-order sweep, second file group
 

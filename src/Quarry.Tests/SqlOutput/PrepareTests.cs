@@ -526,17 +526,17 @@ internal class PrepareTests
         Assert.That(ltRows[0], Is.EqualTo((1, "Alice")));
         Assert.That(ltRows[1], Is.EqualTo((2, "Bob")));
 
-        var pgRows = await pg.ExecuteFetchAllAsync();
+        var pgRows = await pg.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(pgRows, Has.Count.EqualTo(2));
         Assert.That(pgRows[0], Is.EqualTo((1, "Alice")));
         Assert.That(pgRows[1], Is.EqualTo((2, "Bob")));
 
-        var myRows = await my.ExecuteFetchAllAsync();
+        var myRows = await my.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(myRows, Has.Count.EqualTo(2));
         Assert.That(myRows[0], Is.EqualTo((1, "Alice")));
         Assert.That(myRows[1], Is.EqualTo((2, "Bob")));
 
-        var ssRows = await ss.ExecuteFetchAllAsync();
+        var ssRows = await ss.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(ssRows, Has.Count.EqualTo(2));
         Assert.That(ssRows[0], Is.EqualTo((1, "Alice")));
         Assert.That(ssRows[1], Is.EqualTo((2, "Bob")));
@@ -596,15 +596,15 @@ internal class PrepareTests
         Assert.That(ltRows, Has.Count.EqualTo(2));
         Assert.That(ltRows[0], Is.EqualTo((1, "Alice")));
 
-        var pgRows = await pg.ExecuteFetchAllAsync();
+        var pgRows = await pg.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(pgRows, Has.Count.EqualTo(2));
         Assert.That(pgRows[0], Is.EqualTo((1, "Alice")));
 
-        var myRows = await my.ExecuteFetchAllAsync();
+        var myRows = await my.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(myRows, Has.Count.EqualTo(2));
         Assert.That(myRows[0], Is.EqualTo((1, "Alice")));
 
-        var ssRows = await ss.ExecuteFetchAllAsync();
+        var ssRows = await ss.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(ssRows, Has.Count.EqualTo(2));
         Assert.That(ssRows[0], Is.EqualTo((1, "Alice")));
     }
