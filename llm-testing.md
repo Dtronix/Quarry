@@ -228,6 +228,23 @@ Convention (introduced with #328/#329): an **active** test named `KnownBug_Issue
 
 For interceptor-binding defects, assert on the **emitted interceptor text**, not on a compiler diagnostic: a receiver-arity mismatch that is a hard `CS9144` error in the full test project raises nothing at all in an isolated `CSharpCompilation` (see `Generation/InterceptorBindingGuardTests.cs`).
 
+## The non-friend guard matrix
+
+`Generation/InterceptorBindingGuardTests.cs` is the **only compilation in this repo that is not a friend assembly** of `Quarry`. All seven `InternalsVisibleTo` grants in `src/Quarry/Quarry.csproj` cover every project in the solution — `Quarry.Tests`, `Quarry.Benchmarks`, both samples — so no ordinary build ever compiles generated interceptors the way a consumer does. Its synthetic `CSharpCompilation.Create("InterceptorBindingGuardAssembly", …)` is the substitute.
+
+That makes the fixture responsible for two things a normal test cannot check:
+
+- **Binding** — CS9144 (signature) / CS9177 (generic arity) against the real call sites.
+- **Accessibility** — generated interceptors land in the consumer's assembly, so every Quarry type, method and constructor they name must be `public`. This is how #334 shipped: `InsertBatch` emitted a call to the then-`internal` `BatchInsertSqlBuilder` and simply did not compile for anyone outside the friend list, while every in-repo build stayed green.
+
+Watch for two distinct signatures. `CS0122 'X' is inaccessible` means an `internal` **type** was named. `CS1729 'X' does not contain a constructor that takes N arguments` means that type's only **constructor** is `internal` — it is not a candidate at all, so the compiler reports arity rather than protection level. The second is how the `internal` `QueryDiagnostics` constructor hid, breaking `ToDiagnostics()` for every consumer on every chain shape.
+
+**When you add an emitter path, add a shape for it** — and a `ShapeEmissionExpectations` entry naming the distinctive text that shape must emit. For shapes that reach a `Quarry.Internal` helper that is the helper call itself; for emitters with no distinctive helper (joins, set operations, window functions, CTEs, raw SQL) it is a fragment of the rendered SQL or the interceptor header. `Shape_StillReachesItsEmitter` pins it and `EveryShape_HasAnEmissionExpectation` enforces that every shape has one, because without it a shape that quietly stops exercising its emitter (a conditional that stops being analyzable, a chain falling back to a runtime-built plan) keeps passing while guarding nothing, and a green run cannot tell the difference. That check caught exactly this on its first run.
+
+A shape that terminates more than once — a `Prepare()`d chain feeding both `ToDiagnostics()` and a fetch — must list the extra terminals in `Shape.AdditionalTerminals`, or only the first is probed for an emitted interceptor.
+
+`Quarry.Internal` is not a namespace convention you can lean on: it holds both the public emitted surface (`BatchInsertSqlBuilder`, `ThrowHelper`, `CollectionHelper`, `CollectionSqlCache`, `ParameterNames`, `QueryExecutor`, `OpId`) and genuinely internal runtime-private helpers (`ScalarConverter`). Accessibility is established by compiling, not by where a type lives.
+
 ## Generator-test fixtures
 
 Schemas/contexts that exist solely to feed generator unit tests live in `Samples/`. `MockDbConnection.cs` provides a non-executing `DbConnection` for `SchemaPg/SchemaMy/SchemaSs*Db` contexts used in SQL-only assertions (schema-qualified tests). The carrier still goes through the full pipeline; `MockDbConnection.LastCommand` exposes what would have been executed.

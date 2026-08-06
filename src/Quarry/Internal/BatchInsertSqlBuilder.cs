@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Text;
 using Quarry.Shared.Sql;
 
@@ -7,14 +8,25 @@ namespace Quarry.Internal;
 /// Builds batch INSERT SQL at runtime from compile-time templates.
 /// Called by generated terminal interceptors for batch insert chains.
 /// </summary>
-internal static class BatchInsertSqlBuilder
+/// <remarks>
+/// Public because generated interceptors are emitted into the <em>consumer's</em> assembly and name
+/// this type directly, so it must be reachable without an <c>InternalsVisibleTo</c> grant (#334).
+/// It is not part of Quarry's supported API and may change without notice.
+/// </remarks>
+[EditorBrowsable(EditorBrowsableState.Never)]
+public static class BatchInsertSqlBuilder
 {
     /// <summary>
     /// Maximum number of parameters allowed in a single batch insert statement.
     /// Most databases impose limits (SQL Server: 2100, SQLite: 999 default, MySQL: no hard limit,
     /// PostgreSQL: 65535). We use a conservative default that works across all dialects.
     /// </summary>
-    internal const int MaxParameterCount = 2100;
+    /// <remarks>
+    /// Deliberately <c>static readonly</c> rather than <c>const</c>: a public <c>const</c> is
+    /// inlined into every consumer assembly at their compile time, which would freeze this
+    /// "conservative default" until every consumer recompiled.
+    /// </remarks>
+    public static readonly int MaxParameterCount = 2100;
 
     /// <summary>
     /// Builds a complete batch INSERT SQL string from a pre-assembled prefix
@@ -31,7 +43,8 @@ internal static class BatchInsertSqlBuilder
     /// Optional RETURNING/OUTPUT suffix for identity retrieval.
     /// e.g., <c> RETURNING "UserId"</c>
     /// </param>
-    /// <exception cref="ArgumentException">Thrown when entityCount is zero or the total parameter count exceeds <see cref="MaxParameterCount"/>.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="sqlPrefix"/> is null.</exception>
+    /// <exception cref="ArgumentException">Thrown when entityCount is not positive, columnsPerRow is not positive, or the total parameter count exceeds <see cref="MaxParameterCount"/>.</exception>
     public static string Build(
         string sqlPrefix,
         int entityCount,
@@ -39,10 +52,18 @@ internal static class BatchInsertSqlBuilder
         SqlDialect dialect,
         string? returningSuffix)
     {
-        if (entityCount == 0)
+        // Generated code always passes sane values, but this is public API (#334) so it can no
+        // longer assume a generated caller.
+        ArgumentNullException.ThrowIfNull(sqlPrefix);
+
+        if (entityCount <= 0)
             throw new ArgumentException("Batch insert requires at least one entity.", nameof(entityCount));
 
-        var totalParams = entityCount * columnsPerRow;
+        if (columnsPerRow <= 0)
+            throw new ArgumentException("Batch insert requires at least one column per row.", nameof(columnsPerRow));
+
+        // 64-bit so a large product cannot wrap negative and slip past the ceiling below.
+        var totalParams = (long)entityCount * columnsPerRow;
         if (totalParams > MaxParameterCount)
             throw new ArgumentException(
                 $"Batch insert would generate {totalParams} parameters ({entityCount} entities x {columnsPerRow} columns), " +

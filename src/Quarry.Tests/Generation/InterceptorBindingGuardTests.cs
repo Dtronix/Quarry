@@ -55,7 +55,12 @@ namespace Quarry.Tests.Generation;
 [TestFixture]
 public class InterceptorBindingGuardTests
 {
-    /// <summary>Schema plus the primary context, shared by every case.</summary>
+    /// <summary>
+    /// Schemas plus the primary context, shared by every case. <c>OrderSchema</c> and the
+    /// <c>Orders()</c> accessor exist so the matrix can reach the join, aggregate and
+    /// navigation-subquery emitters; the FK/navigation declarations mirror
+    /// <c>Samples/OrderSchema.cs</c> and <c>Samples/UserSchema.cs</c>.
+    /// </summary>
     private const string SharedSource = @"
 using Quarry;
 
@@ -68,12 +73,35 @@ public class UserSchema : Schema
     public Key<int> UserId => Identity();
     public Col<string> UserName => Length(100);
     public Col<bool> IsActive { get; }
+
+    public Many<OrderSchema> Orders => HasMany<OrderSchema>(o => o.UserId);
+}
+
+public class OrderSchema : Schema
+{
+    public static string Table => ""orders"";
+
+    public Key<int> OrderId => Identity();
+    public Ref<UserSchema, int> UserId => ForeignKey<UserSchema, int>();
+    public Col<decimal> Total => Precision(18, 2);
+    public Col<string> Status { get; }
+
+    public One<UserSchema> User { get; }
+}
+
+// Row shape for the RawSqlAsync shapes: concrete class, parameterless ctor, public get/set
+// properties — the materializability contract QRY043 enforces.
+public class UserRow
+{
+    public int UserId { get; set; }
+    public string UserName { get; set; } = null!;
 }
 
 [QuarryContext(Dialect = SqlDialect.SQLite)]
 public partial class TestDbContext : QuarryContext
 {
     public partial IEntityAccessor<User> Users();
+    public partial IEntityAccessor<Order> Orders();
 }
 ";
 
@@ -109,7 +137,9 @@ namespace TestApp.Services;
 
 public class Service
 {
-    public async Task Run(__CONTEXT__ db)
+    // `flag` exists for conditional-clause shapes: the chain analyzer needs a genuine runtime
+    // branch, so it must not be a constant the compiler can fold away. Unused by other shapes.
+    public async Task Run(__CONTEXT__ db, bool flag)
     {
         __BODY__
     }
@@ -122,6 +152,16 @@ public class Service
     /// </summary>
     public sealed record Shape(string Name, string Terminal, string Body)
     {
+        /// <summary>
+        /// Further intercepted terminals appearing in <see cref="Body"/>. A multi-terminal shape
+        /// (a <c>Prepare()</c>d chain, say) would otherwise have only its first terminal probed:
+        /// the others could stop being intercepted, fall through to the throwing default interface
+        /// member, and the shape would still compile green.
+        /// </summary>
+        public string[] AdditionalTerminals { get; init; } = Array.Empty<string>();
+
+        public IEnumerable<string> AllTerminals => new[] { Terminal }.Concat(AdditionalTerminals);
+
         public override string ToString() => Name;
     }
 
@@ -162,23 +202,124 @@ public class Service
             @"await db.Users().Insert(new User { UserName = ""a"", IsActive = true }).ExecuteNonQueryAsync();"),
         new("Projected_ScalarAsync", "ExecuteScalarAsync",
             "await db.Users().Where(u => u.UserId > 0).Select(u => u.UserId).ExecuteScalarAsync<int>();"),
-    };
-
-    /// <summary>
-    /// The two <c>InsertBatch</c> shapes. Held out of <see cref="AllShapes"/> because they do not
-    /// compile in a non-friend assembly at all — see
-    /// <see cref="KnownBug_Issue334_BatchInsert_ReferencesInternalType"/>. Their arity coverage is
-    /// not lost: <c>Insert_ScalarAsync</c> and <c>Insert_NonQuery</c> exercise the same
-    /// generic-terminal-on-generic-receiver family.
-    /// </summary>
-    private static readonly Shape[] BatchInsertShapes =
-    {
+        // ToDiagnostics constructs QueryDiagnostics in the consumer's assembly. This shape covers
+        // the general path (TerminalEmitHelpers.EmitDiagnosticsConstruction) that every non-batch
+        // chain uses; BatchInsert_ToDiagnostics below covers the separate batch path. Both were
+        // uncovered, and both were broken by an internal constructor until #334.
+        new("Projected_ToDiagnostics", "ToDiagnostics",
+            "var diag = db.Users().Where(u => u.UserId > 0).Select(u => u.UserName).ToDiagnostics();\n        _ = diag.Sql;"),
+        // The third QueryDiagnostics construction site: CarrierEmitter's insert-diagnostics
+        // terminal (:1095), reached only by Insert(...).ToDiagnostics(). Insert_ScalarAsync and
+        // Insert_NonQuery take the carrier *execution* path and never touch it.
+        new("Insert_ToDiagnostics", "ToDiagnostics",
+            "var diag = db.Users().Insert(new User { UserName = \"a\", IsActive = true }).ToDiagnostics();\n" +
+            "        _ = diag.Sql;"),
+        // Batch insert emits a call to Quarry.Internal.BatchInsertSqlBuilder. These two shapes were
+        // held out of the matrix while that type was internal (#334) — an ordinary consumer could
+        // not compile them at all. They are back in the clean-binding set now that it is public.
         new("BatchInsert_NonQuery", "ExecuteNonQueryAsync",
             @"var rows = new[] { new User { UserName = ""a"", IsActive = true } };
         await db.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(rows).ExecuteNonQueryAsync();"),
         new("BatchInsert_ScalarAsync", "ExecuteScalarAsync",
             @"var rows = new[] { new User { UserName = ""a"", IsActive = true } };
         await db.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(rows).ExecuteScalarAsync<int>();"),
+        // The batch-insert *diagnostics* terminal is emitted by a separate method
+        // (TerminalBodyEmitter.EmitBatchInsertDiagnosticsTerminal) that carries its own
+        // hard-coded BatchInsertSqlBuilder call. The #334 pin only ever reached the carrier
+        // terminal, so this second site shipped the same defect untested.
+        new("BatchInsert_ToDiagnostics", "ToDiagnostics",
+            @"var rows = new[] { new User { UserName = ""a"", IsActive = true } };
+        var diag = db.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(rows).ToDiagnostics();
+        _ = diag.Sql;"),
+    };
+
+    // ── Multi-table shapes: joins, aggregates, correlated subqueries ─────────
+    // These reach JoinBodyEmitter and the GroupBy/Having assembly paths, none of
+    // which any other shape in the matrix touches.
+
+    private static readonly Shape[] JoinShapes =
+    {
+        new("Join_Select_FetchAll", "ExecuteFetchAllAsync",
+            "await db.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)" +
+            ".Select((u, o) => (u.UserName, o.Total)).ExecuteFetchAllAsync();"),
+        // LEFT JOIN additionally emits IsDBNull guards for the nullable side's columns.
+        new("LeftJoin_Select_FetchAll", "ExecuteFetchAllAsync",
+            "await db.Users().LeftJoin<Order>((u, o) => u.UserId == o.UserId.Id)" +
+            ".Select((u, o) => (u.UserName, o.Total)).ExecuteFetchAllAsync();"),
+        new("GroupBy_Having_FetchAll", "ExecuteFetchAllAsync",
+            "await db.Orders().GroupBy(o => o.Status).Having(o => Sql.Count() > 5)" +
+            ".Select(o => (o.Status, Sql.Count())).ExecuteFetchAllAsync();"),
+        // Correlated EXISTS subquery off a Many<T> navigation.
+        new("NavigationSubquery_Exists_FetchAll", "ExecuteFetchAllAsync",
+            "await db.Users().Where(u => u.Orders.Any(o => o.Total > 100)).ExecuteFetchAllAsync();"),
+    };
+
+    // ── Shapes that reach the Quarry.Internal runtime helpers ────────────────
+    // Each of these emits a call to a helper type that, like BatchInsertSqlBuilder,
+    // only works if it is public. They are the shapes most worth guarding.
+
+    private static readonly Shape[] RuntimeHelperShapes =
+    {
+        // SetOperationBodyEmitter.
+        new("Union_FetchAll", "ExecuteFetchAllAsync",
+            "await db.Users().Select(u => u.UserName)" +
+            ".Union(db.Orders().Select(o => o.Status)).ExecuteFetchAllAsync();"),
+        // IEnumerable.Contains -> IN (...), which emits CollectionHelper.Materialize,
+        // CollectionSqlCache and ParameterNames.AtP/Dollar.
+        new("CollectionContains_FetchAll", "ExecuteFetchAllAsync",
+            "var ids = new List<int> { 1, 2, 3 };\n" +
+            "        await db.Users().Where(u => ids.Contains(u.UserId))" +
+            ".Select(u => u.UserName).ExecuteFetchAllAsync();"),
+        // A collection typed IEnumerable<T> takes a different arm of the same emitter
+        // (CarrierEmitter.cs:1252) and is the only shape that emits CollectionHelper.Materialize —
+        // an IReadOnlyList like the List<int> above is used directly, without it.
+        new("CollectionEnumerableContains_FetchAll", "ExecuteFetchAllAsync",
+            "IEnumerable<int> ids = new List<int> { 1, 2, 3 };\n" +
+            "        await db.Users().Where(u => ids.Contains(u.UserId))" +
+            ".Select(u => u.UserName).ExecuteFetchAllAsync();"),
+        // A branched clause compiles to bitmask-dispatched SQL variants whose default arm
+        // calls ThrowHelper.UnenumeratedMask.
+        new("ConditionalMask_FetchAll", "ExecuteFetchAllAsync",
+            "var q = db.Users().Select(u => u.UserName);\n" +
+            "        if (flag) q = q.Where(u => u.IsActive);\n" +
+            "        await q.ExecuteFetchAllAsync();"),
+        // Multi-terminal PreparedQuery: one carrier serving both a diagnostics and a fetch terminal.
+        new("Prepared_MultiTerminal", "ExecuteFetchAllAsync",
+            "var prepared = db.Users().Where(u => u.IsActive).Select(u => u.UserName).Prepare();\n" +
+            "        _ = prepared.ToDiagnostics().Sql;\n" +
+            "        await prepared.ExecuteFetchAllAsync();")
+        {
+            // Both halves matter: the prepared ToDiagnostics path is the one the internal
+            // QueryDiagnostics ctor broke, so it must be probed too, not just the fetch terminal.
+            AdditionalTerminals = new[] { "ToDiagnostics" },
+        },
+        // CTE. Note this needs only the non-generic QuarryContext — QuarryContext<TSelf> is
+        // required for typed post-With accessors, not for FromCte<T>().
+        new("Cte_FromCte_FetchAll", "ExecuteFetchAllAsync",
+            "await db.With<Order>(orders => orders.Where(o => o.Total > 100))" +
+            ".FromCte<Order>().Select(o => (o.OrderId, o.Total)).ExecuteFetchAllAsync();"),
+        // Window function in a projection.
+        new("Window_RowNumber_FetchAll", "ExecuteFetchAllAsync",
+            "await db.Orders()" +
+            ".Select(o => (o.OrderId, Rn: Sql.RowNumber(over => over.OrderBy(o.Total))))" +
+            ".ExecuteFetchAllAsync();"),
+    };
+
+    // ── Raw SQL ──────────────────────────────────────────────────────────────
+    // RawSqlBodyEmitter is a wholly separate emission path from the chain emitters,
+    // with its own reader strategies, and had no non-friend coverage at all.
+
+    private static readonly Shape[] RawSqlShapes =
+    {
+        new("RawSql_FetchAll", "RawSqlAsync",
+            "await foreach (var r in db.RawSqlAsync<UserRow>(\"SELECT UserId, UserName FROM users\"))" +
+            " { _ = r; }"),
+        new("RawSql_Scalar", "RawSqlScalarAsync",
+            "await db.RawSqlScalarAsync<int>(\"SELECT COUNT(*) FROM users\");"),
+        // RawSqlNonQueryAsync is deliberately absent: only RawSqlAsync and RawSqlScalarAsync have
+        // an InterceptorKind (see InterceptorRouter.cs:74-75). RawSqlNonQueryAsync is an ordinary
+        // public method on QuarryContext that is never intercepted, so it emits nothing into the
+        // consumer's assembly and has no emitted-surface accessibility risk to guard.
     };
 
     // ── Modification terminals ───────────────────────────────────────────────
@@ -196,40 +337,14 @@ public class Service
     };
 
     public static IEnumerable<Shape> AllShapes =>
-        EntityTerminalShapes.Concat(GenericTerminalShapes).Concat(ModificationShapes);
+        EntityTerminalShapes
+            .Concat(GenericTerminalShapes)
+            .Concat(JoinShapes)
+            .Concat(RuntimeHelperShapes)
+            .Concat(RawSqlShapes)
+            .Concat(ModificationShapes);
 
     public static IEnumerable<Shape> EntityTerminalOnlyShapes => EntityTerminalShapes;
-
-    public static IEnumerable<Shape> BatchInsertOnlyShapes => BatchInsertShapes;
-
-    /// <summary>
-    /// Bug pin for #334. The emitter hard-codes a call to
-    /// <c>Quarry.Internal.BatchInsertSqlBuilder.Build(...)</c>
-    /// (<c>TerminalBodyEmitter.cs:518</c> and <c>:559</c>), but that type is <c>internal</c> to the
-    /// Quarry assembly — so an <c>InsertBatch</c> chain does not compile for any consumer outside
-    /// Quarry's <c>InternalsVisibleTo</c> list. Every in-repo project that uses <c>InsertBatch</c>
-    /// happens to be on that list, which is why nothing caught it before this fixture, whose
-    /// synthetic compilation is deliberately not a friend assembly.
-    /// </summary>
-    /// <remarks>
-    /// When this test fails, #334 is fixed: delete the pin, delete
-    /// <see cref="BatchInsertShapes"/>, and move those two shapes back into
-    /// <c>GenericTerminalShapes</c> so they rejoin the clean-binding matrix.
-    /// </remarks>
-    [TestCaseSource(nameof(BatchInsertOnlyShapes))]
-    public void KnownBug_Issue334_BatchInsert_ReferencesInternalType(Shape shape)
-    {
-        var (_, diagnostics) = Run(shape, "TestDbContext", crossContext: false);
-
-        var inaccessible = diagnostics
-            .Where(d => d.Id == "CS0122" && d.GetMessage().Contains("BatchInsertSqlBuilder"))
-            .ToList();
-
-        Assert.That(inaccessible, Is.Not.Empty,
-            $"'{shape.Name}' no longer references an inaccessible type from the generated " +
-            "interceptor. If #334 is fixed, remove this pin and return the InsertBatch shapes to " +
-            $"the clean-binding matrix. Diagnostics were: {Describe(diagnostics)}");
-    }
 
     [TestCaseSource(nameof(AllShapes))]
     public void Shape_BindsWithoutInterceptorMismatch(Shape shape)
@@ -244,6 +359,51 @@ public class Service
     [TestCaseSource(nameof(EntityTerminalOnlyShapes))]
     public void Shape_CrossNamespaceContext_BindsWithoutInterceptorMismatch(Shape shape)
         => AssertBindsCleanly(shape, "TestApp.Sub.SubDbContext", crossContext: true);
+
+    /// <summary>
+    /// Compiler diagnostics that mean "the generated code named something a consumer cannot reach".
+    /// <c>CS0122</c> is the call-site case (#334); the rest are the inconsistent-accessibility
+    /// family, which fires when an emitted member's own signature exposes a less-accessible type.
+    /// </summary>
+    private static readonly string[] AccessibilityDiagnosticIds =
+        { "CS0122", "CS0050", "CS0051", "CS0053", "CS0060" };
+
+    /// <summary>Simple names of every type the Quarry runtime assembly declares.</summary>
+    private static readonly HashSet<string> QuarryTypeNames =
+        typeof(QueryDiagnostics).Assembly.GetTypes()
+            .Select(t => t.Name)
+            .ToHashSet(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Classifies a compiler diagnostic as "generated code named something a consumer cannot reach".
+    /// </summary>
+    /// <remarks>
+    /// The IDs in <see cref="AccessibilityDiagnosticIds"/> always mean that. <c>CS1729</c> only
+    /// sometimes does: when a type's <em>only</em> constructor is internal it is not an overload
+    /// candidate at all outside a friend assembly, so the compiler reports the arity
+    /// ("does not contain a constructor that takes N arguments") rather than the protection level.
+    /// That is how the internal <see cref="QueryDiagnostics"/> constructor hid (#334). Classifying
+    /// <c>CS1729</c> wholesale would mislabel genuine emitter arity bugs — a defect class this
+    /// matrix exists to catch — so it counts only when the message names a type Quarry declares.
+    /// </remarks>
+    internal static bool IsAccessibilityDiagnostic(string id, string message)
+    {
+        if (AccessibilityDiagnosticIds.Contains(id))
+            return true;
+
+        if (id != "CS1729")
+            return false;
+
+        foreach (Match quoted in Regex.Matches(message, "'([^']+)'"))
+        {
+            var name = quoted.Groups[1].Value;
+            var simpleName = name[(name.LastIndexOf('.') + 1)..];
+            if (QuarryTypeNames.Contains(simpleName))
+                return true;
+        }
+
+        return false;
+    }
 
     private static void AssertBindsCleanly(Shape shape, string contextType, bool crossContext)
     {
@@ -261,6 +421,20 @@ public class Service
             $"Interceptor binding mismatch on '{shape.Name}' " +
             $"(CS9144 = signature, CS9177 = generic arity): {Describe(mismatches)}");
 
+        // Generated interceptors are emitted into the *consumer's* assembly, so every Quarry
+        // type they name has to be reachable from outside Quarry's InternalsVisibleTo list.
+        // This is the #334 defect, where InsertBatch and ToDiagnostics simply did not compile
+        // for any real consumer. Checked before the catch-all below so the failure names the
+        // actual cause instead of reporting a generic "fixture does not compile".
+        var inaccessible = diagnostics
+            .Where(d => IsAccessibilityDiagnostic(d.Id, d.GetMessage()))
+            .ToList();
+        Assert.That(inaccessible, Is.Empty, () =>
+            $"Generated interceptor for '{shape.Name}' names a type that is inaccessible outside " +
+            "Quarry's InternalsVisibleTo list, so this chain does not compile for any ordinary " +
+            "consumer. Every project in this repo is a friend assembly, so no other build can " +
+            $"catch this — make the referenced type public: {Describe(inaccessible)}");
+
         // The compiler only validates [InterceptsLocation] bindings on a compilation it
         // can otherwise bind. An unrelated error in the fixture (a stale type name after
         // an edit, a missing reference) stops that validation and every shape would then
@@ -277,9 +451,12 @@ public class Service
         // for the terminal at all — an unintercepted call produces no diagnostic
         // and would otherwise pass this guard.
         var interceptorSource = string.Concat(generatedSources);
-        Assert.That(interceptorSource, Does.Contain($"Intercepts {shape.Terminal}() call at"),
-            $"No interceptor was emitted for the '{shape.Terminal}' terminal of '{shape.Name}' — " +
-            "the call falls through to the throwing default interface member.");
+        foreach (var terminal in shape.AllTerminals)
+        {
+            Assert.That(interceptorSource, Does.Contain($"Intercepts {terminal}() call at"),
+                $"No interceptor was emitted for the '{terminal}' terminal of '{shape.Name}' — " +
+                "the call falls through to the throwing default interface member.");
+        }
     }
 
     /// <summary>
@@ -321,11 +498,175 @@ public class Service
             ".Select(...) workarounds in the Postgres/MySql/SqlServer integration suites.");
     }
 
+    /// <summary>
+    /// Shape name paired with the distinctive text its interceptor is expected to emit.
+    /// </summary>
+    public sealed record EmissionExpectation(string ShapeName, string EmittedText)
+    {
+        public override string ToString() => $"{ShapeName} -> {EmittedText}";
+    }
+
+    /// <summary>
+    /// What each guarded shape must be seen to emit. Entries are of two kinds: a Quarry runtime
+    /// member that had to be made public (and would break consumers if it stopped being), or —
+    /// for shapes whose emitter has no distinctive runtime helper — a fragment of the rendered SQL
+    /// or the interceptor header proving that emitter ran at all.
+    /// </summary>
+    public static IEnumerable<EmissionExpectation> ShapeEmissionExpectations => new[]
+    {
+        // Emitted-surface members: the accessibility contract this PR exists to hold.
+        new EmissionExpectation("BatchInsert_NonQuery", "Quarry.Internal.BatchInsertSqlBuilder.Build"),
+        new EmissionExpectation("BatchInsert_ToDiagnostics", "Quarry.Internal.BatchInsertSqlBuilder.Build"),
+        new EmissionExpectation("Projected_ToDiagnostics", "new QueryDiagnostics("),
+        new EmissionExpectation("Insert_ToDiagnostics", "new QueryDiagnostics("),
+        new EmissionExpectation("Prepared_MultiTerminal", "new QueryDiagnostics("),
+        new EmissionExpectation("CollectionEnumerableContains_FetchAll", "Quarry.Internal.CollectionHelper.Materialize"),
+        new EmissionExpectation("CollectionContains_FetchAll", "Quarry.Internal.CollectionSqlCache"),
+        new EmissionExpectation("CollectionContains_FetchAll", "Quarry.Internal.ParameterNames."),
+        new EmissionExpectation("ConditionalMask_FetchAll", "Quarry.Internal.ThrowHelper.UnenumeratedMask"),
+        new EmissionExpectation("Where_FetchAll", "QueryExecutor.ExecuteCarrierWithCommandAsync"),
+        new EmissionExpectation("Where_FetchAll", "OpId.Next()"),
+        // Each fetch terminal routes to its own QueryExecutor overload; pinning the specific one
+        // keeps these shapes distinguishable rather than all asserting "some executor was called".
+        new EmissionExpectation("Where_FetchFirst", "QueryExecutor.ExecuteCarrierFirstWithCommandAsync"),
+        new EmissionExpectation("Where_FetchFirstOrDefault", "QueryExecutor.ExecuteCarrierFirstOrDefaultWithCommandAsync"),
+        new EmissionExpectation("Where_FetchSingle", "QueryExecutor.ExecuteCarrierSingleWithCommandAsync"),
+        new EmissionExpectation("Where_FetchSingleOrDefault", "QueryExecutor.ExecuteCarrierSingleOrDefaultWithCommandAsync"),
+        new EmissionExpectation("Projected_ScalarAsync", "QueryExecutor.ExecuteCarrierScalarWithCommandAsync"),
+        new EmissionExpectation("BatchInsert_ScalarAsync", "Quarry.Internal.BatchInsertSqlBuilder.Build"),
+
+        // Emitters with no distinctive runtime helper: pin a fragment of what they render, so the
+        // shape cannot silently stop exercising them.
+        new EmissionExpectation("Join_Select_FetchAll", "JOIN"),
+        new EmissionExpectation("LeftJoin_Select_FetchAll", "LEFT JOIN"),
+        new EmissionExpectation("GroupBy_Having_FetchAll", "GROUP BY"),
+        new EmissionExpectation("GroupBy_Having_FetchAll", "HAVING"),
+        new EmissionExpectation("NavigationSubquery_Exists_FetchAll", "EXISTS"),
+        new EmissionExpectation("Union_FetchAll", "UNION"),
+        new EmissionExpectation("Cte_FromCte_FetchAll", "WITH "),
+        new EmissionExpectation("Window_RowNumber_FetchAll", "OVER ("),
+        new EmissionExpectation("RawSql_FetchAll", "Intercepts RawSqlAsync"),
+        new EmissionExpectation("RawSql_Scalar", "Intercepts RawSqlScalarAsync"),
+        new EmissionExpectation("Delete_Where_NonQuery", "DELETE FROM"),
+        new EmissionExpectation("Delete_All_NonQuery", "DELETE FROM"),
+        new EmissionExpectation("Update_Set_Where_NonQuery", "UPDATE "),
+        new EmissionExpectation("Update_Set_All_NonQuery", "UPDATE "),
+        new EmissionExpectation("Insert_ScalarAsync", "INSERT INTO"),
+        new EmissionExpectation("Insert_NonQuery", "INSERT INTO"),
+        new EmissionExpectation("OrderBy_FetchAll", "ORDER BY"),
+        new EmissionExpectation("Limit_FetchFirst", "LIMIT"),
+        new EmissionExpectation("Distinct_FetchAll", "DISTINCT"),
+        new EmissionExpectation("Where_ToAsyncEnumerable", "IAsyncEnumerable"),
+    };
+
+    /// <summary>
+    /// Pins that each guarded shape still reaches the emitter path it was added for.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="AssertBindsCleanly"/> only proves a shape compiles and that an interceptor was
+    /// emitted for its terminals. If a chain silently stopped being analyzable — a disqualified
+    /// conditional collapsing its mask table, a collection parameter no longer routed through the
+    /// SQL cache, a chain falling back to a runtime-built plan — the shape would keep passing while
+    /// guarding nothing, and the coverage it is credited with would quietly disappear. That is not
+    /// hypothetical: this test caught exactly that on the first collection shape written for it.
+    /// </remarks>
+    [TestCaseSource(nameof(ShapeEmissionExpectations))]
+    public void Shape_StillReachesItsEmitter(EmissionExpectation expectation)
+    {
+        var shape = AllShapes.SingleOrDefault(s => s.Name == expectation.ShapeName);
+        Assert.That(shape, Is.Not.Null,
+            $"No shape named '{expectation.ShapeName}' — the expectation list is stale.");
+
+        var (generatedSources, _) = Run(shape!, "TestDbContext", crossContext: false);
+
+        Assert.That(string.Concat(generatedSources), Does.Contain(expectation.EmittedText),
+            $"'{expectation.ShapeName}' no longer emits '{expectation.EmittedText}', so it is no " +
+            "longer guarding that emitter path. Either the emitter changed or the chain stopped " +
+            "being analyzable — fix the shape rather than deleting this expectation.");
+    }
+
+    /// <summary>
+    /// Every shape in the matrix must state what it is supposed to emit, or it proves only that it
+    /// compiles.
+    /// </summary>
+    [Test]
+    public void EveryShape_HasAnEmissionExpectation()
+    {
+        var covered = ShapeEmissionExpectations.Select(e => e.ShapeName).ToHashSet(StringComparer.Ordinal);
+        var uncovered = AllShapes.Select(s => s.Name).Where(n => !covered.Contains(n)).ToList();
+
+        Assert.That(uncovered, Is.Empty, () =>
+            "These shapes have no ShapeEmissionExpectations entry, so nothing pins that they still " +
+            "exercise the emitter they were added for: " + string.Join(", ", uncovered));
+    }
+
+    [TestCase("CS0122", "'BatchInsertSqlBuilder' is inaccessible due to its protection level", true)]
+    [TestCase("CS0051", "Inconsistent accessibility: parameter type 'Foo' is less accessible", true)]
+    // The form an internal constructor takes on the emitted surface — QueryDiagnostics is a Quarry
+    // type, so this is the #334 defect, not an emitter arity bug.
+    [TestCase("CS1729", "'QueryDiagnostics' does not contain a constructor that takes 23 arguments", true)]
+    // Same ID, but the named type is the consumer's own — a genuine arity mistake, which this
+    // matrix must keep reporting as such rather than mislabelling as an accessibility problem.
+    [TestCase("CS1729", "'Service' does not contain a constructor that takes 2 arguments", false)]
+    [TestCase("CS1503", "Argument 1: cannot convert from 'int' to 'string'", false)]
+    public void AccessibilityClassifier_SeparatesInternalCtorsFromArityBugs(
+        string id, string message, bool expected)
+        => Assert.That(IsAccessibilityDiagnostic(id, message), Is.EqualTo(expected));
+
+    /// <summary>
+    /// Proves the accessibility guard in <see cref="AssertBindsCleanly"/> can actually fire.
+    /// </summary>
+    /// <remarks>
+    /// The guard is only meaningful if this fixture's compilation is genuinely <em>not</em> a friend
+    /// of <c>Quarry</c>. If that ever stopped being true — a stray <c>InternalsVisibleTo</c>, a
+    /// renamed assembly, a reference swapped for the source project — every shape would keep passing
+    /// green while guarding nothing, exactly the blind spot that let #334 ship.
+    /// <para>
+    /// <c>Quarry.Internal.ScalarConverter</c> is the negative control: it is internal
+    /// <em>by design</em> (called only from <c>QueryExecutor</c> inside the runtime assembly, never
+    /// named by emitted code), so it stays internal and this probe stays valid. Note this is why the
+    /// guard cannot be a namespace convention — <c>Quarry.Internal</c> holds both the public emitted
+    /// surface and internal runtime-private helpers.
+    /// </para>
+    /// </remarks>
+    [Test]
+    public void AccessibilityGuard_DetectsAnInaccessibleType()
+    {
+        const string probe = @"
+namespace TestApp.Probe;
+
+public class Probe
+{
+    public int Run(object v) => Quarry.Internal.ScalarConverter.Convert<int>(v);
+}
+";
+        var (_, diagnostics) = CompileNonFriend(new[] { probe });
+
+        var inaccessible = diagnostics
+            .Where(d => IsAccessibilityDiagnostic(d.Id, d.GetMessage()))
+            .ToList();
+
+        Assert.That(inaccessible, Is.Not.Empty,
+            "Referencing an internal Quarry type from this fixture's compilation produced no " +
+            "accessibility diagnostic, which means the compilation has friend access to Quarry. " +
+            "The accessibility assertion in AssertBindsCleanly is therefore vacuous for every " +
+            $"shape in the matrix. Diagnostics were: {Describe(diagnostics)}");
+
+        Assert.That(Describe(inaccessible), Does.Contain("ScalarConverter"),
+            "Expected the accessibility diagnostic to name the probed internal type.");
+    }
+
     private static CSharpParseOptions FixtureParseOptions =>
         new CSharpParseOptions(LanguageVersion.Latest)
             .WithFeatures(new[]
             {
-                new KeyValuePair<string, string>("InterceptorsNamespaces", "TestApp;TestApp.Sub"),
+                // Chain interceptors land in the context's own namespace; raw-SQL interceptors land
+                // in Quarry.Generated. Real consumers get the latter registered automatically by
+                // the build targets Quarry ships (src/Quarry/build/**, see Quarry.csproj), so
+                // enabling it here matches an ordinary consumer's project rather than relaxing the
+                // fixture.
+                new KeyValuePair<string, string>(
+                    "InterceptorsNamespaces", "TestApp;TestApp.Sub;Quarry.Generated"),
             });
 
     private static (IReadOnlyList<string> GeneratedSources, IReadOnlyList<Diagnostic> Diagnostics) Run(
@@ -335,15 +676,26 @@ public class Service
             .Replace("__CONTEXT__", contextType)
             .Replace("__BODY__", shape.Body);
 
-        // Interceptors are emitted into the context's own namespace, so every
-        // context namespace in the fixture must be enabled for the compiler to
-        // validate (rather than reject) the generated [InterceptsLocation]s.
-        var parseOptions = FixtureParseOptions;
-
         var sources = new List<string> { SharedSource };
         if (crossContext)
             sources.Add(SubContextSource);
         sources.Add(serviceSource);
+
+        return CompileNonFriend(sources);
+    }
+
+    /// <summary>
+    /// Runs the generator over <paramref name="sources"/> in a compilation named
+    /// <c>InterceptorBindingGuardAssembly</c> — deliberately absent from Quarry's
+    /// <c>InternalsVisibleTo</c> list, so it sees exactly what an ordinary consumer sees.
+    /// </summary>
+    private static (IReadOnlyList<string> GeneratedSources, IReadOnlyList<Diagnostic> Diagnostics)
+        CompileNonFriend(IEnumerable<string> sources)
+    {
+        // Interceptors are emitted into the context's own namespace, so every
+        // context namespace in the fixture must be enabled for the compiler to
+        // validate (rather than reject) the generated [InterceptsLocation]s.
+        var parseOptions = FixtureParseOptions;
 
         var trees = sources
             .Select((s, i) => CSharpSyntaxTree.ParseText(s, parseOptions, path: $"Source{i}.cs"))
