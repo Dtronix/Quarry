@@ -6,7 +6,7 @@ base-branch: master
 phase: REMEDIATE
 status: active
 issue: #333
-pr:
+pr: #343
 ## Problem Statement
 Issue #333 — "Chains inside doubly-nested lambdas emit interceptors that fail to compile (CS0103 on captured locals)".
 
