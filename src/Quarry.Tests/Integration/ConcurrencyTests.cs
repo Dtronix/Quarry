@@ -26,24 +26,19 @@ namespace Quarry.Tests.Integration;
 /// that would test the fixtures rather than the library.
 /// </para>
 /// <para>
-/// Worker bodies are inline lambdas. They were named methods until issue #333 was fixed:
-/// a chain inside a lambda used to make the generator emit an interceptor referencing the
-/// captured locals directly, failing to compile with CS0103. Keeping them inline is
-/// deliberate — it means this suite also exercises capture resolution inside a lambda
-/// under real concurrency, not just the runtime state it was written for.
+/// Each worker body is a named method rather than an inline lambda, and must stay that way.
+/// The original reason was issue #333 (a chain inside a lambda emitted an interceptor
+/// referencing captured locals directly, CS0103). That is fixed, and these bodies were
+/// briefly inlined — but inlining them made this fixture depend on a display-class name
+/// the generator PREDICTS, and for this particular shape (an async lambda inside a loop,
+/// whose clause captures a local) the prediction is not stable across C# compiler
+/// versions: the same source produced <c>&lt;&gt;c__DisplayClass5_3</c> on SDK 10.0.110
+/// and <c>&lt;&gt;c__DisplayClass5_1</c> on SDK 10.0.302, so CI failed with
+/// <c>TypeLoadException</c> while the identical run passed locally. Tracked as issue #344.
 /// </para>
 /// <para>
-/// Each worker deconstructs its harness (<c>var (Lite, _, _, _) = harnesses[index];</c>) before
-/// chaining, and that is load-bearing: a chain rooted at a member access such as
-/// <c>harnesses[index].Lite.Users()</c> is emitted against the wrong context and fails to compile
-/// (issue #338). Do not "simplify" the deconstruction away.
-/// </para>
-/// <para>
-/// Each clause captures from a single closure scope. Mixing scopes in one clause — say a
-/// loop variable and a method-level local in the same <c>Where</c> — is rejected at build
-/// time with QRY032, because the outer scope would only be reachable through a closure
-/// link field that cannot be read (dotnet/runtime#119664). Split such a predicate into
-/// separate <c>Where</c> calls.
+/// Hoisting each body into a named method makes the chain's captures ordinary method
+/// locals, which predict stably. Do not inline them again until #344 is resolved.
 /// </para>
 /// </remarks>
 [TestFixture]
@@ -125,6 +120,42 @@ internal class ConcurrencyTests
     private readonly record struct MixedResult(
         int Index, int Renamed, int Patched, string UserName, string? Email, int ActiveCount);
 
+    private static async Task<MixedResult> RunMixedWorkerAsync(QueryTestHarness harness, int index)
+    {
+        var (Lite, _, _, _) = harness;
+
+        var name = $"Worker{index}";
+        var email = $"worker{index}@test.com";
+
+        // Plain UPDATE — worker-specific value, identical chain shape.
+        var renamed = await Lite.Users()
+            .Update()
+            .Set(u => u.UserName = name)
+            .Where(u => u.UserId == 1)
+            .ExecuteNonQueryAsync();
+
+        // Partial update through the Patch path, which carries its own column
+        // mask and parameter layout.
+        var patched = await Lite.Users()
+            .Update()
+            .Set(new User.Patch { Email = email })
+            .Where(u => u.UserId == 1)
+            .ExecuteNonQueryAsync();
+
+        // Read back both writes plus an unrelated filtered projection.
+        var row = await Lite.Users()
+            .Where(u => u.UserId == 1)
+            .Select(u => (u.UserName, u.Email))
+            .ExecuteFetchFirstAsync();
+
+        var activeIds = await Lite.Users()
+            .Where(u => u.IsActive)
+            .Select(u => u.UserId)
+            .ExecuteFetchAllAsync();
+
+        return new MixedResult(index, renamed, patched, row.UserName, row.Email, activeIds.Count);
+    }
+
     /// <summary>
     /// Mixed SELECT / UPDATE / Patch load, each worker driving the same chain
     /// shapes with its own parameter values. A shared mutable parameter buffer
@@ -141,41 +172,7 @@ internal class ConcurrencyTests
             for (int i = 0; i < Workers; i++)
             {
                 var index = i;
-                tasks[i] = Task.Run(async () =>
-                {
-                    var (Lite, _, _, _) = harnesses[index];
-
-                    var name = $"Worker{index}";
-                    var email = $"worker{index}@test.com";
-
-                    // Plain UPDATE — worker-specific value, identical chain shape.
-                    var renamed = await Lite.Users()
-                        .Update()
-                        .Set(u => u.UserName = name)
-                        .Where(u => u.UserId == 1)
-                        .ExecuteNonQueryAsync();
-
-                    // Partial update through the Patch path, which carries its own column
-                    // mask and parameter layout.
-                    var patched = await Lite.Users()
-                        .Update()
-                        .Set(new User.Patch { Email = email })
-                        .Where(u => u.UserId == 1)
-                        .ExecuteNonQueryAsync();
-
-                    // Read back both writes plus an unrelated filtered projection.
-                    var row = await Lite.Users()
-                        .Where(u => u.UserId == 1)
-                        .Select(u => (u.UserName, u.Email))
-                        .ExecuteFetchFirstAsync();
-
-                    var activeIds = await Lite.Users()
-                        .Where(u => u.IsActive)
-                        .Select(u => u.UserId)
-                        .ExecuteFetchAllAsync();
-
-                    return new MixedResult(index, renamed, patched, row.UserName, row.Email, activeIds.Count);
-                });
+                tasks[i] = Task.Run(() => RunMixedWorkerAsync(harnesses[index], index));
             }
 
             var results = await Task.WhenAll(tasks);
@@ -203,6 +200,29 @@ internal class ConcurrencyTests
 
     // ── Contended first touch of one carrier ─────────────────────────────────
 
+    private static async Task<List<(int OrderId, string Status, decimal Total)>> RunFirstTouchWorkerAsync(
+        QueryTestHarness harness, Barrier gate)
+    {
+        var (Lite, _, _, _) = harness;
+
+        // Release every worker into the chain at the same moment so the static
+        // initialization is genuinely contended. Bounded so a thread-pool starved
+        // runner fails with a message instead of hanging until the job times out.
+        if (!gate.SignalAndWait(BarrierTimeout))
+        {
+            throw new TimeoutException(
+                $"Workers did not all reach the barrier within {BarrierTimeout.TotalSeconds:F0}s. " +
+                "This is a thread-pool starvation problem in the test host, not a Quarry defect — " +
+                $"each of the {Workers} workers blocks a pool thread while waiting.");
+        }
+
+        return await Lite.Orders()
+            .Where(o => o.Total > 100.00m)
+            .OrderBy(o => o.OrderId)
+            .Select(o => (o.OrderId, o.Status, o.Total))
+            .ExecuteFetchAllAsync();
+    }
+
     /// <summary>
     /// All workers execute one identical chain simultaneously. The generated
     /// carrier holds its SQL and reader in static fields, so if that
@@ -228,27 +248,7 @@ internal class ConcurrencyTests
             for (int i = 0; i < Workers; i++)
             {
                 var index = i;
-                tasks[i] = Task.Run(async () =>
-                {
-                    var (Lite, _, _, _) = harnesses[index];
-
-                    // Release every worker into the chain at the same moment so the static
-                    // initialization is genuinely contended. Bounded so a thread-pool starved
-                    // runner fails with a message instead of hanging until the job times out.
-                    if (!gate.SignalAndWait(BarrierTimeout))
-                    {
-                        throw new TimeoutException(
-                            $"Workers did not all reach the barrier within {BarrierTimeout.TotalSeconds:F0}s. " +
-                            "This is a thread-pool starvation problem in the test host, not a Quarry defect — " +
-                            $"each of the {Workers} workers blocks a pool thread while waiting.");
-                    }
-
-                    return await Lite.Orders()
-                        .Where(o => o.Total > 100.00m)
-                        .OrderBy(o => o.OrderId)
-                        .Select(o => (o.OrderId, o.Status, o.Total))
-                        .ExecuteFetchAllAsync();
-                });
+                tasks[i] = Task.Run(() => RunFirstTouchWorkerAsync(harnesses[index], gate));
             }
 
             var results = await Task.WhenAll(tasks);
@@ -281,6 +281,26 @@ internal class ConcurrencyTests
         List<string> My,
         List<string> Ss);
 
+    private static async Task<DialectRows> RunAllDialectsWorkerAsync(QueryTestHarness harness, int index)
+    {
+        var (Lite, Pg, My, Ss) = harness;
+
+        // A worker-specific bound parameter on every dialect, so a shared
+        // parameter buffer would cross dialects as well as workers.
+        var threshold = index % 2 == 0 ? 0 : 1;
+
+        var lite = await Lite.Users().Where(u => u.UserId > threshold)
+            .Select(u => u.UserName).ExecuteFetchAllAsync();
+        var pg = await Pg.Users().Where(u => u.UserId > threshold)
+            .Select(u => u.UserName).ExecuteFetchAllAsync();
+        var my = await My.Users().Where(u => u.UserId > threshold)
+            .Select(u => u.UserName).ExecuteFetchAllAsync();
+        var ss = await Ss.Users().Where(u => u.UserId > threshold)
+            .Select(u => u.UserName).ExecuteFetchAllAsync();
+
+        return new DialectRows(index, threshold, lite, pg, my, ss);
+    }
+
     /// <summary>
     /// The documented-supported deployment shape: independent contexts on
     /// separate connections, queried concurrently. Covers all four dialects
@@ -296,25 +316,7 @@ internal class ConcurrencyTests
             for (int i = 0; i < Workers; i++)
             {
                 var index = i;
-                tasks[i] = Task.Run(async () =>
-                {
-                    var (Lite, Pg, My, Ss) = harnesses[index];
-
-                    // A worker-specific bound parameter on every dialect, so a shared
-                    // parameter buffer would cross dialects as well as workers.
-                    var threshold = index % 2 == 0 ? 0 : 1;
-
-                    var lite = await Lite.Users().Where(u => u.UserId > threshold)
-                        .Select(u => u.UserName).ExecuteFetchAllAsync();
-                    var pg = await Pg.Users().Where(u => u.UserId > threshold)
-                        .Select(u => u.UserName).ExecuteFetchAllAsync();
-                    var my = await My.Users().Where(u => u.UserId > threshold)
-                        .Select(u => u.UserName).ExecuteFetchAllAsync();
-                    var ss = await Ss.Users().Where(u => u.UserId > threshold)
-                        .Select(u => u.UserName).ExecuteFetchAllAsync();
-
-                    return new DialectRows(index, threshold, lite, pg, my, ss);
-                });
+                tasks[i] = Task.Run(() => RunAllDialectsWorkerAsync(harnesses[index], index));
             }
 
             var results = await Task.WhenAll(tasks);

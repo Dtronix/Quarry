@@ -76,7 +76,6 @@ Changes.
   declarations to their own scope.
 - Emit a `<>4__this` hop for instance fields captured alongside locals.
 - Disqualify multi-scope clauses with a QRY032 naming the shape and the workaround.
-- Revert the `ConcurrencyTests` named-worker workaround to inline lambdas.
 - Ground-truth tables and rules recorded in `src/Quarry.Generator/llm.md`.
 
 ## Deviations from plan implemented
@@ -85,6 +84,14 @@ Changes.
   buildable. Step 1 was written as a gate specifically to test that, and it failed — four `[UnsafeAccessor]`
   signature shapes were tried and all were rejected, a result that matches the upstream issue above. The
   plan was rewritten against measured behaviour rather than continuing on the assumption.
+- **The `ConcurrencyTests` workaround was NOT reverted after all.** Inlining those worker bodies was
+  planned and done, and it passed locally — then failed in CI with `TypeLoadException`. Cause: for that
+  specific shape (an async lambda inside a loop whose clause captures a local) the predicted closure
+  ordinal is **not stable across compiler versions** — `<>c__DisplayClass5_3` under SDK 10.0.110 versus
+  `<>c__DisplayClass5_1` under 10.0.302, from identical source. The named worker methods are restored,
+  with the evidence recorded in the fixture and in `llm-testing.md`, and the fragility filed as **#344**.
+  Everything else in this PR is unaffected: the `LambdaCapture*` suites pass on both SDKs.
+
 - **"Pick the innermost captured scope as the Target" was dropped** in favour of just counting distinct
   scopes. Since every genuinely multi-scope clause is now rejected, surviving clauses capture from exactly
   one scope, where the existing first-match lookup is already correct. Smaller and lower-risk.
@@ -148,3 +155,5 @@ rejected partly on memory-safety grounds, so no undefined behaviour is introduce
   Pre-existing; reproduced with this branch's generator stashed.
 - **#342** — hardening: switch-expression arm variables, deriving the guard from the extraction plan, and
   an explicit "unanalysed" sentinel.
+- **#344** — display-class closure ordinals are not stable across compiler versions for async-lambda-in-loop
+  shapes. Found by this PR's own CI; pre-existing in the prediction approach, not introduced here.

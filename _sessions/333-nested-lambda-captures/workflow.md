@@ -309,4 +309,5 @@ generator fix stashed, so it is pre-existing and unrelated. Candidate separate i
 | 2026-08-04 | IMPLEMENT | Step-1 gate failed (chained access not expressible); measured 10 end-user shapes; user approved re-plan into 3 fixes + 1 guard |
 | 2026-08-06 | IMPLEMENT | Steps 2-9 complete. Full suite green 201/146/3528. Filed #338 and #339 |
 | 2026-08-06 | REVIEW | Rebased on #337. 26 findings (3H). Verified F5/F6/F1/F9/F8 by reproduction before classifying: 11A/7B/4C/4D |
+| 2026-08-06 | REMEDIATE | CI failed: ConcurrencyTests TypeLoadException on SDK 10.0.302 but passes on 10.0.110 - closure ordinal prediction is compiler-version-dependent for async-lambda-in-loop. Reverted that inlining, filed #344 |
 | 2026-08-06 | REMEDIATE | All A+B fixed incl. 3 confirmed codegen breaks (CS0111, CS0122/CS0305, catch mis-scope). Filed #341, #342. Suite green 201/146/3540 |

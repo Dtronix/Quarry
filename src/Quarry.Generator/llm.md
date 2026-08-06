@@ -249,7 +249,9 @@ The scope count deliberately ignores variables **declared inside the clause lamb
 - Partial classes contribute members in compilation unit order
 - The scope→display-class mapping in the table above
 
-A prediction that is merely *wrong* still compiles and then throws `MissingFieldException` (bad field name) or `InvalidCastException` (bad display class) on first execution — so codegen tests alone cannot validate this area. `Generation/LambdaCaptureExecutionTests` exists for exactly that reason.
+**Closure ordinals are not stable across compiler versions for every shape.** An async lambda inside a loop whose clause captures a local predicted `<>c__DisplayClass5_3` under SDK 10.0.110 and `<>c__DisplayClass5_1` under 10.0.302 — same source, `TypeLoadException` at runtime on the newer one only. The repo has no `global.json`, so this can differ between a contributor's machine and CI. Issue #344. The shapes tabulated above were verified stable on both.
+
+A prediction that is merely *wrong* still compiles and then throws `MissingFieldException` (bad field name), `InvalidCastException` (bad display class) or `TypeLoadException` (no such display class) on first execution — so codegen tests alone cannot validate this area. `Generation/LambdaCaptureExecutionTests` exists for exactly that reason.
 
 **Supplemental compilation**: `DisplayClassEnricher.BuildSupplementalCompilation` adds generated entity classes and context partial classes to the compilation before creating semantic models. This lets Roslyn resolve all generated types natively — no manual error-type fallbacks needed. Variables flowing from generated methods (e.g., `db.Equipments().ExecuteFetchAllAsync()`) resolve to their correct types automatically. When `TypeKind.Error` persists (e.g., types from other generators), the fallback is `"object"`.
 
