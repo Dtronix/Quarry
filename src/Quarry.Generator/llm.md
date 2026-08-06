@@ -552,14 +552,19 @@ documented as such. An `internal` one compiles fine here and fails for every rea
 (`Quarry.csproj`) cover every project in the solution, so `Quarry.Tests`, `Quarry.Benchmarks` and the
 samples are all friend assemblies. `InterceptorBindingGuardTests` is the only non-friend compilation
 in the repo, which makes its shape matrix the sole coverage for this class of defect. **When adding
-an emitter path, add a shape for it** — and add a `RuntimeHelperExpectations` entry pinning the
-helper the shape is supposed to reach, or the shape can silently stop exercising it and still pass.
+an emitter path, add a shape for it** — and a `ShapeEmissionExpectations` entry naming the
+distinctive text that shape must emit (a runtime helper call, or a fragment of the rendered SQL for
+emitters that have no helper). `EveryShape_HasAnEmissionExpectation` enforces that pairing, because
+without it a shape can silently stop exercising its emitter and still pass.
 
 `Quarry.Internal` is not a licence: it deliberately mixes the public emitted surface
 (`BatchInsertSqlBuilder`, `ThrowHelper`, `CollectionHelper`, `CollectionSqlCache`, `ParameterNames`,
-`QueryExecutor`, `OpId` — all `public` + `[EditorBrowsable(Never)]`) with genuinely internal
-runtime-private helpers (`ScalarConverter`, called only from `QueryExecutor`). Accessibility is
-therefore established by compiling, not by namespace convention.
+`QueryExecutor`, `OpId`) with genuinely internal runtime-private helpers (`ScalarConverter`, called
+only from `QueryExecutor`). Accessibility is therefore established by compiling, not by namespace
+convention. New additions to the emitted surface should carry
+`[EditorBrowsable(EditorBrowsableState.Never)]` as `BatchInsertSqlBuilder`, `QueryExecutor` and
+`OpId` do — the older `ThrowHelper`, `CollectionHelper`, `CollectionSqlCache` and `ParameterNames`
+predate that convention and are plain `public`.
 
 Two failure signatures, both from #334:
 

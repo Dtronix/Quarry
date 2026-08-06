@@ -150,11 +150,20 @@ last.
 
 - [x] **5. Add set-operation, collection-`IN`, conditional-mask, prepared and window shapes**
 
-  *Expanded during implementation:* added `Shape_StillReachesItsRuntimeHelper`, pinning each shape to
-  the emitted text it exists to guard, plus a second collection shape
-  (`CollectionEnumerableContains_FetchAll`) because `CollectionHelper.Materialize` is emitted only
-  for collections typed `IEnumerable<T>`.
+  *Expanded during implementation:* added `Shape_StillReachesItsEmitter` (originally
+  `Shape_StillReachesItsRuntimeHelper`), pinning each shape to the emitted text it exists to guard,
+  plus a second collection shape (`CollectionEnumerableContains_FetchAll`) because
+  `CollectionHelper.Materialize` is emitted only for collections typed `IEnumerable<T>`.
 
+  *Deviation:* the planned `Window_Rank_FetchAll` shipped as `Window_RowNumber_FetchAll` —
+  `Sql.RowNumber(over => over.OrderBy(o.Total))` rather than
+  `Sql.Rank(over => over.PartitionBy(...).OrderByDescending(...))`. The simpler form is the one
+  `Generation/CarrierGenerationTests.cs:2950` uses and was taken from there to avoid guessing the
+  `IOverClause` surface. Both route through the same window emission path, and the
+  `OVER (` emission expectation pins that it is still reached — but the shipped shape does not
+  exercise `PartitionBy` or descending ordering. Worth widening if that path ever regresses.
+
+<details><summary>Original step 5 text</summary>
 
   New `RuntimeHelperShapes` array — these are the shapes that reach the *other* `Quarry.Internal`
   helpers, which is precisely what makes them worth guarding:
@@ -171,12 +180,17 @@ last.
 
   *Tests:* as above, via `Shape_BindsWithoutInterceptorMismatch`.
 
+</details>
+
 - [x] **6. Add raw-SQL shapes**
 
   *Deviation:* `RawSql_NonQuery` dropped — `RawSqlNonQueryAsync` is never intercepted, so it has no
   emitted surface. Also required adding `Quarry.Generated` to the fixture's `InterceptorsNamespaces`,
-  since raw-SQL interceptors are emitted there rather than into the context's namespace.
+  since raw-SQL interceptors are emitted there rather than into the context's namespace. The row
+  shape shipped as a purpose-declared `UserRow` DTO in `SharedSource` rather than the generated
+  `User` entity, which the step below anticipated as the fallback.
 
+<details><summary>Original step 6 text</summary>
 
   `RawSqlBodyEmitter` is a wholly separate emission path with its own reader-strategy branches
   (static lambda for literal SQL vs. `file struct IRowReader<T>` fallback), and it is currently
@@ -191,6 +205,8 @@ last.
 
   *Tests:* as above. Expect `site.MethodName` to be `RawSqlAsync` / `RawSqlScalarAsync` /
   `RawSqlNonQueryAsync` for the interceptor-emitted probe — verify rather than assume.
+
+</details>
 
 - [x] **7. Add CTE shapes** *(no dedicated context needed — see deviation)*
 
