@@ -5,10 +5,10 @@ platform: github
 base-branch: master
 
 ## State
-phase: PLAN
+phase: FINALIZE
 status: active
 issue: #334
-pr:
+pr: #340
 
 ## Problem Statement
 
@@ -271,3 +271,5 @@ genuinely needs different sources, that is the point to generalize it — not be
 | Date | Phases | Summary |
 |------|--------|---------|
 | 2026-08-04 | INTAKE, DESIGN | Worktree created from #334; emitted-surface accessibility audit completed. |
+| 2026-08-04 | PLAN, IMPLEMENT | 8 plan steps committed. Step 3 uncovered a second, larger instance (internal `QueryDiagnostics` ctor breaking `ToDiagnostics()` for all consumers); fixed here by user decision. |
+| 2026-08-06 | REVIEW, REMEDIATE | Rebased onto `origin/master` (#337). 13 findings, all classified A/B by user (C→A) and fixed. PR #340 opened; CI green. |
