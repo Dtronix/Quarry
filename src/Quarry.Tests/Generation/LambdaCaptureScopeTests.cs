@@ -70,7 +70,8 @@ public partial class TestDbContext : QuarryContext
             "System.Runtime.dll", "System.Collections.dll", "System.Linq.dll",
             "System.Linq.Expressions.dll", "netstandard.dll",
             "System.Threading.Tasks.dll", "System.Threading.dll", "System.Console.dll",
-            "System.Runtime.InteropServices.dll",
+            "System.Runtime.InteropServices.dll", "System.ComponentModel.Primitives.dll",
+            "System.Data.Common.dll",
         })
         {
             references.Add(MetadataReference.CreateFromFile(Path.Combine(runtimeDir, dll)));
@@ -107,17 +108,37 @@ public partial class TestDbContext : QuarryContext
     {
         var (code, errors, genDiags) = Run(body);
 
-        var cs0103 = errors.Where(d => d.Id == "CS0103").ToArray();
+        // Assert on ALL generated-code errors, not just the original CS0103 symptom. This feature's
+        // failure mode is "emits uncompilable C#", and narrowing to one diagnostic id let a duplicate
+        // __ExtractThis_ member (CS0111) and an inaccessible return type (CS0122) pass unnoticed.
+        //
+        // Two ids are artifacts of compiling in isolation rather than defects: CS9137 (interceptors
+        // are enabled by an MSBuild property this synthetic compilation has no way to set) and
+        // CS1729 (QueryDiagnostics overload resolution, which succeeds in the real project). They
+        // are excluded by id so that every other generated-code error still fails the test.
+        var real = errors.Where(d => d.Id is not ("CS9137" or "CS1729")).ToArray();
         Assert.Multiple(() =>
         {
-            Assert.That(cs0103, Is.Empty,
-                "generated interceptor referenced a captured local that is not in scope: "
-                + string.Join(" | ", cs0103.Select(d => d.GetMessage())));
+            Assert.That(real, Is.Empty,
+                "generated interceptor does not compile: "
+                + string.Join(" | ", real.Select(d => d.Id + ": " + d.GetMessage())));
             Assert.That(genDiags.Where(d => d.Id == "QRY032"), Is.Empty,
                 "chain should be analyzable, not disqualified");
             Assert.That(code, Does.Contain("__ExtractVar_"),
                 "captured variable should be read through an [UnsafeAccessor] extractor");
         });
+    }
+
+    /// <summary>Asserts the shape is rejected at build time, with a reason containing the given text.</summary>
+    private static void AssertRejected(string body, string expectedReasonFragment)
+    {
+        var (code, _, genDiags) = Run(body);
+
+        var qry032 = genDiags.Where(d => d.Id == "QRY032").ToArray();
+        Assert.That(qry032, Is.Not.Empty, "shape should be disqualified at build time");
+        Assert.That(qry032[0].GetMessage(), Does.Contain(expectedReasonFragment));
+        Assert.That(code, Does.Not.Contain("__ExtractThis_"),
+            "no hop accessor should be emitted for a rejected chain");
     }
 
     /// <summary>Asserts the shape is rejected at build time with the multi-scope reason.</summary>
@@ -316,4 +337,161 @@ public static class Q
         })).ToList();
     }
 }");
+
+    /// <summary>`for`-declaration variable alone — its own per-iteration display class.</summary>
+    [Test]
+    public void ForDeclarationVariable() => AssertCaptureResolved(@"
+public static class Q
+{
+    public static void Test(TestDbContext db, string[] names)
+    {
+        for (int i = 0; i < names.Length; i++)
+        {
+            _ = db.Users().Where(u => u.UserId > i).Select(u => u.UserId).ToDiagnostics();
+        }
+    }
+}");
+
+    /// <summary>`using`-statement variable captured by a clause.</summary>
+    [Test]
+    public void UsingStatementVariable() => AssertCaptureResolved(@"
+public static class Q
+{
+    public static void Test(TestDbContext db)
+    {
+        using (var d = new System.IO.MemoryStream())
+        {
+            _ = db.Users().Where(u => u.UserId > (int)d.Length).Select(u => u.UserId).ToDiagnostics();
+        }
+    }
+}");
+
+    /// <summary>`switch`-section local captured by a clause.</summary>
+    [Test]
+    public void SwitchSectionLocal() => AssertCaptureResolved(@"
+public static class Q
+{
+    public static void Test(TestDbContext db, int k)
+    {
+        switch (k)
+        {
+            case 1:
+                var name = ""Alice"";
+                _ = db.Users().Where(u => u.UserName == name).Select(u => u.UserId).ToDiagnostics();
+                break;
+            default:
+                break;
+        }
+    }
+}");
+
+    /// <summary>
+    /// `catch`-clause variable captured by a clause. The catch variable owns its own display class,
+    /// so resolving it to the block enclosing the `try` mispredicted the ordinal — and, worse, made
+    /// a catch-variable-plus-method-local clause look single-scope so the guard did not fire.
+    /// </summary>
+    [Test]
+    public void CatchClauseVariable() => AssertCaptureResolved(@"
+public static class Q
+{
+    public static void Test(TestDbContext db)
+    {
+        try { throw new InvalidOperationException(""Alice""); }
+        catch (InvalidOperationException ex)
+        {
+            _ = db.Users().Where(u => u.UserName == ex.Message).Select(u => u.UserId).ToDiagnostics();
+        }
+    }
+}");
+
+    /// <summary>
+    /// Two clauses on ONE chain, each mixing an instance field with a local. The `<>4__this` hop
+    /// accessor is declared on the carrier, so naming it after the containing type emitted it twice
+    /// with identical signatures (CS0111). It is named per clause instead.
+    /// </summary>
+    [Test]
+    public void TwoClausesEachMixingFieldAndLocal() => AssertCaptureResolved(@"
+public class Q
+{
+    private readonly int _min = 0;
+    private readonly int _max = 99;
+
+    public void Test(TestDbContext db)
+    {
+        var name = ""Alice"";
+        var other = ""Bob"";
+        _ = db.Users()
+            .Where(u => u.UserId > _min && u.UserName == name)
+            .Where(u => u.UserId < _max && u.UserName != other)
+            .Select(u => u.UserId).ToDiagnostics();
+    }
+}");
+
+    [Test]
+    public void MultiScope_CatchVariableAndMethodLocalInOneClause() => AssertMultiScopeRejected(@"
+public static class Q
+{
+    public static void Test(TestDbContext db)
+    {
+        var minId = 0;
+        try { throw new InvalidOperationException(""Alice""); }
+        catch (InvalidOperationException ex)
+        {
+            _ = db.Users().Where(u => u.UserName == ex.Message && u.UserId > minId)
+                .Select(u => u.UserId).ToDiagnostics();
+        }
+    }
+}");
+
+    [Test]
+    public void MultiScope_ForBodyLocalAndMethodLocalInOneClause() => AssertMultiScopeRejected(@"
+public static class Q
+{
+    public static void Test(TestDbContext db, string[] names)
+    {
+        var minId = 0;
+        for (int i = 0; i < names.Length; i++)
+        {
+            var name = names[i];
+            _ = db.Users().Where(u => u.UserName == name && u.UserId > minId)
+                .Select(u => u.UserId).ToDiagnostics();
+        }
+    }
+}");
+
+    // ─────────── containing types the <>4__this hop cannot name ───────────
+
+    /// <summary>
+    /// The hop accessor must return the containing type as a real type name, which is impossible for
+    /// a generic type (no type parameters in scope on a file-scoped carrier) — CS0305 if emitted.
+    /// </summary>
+    [Test]
+    public void GenericContainingType_WithFieldAndLocal_IsRejected() => AssertRejected(@"
+public class Repo<T>
+{
+    private readonly int _min = 0;
+    public void Test(TestDbContext db)
+    {
+        var name = ""Alice"";
+        _ = db.Users().Where(u => u.UserId > _min && u.UserName == name)
+            .Select(u => u.UserId).ToDiagnostics();
+    }
+}", "generic or not accessible");
+
+    /// <summary>Same, for a type the generated file cannot see at all — CS0122 if emitted.</summary>
+    [Test]
+    public void InaccessibleContainingType_WithFieldAndLocal_IsRejected() => AssertRejected(@"
+public class Outer
+{
+    private class Inner
+    {
+        private readonly int _min = 0;
+        public void Test(TestDbContext db)
+        {
+            var name = ""Alice"";
+            _ = db.Users().Where(u => u.UserId > _min && u.UserName == name)
+                .Select(u => u.UserId).ToDiagnostics();
+        }
+    }
+}", "generic or not accessible");
 }

@@ -377,6 +377,7 @@ internal static class CarrierAnalyzer
                 // display class, it is on the instance behind <>4__this. CapturedVariableTypes holds
                 // exactly the captured locals/parameters, so a captured name absent from it is a field.
                 string? thisIndirection = null;
+                string? thisHopMethodName = null;
                 if (captureKind == CaptureKind.ClosureCapture
                     && !isStaticField
                     && cs.CapturedVariableTypes?.ContainsKey(p.CapturedFieldName) == false)
@@ -385,6 +386,7 @@ internal static class CarrierAnalyzer
                     if (marker > 0)
                     {
                         thisIndirection = displayClassName;
+                        thisHopMethodName = $"__ExtractThis_{clauseIndex}";
                         effectiveDisplayClass = displayClassName.Substring(0, marker);
                     }
                 }
@@ -397,7 +399,8 @@ internal static class CarrierAnalyzer
                     effectiveDisplayClass,
                     captureKind,
                     isStaticField,
-                    thisIndirection);
+                    thisIndirection,
+                    thisHopMethodName);
             }
 
             // For UpdateSetAction: also create extractors from clause-level captured identifiers

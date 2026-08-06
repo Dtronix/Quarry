@@ -467,10 +467,14 @@ class TestClass
                 CreateSite("loop-scope", lambdas[1])),
             compilation, null!, CancellationToken.None);
 
-        // The method-scope closure is ordinal 0; the loop's own scope must be a DIFFERENT ordinal.
-        Assert.That(result[0].DisplayClassName, Is.Not.EqualTo(result[1].DisplayClassName),
-            "a foreach variable must not share a display class with the enclosing method scope");
-        Assert.That(result[0].DisplayClassName, Does.EndWith("_0"));
+        // Ground truth from emitted IL: `_0 { minId }` for the method scope, `_1 { name }` for the
+        // loop's own per-iteration scope. Pin both ordinals — asserting only that they differ would
+        // pass for any off-by-one in AssignOrdinalsPreOrder.
+        Assert.Multiple(() =>
+        {
+            Assert.That(result[0].DisplayClassName, Does.EndWith("_0"), "method scope");
+            Assert.That(result[1].DisplayClassName, Does.EndWith("_1"), "foreach scope");
+        });
     }
 
     /// <summary>
@@ -531,7 +535,7 @@ class TestClass
     void TestMethod(List<List<int>> rows)
     {
         var threshold = 1;
-        Func<bool> nested = () => rows.Any(r => r.Any(x => x > threshold));
+        Func<bool> nested = () => rows.Any(r => r.Any(x => x > threshold && r.Count > 0));
     }
 }
 ";
@@ -543,8 +547,11 @@ class TestClass
             ImmutableArray.Create(CreateSite("nested-subquery", lambda)),
             compilation, null!, CancellationToken.None);
 
+        // `r` is captured by the innermost lambda, so it genuinely appears in the clause's
+        // CapturedInside — without the "declared inside the clause" filter this returns 2 and the
+        // guard would reject a working nested-subquery chain.
         Assert.That(result[0].CapturedScopeCount, Is.EqualTo(1),
-            "inner lambda parameters r/x are declared inside the clause and must not count as scopes");
+            "inner lambda parameters are declared inside the clause and must not count as scopes");
     }
 
     [Test]

@@ -230,8 +230,11 @@ The generator predicts compiler-generated closure class names to emit `[UnsafeAc
 | `for` decl var + body local | `_0 { i }`, `_1 { body, … }` — same |
 | `using` decl var + body local | `_0 { d }`, `_1 { body, … }` — same |
 | `switch` section locals | `_0 { a, b }` — one class for the whole section |
+| `catch (E ex)` + its body local | `_0 { ex }`, `_1 { bodyLocal, … }` — the catch variable owns a scope |
 
-So: a scope is a `BlockSyntax`; a **parameter** resolves to its owner's body block (not the enclosing block); and `foreach`/`for`/`using`/`switch`-section **declarations** own a scope distinct from both the enclosing block and their own body. Resolving any of these to the enclosing block merges two scopes and shifts every later ordinal — invisible until a method has two capture scopes, since ordinal 0 is otherwise correct by accident.
+So: a scope is a `BlockSyntax`; a **parameter** resolves to its owner's body block (not the enclosing block); and `foreach`/`for`/`using`/`switch`-section/`catch` **declarations** own a scope distinct from both the enclosing block and their own body — see `IsOwnScopeStatement`.
+
+**Known unhandled form:** a `switch`-*expression* arm variable (`o switch { string s => … }`) also owns a display class, and its field is name-mangled to `<s>5__2` rather than `s` — so both the ordinal and the accessor's field name would be wrong. It resolves to the enclosing block today and is not detected; tracked separately. Adding a form to `IsOwnScopeStatement` is only safe once the emitted field NAME has been checked too, not just the scope. Resolving any of these to the enclosing block merges two scopes and shifts every later ordinal — invisible until a method has two capture scopes, since ordinal 0 is otherwise correct by accident.
 
 **Instance fields mixed with locals.** With only a field captured, the delegate `Target` IS the containing instance and the field is read straight off it (`FieldCapture`). Add a captured local and the compiler interposes a display class holding the local plus `<>4__this`; the field then lives on the instance behind that back-reference. The emitter detects this (a captured name absent from `CapturedVariableTypes`, which holds exactly the locals/parameters) and emits an `<>4__this` accessor returning `ref TContaining`. That hop is expressible precisely because `<>4__this`'s type is the user's own class and needs no `[return: UnsafeAccessorType]`.
 

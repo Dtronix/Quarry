@@ -3,7 +3,7 @@
 platform: github
 base-branch: master
 ## State
-phase: REVIEW
+phase: REMEDIATE
 status: active
 issue: #333
 pr:
@@ -308,3 +308,5 @@ generator fix stashed, so it is pre-existing and unrelated. Candidate separate i
 | 2026-08-04 | PLAN | Wrote plan.md (10 steps); user chose full multi-scope fix + revert ConcurrencyTests workaround |
 | 2026-08-04 | IMPLEMENT | Step-1 gate failed (chained access not expressible); measured 10 end-user shapes; user approved re-plan into 3 fixes + 1 guard |
 | 2026-08-06 | IMPLEMENT | Steps 2-9 complete. Full suite green 201/146/3528. Filed #338 and #339 |
+| 2026-08-06 | REVIEW | Rebased on #337. 26 findings (3H). Verified F5/F6/F1/F9/F8 by reproduction before classifying: 11A/7B/4C/4D |
+| 2026-08-06 | REMEDIATE | All A+B fixed incl. 3 confirmed codegen breaks (CS0111, CS0122/CS0305, catch mis-scope). Filed #341, #342. Suite green 201/146/3540 |

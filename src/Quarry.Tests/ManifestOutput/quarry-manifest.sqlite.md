@@ -4907,6 +4907,21 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 ### Users().Where(...).Where(...).Select(...).ExecuteFetchAllAsync()
 
 ```sql
+SELECT "UserId" FROM "users" WHERE ("UserId" > @p0 AND "UserName" = @p1) AND ("UserId" < @p2 AND "UserName" <> @p3)
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `string` |
+| `@p2` | `int` |
+| `@p3` | `string` |
+
+---
+
+### Users().Where(...).Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
 SELECT "UserId" FROM "users" WHERE ("UserName" = @p0) AND ("UserId" > @p1)
 ```
 
@@ -6046,7 +6061,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 769 |
+| Total discovered | 772 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 219 |
-| Rendered | 550 |
+| Consolidated (deduped) | 221 |
+| Rendered | 551 |

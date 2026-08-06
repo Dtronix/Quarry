@@ -17,7 +17,8 @@ internal sealed class CapturedVariableExtractor : IEquatable<CapturedVariableExt
         string displayClassName,
         CaptureKind captureKind,
         bool isStaticField,
-        string? thisIndirectionDisplayClass = null)
+        string? thisIndirectionDisplayClass = null,
+        string? thisHopMethodName = null)
     {
         MethodName = methodName;
         VariableName = variableName;
@@ -26,7 +27,20 @@ internal sealed class CapturedVariableExtractor : IEquatable<CapturedVariableExt
         CaptureKind = captureKind;
         IsStaticField = isStaticField;
         ThisIndirectionDisplayClass = thisIndirectionDisplayClass;
+        ThisHopMethodName = thisHopMethodName;
     }
+
+    /// <summary>
+    /// Name of the <c>&lt;&gt;4__this</c> hop accessor on the carrier, when this extractor needs one.
+    /// <para>
+    /// Carries the clause index (like <see cref="MethodName"/>) rather than being derived from the
+    /// containing type: the accessor is declared once on the carrier but a chain can have several
+    /// clauses that each mix a field with a local, and a type-derived name emitted them twice with
+    /// identical signatures — CS0111 in generated code. A clause captures <c>this</c> of at most one
+    /// type, so one hop per clause is always enough.
+    /// </para>
+    /// </summary>
+    public string? ThisHopMethodName { get; }
 
     /// <summary>
     /// Set when the variable is an INSTANCE FIELD captured by a lambda that also captures a local.
@@ -93,9 +107,10 @@ internal sealed class CapturedVariableExtractor : IEquatable<CapturedVariableExt
             && DisplayClassName == other.DisplayClassName
             && CaptureKind == other.CaptureKind
             && IsStaticField == other.IsStaticField
-            && ThisIndirectionDisplayClass == other.ThisIndirectionDisplayClass;
+            && ThisIndirectionDisplayClass == other.ThisIndirectionDisplayClass
+            && ThisHopMethodName == other.ThisHopMethodName;
     }
 
     public override bool Equals(object? obj) => Equals(obj as CapturedVariableExtractor);
-    public override int GetHashCode() => HashCode.Combine(MethodName, VariableName, VariableType, DisplayClassName, CaptureKind, IsStaticField, ThisIndirectionDisplayClass);
+    public override int GetHashCode() => HashCode.Combine(MethodName, VariableName, VariableType, DisplayClassName, CaptureKind, IsStaticField, ThisIndirectionDisplayClass, ThisHopMethodName);
 }

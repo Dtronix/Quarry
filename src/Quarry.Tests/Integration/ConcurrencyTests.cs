@@ -33,6 +33,12 @@ namespace Quarry.Tests.Integration;
 /// under real concurrency, not just the runtime state it was written for.
 /// </para>
 /// <para>
+/// Each worker deconstructs its harness (<c>var (Lite, _, _, _) = harnesses[index];</c>) before
+/// chaining, and that is load-bearing: a chain rooted at a member access such as
+/// <c>harnesses[index].Lite.Users()</c> is emitted against the wrong context and fails to compile
+/// (issue #338). Do not "simplify" the deconstruction away.
+/// </para>
+/// <para>
 /// Each clause captures from a single closure scope. Mixing scopes in one clause — say a
 /// loop variable and a method-level local in the same <c>Where</c> — is rejected at build
 /// time with QRY032, because the outer scope would only be reachable through a closure

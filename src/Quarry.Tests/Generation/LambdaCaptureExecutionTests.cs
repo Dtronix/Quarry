@@ -230,4 +230,74 @@ public class LambdaCaptureExecutionTests
             Assert.That(updated, Is.EqualTo("Worker0"));
         });
     }
+
+    /// <summary>
+    /// A `catch`-clause variable owns its own display class, so it must not resolve to the block
+    /// enclosing the `try`. A wrong ordinal here throws MissingFieldException at execution.
+    /// </summary>
+    [Test]
+    public async Task CatchClauseVariable()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        List<int> ids;
+        try
+        {
+            throw new InvalidOperationException("Alice");
+        }
+        catch (InvalidOperationException ex)
+        {
+            ids = await Lite.Users()
+                .Where(u => u.UserName == ex.Message)
+                .Select(u => u.UserId)
+                .ExecuteFetchAllAsync();
+        }
+
+        Assert.That(ids, Is.EqualTo(new[] { 1 }));
+    }
+
+    /// <summary>
+    /// Two clauses on one chain, each mixing an instance field with a local — each needs its own
+    /// `&lt;&gt;4__this` hop. Also checks both clauses read the RIGHT field, not one shared value.
+    /// </summary>
+    [Test]
+    public async Task TwoClausesEachMixingFieldAndLocal()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        var name = "Alice";
+        var other = "Bob";
+        var ids = await Lite.Users()
+            .Where(u => u.UserId > _minId && u.UserName == name)
+            .Where(u => u.UserId < _maxId && u.UserName != other)
+            .Select(u => u.UserId)
+            .ExecuteFetchAllAsync();
+
+        Assert.That(ids, Is.EqualTo(new[] { 1 }));
+    }
+
+    private readonly int _maxId = 99;
+
+    /// <summary>A `for`-declaration variable captured by a clause.</summary>
+    [Test]
+    public async Task ForDeclarationVariable()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        var counts = new List<int>();
+        for (int i = 0; i < 2; i++)
+        {
+            var ids = await Lite.Users()
+                .Where(u => u.UserId > i)
+                .Select(u => u.UserId)
+                .ExecuteFetchAllAsync();
+            counts.Add(ids.Count);
+        }
+
+        // i = 0 matches all three seeded users; i = 1 excludes Alice.
+        Assert.That(counts, Is.EqualTo(new[] { 3, 2 }));
+    }
 }

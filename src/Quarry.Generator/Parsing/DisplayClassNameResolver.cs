@@ -120,7 +120,8 @@ internal static class DisplayClassNameResolver
             or ForEachVariableStatementSyntax
             or ForStatementSyntax
             or UsingStatementSyntax
-            or SwitchSectionSyntax;
+            or SwitchSectionSyntax
+            or CatchClauseSyntax;
 
     /// <summary>
     /// If <paramref name="node"/> declares a parameter scope (lambda, anonymous method, local
@@ -174,6 +175,12 @@ internal static class DisplayClassNameResolver
             if (closure is LambdaExpressionSyntax lam)
                 dataFlowByNode[lam] = dataFlow;
 
+            // No "declared outside the clause" filter here, unlike CountCaptureScopes and
+            // LookupClosureOrdinal. This builds the METHOD-WIDE scope map, so it must register every
+            // scope that gets a display class — including those belonging to nested lambdas — or the
+            // pre-order ordinals would skip numbers the compiler actually assigns. The other two ask a
+            // different question ("which scopes does THIS clause read from"), where an inner lambda's
+            // own variables are irrelevant. Do not "unify" these loops.
             foreach (var capturedVar in dataFlow.CapturedInside)
             {
                 if (capturedVar is ILocalSymbol || (capturedVar is IParameterSymbol p && !p.IsThis))
@@ -215,19 +222,15 @@ internal static class DisplayClassNameResolver
         if (!analysis.DataFlowByNode.TryGetValue(lambda, out var dataFlow) || !dataFlow.Succeeded)
             return 0;
 
+        // Only variables declared OUTSIDE this lambda are read out of a display class. A nested
+        // subquery lambda inside the clause (u => u.Orders.Any(o => …)) contributes its own
+        // parameters and locals to CapturedInside, but those live inside the clause and are handled
+        // by the SQL translator, never extracted. Counting them made the guard fire on working
+        // nested-subquery and set-operation chains.
         var scopes = new HashSet<SyntaxNode>(SyntaxNodeComparer.Instance);
         foreach (var capturedVar in dataFlow.CapturedInside)
         {
-            if (capturedVar is not ILocalSymbol && !(capturedVar is IParameterSymbol p && !p.IsThis))
-                continue;
-
-            // Only variables declared OUTSIDE this lambda are read out of a display class. A nested
-            // subquery lambda inside the clause (u => u.Orders.Any(o => …)) contributes its own
-            // parameters and locals to CapturedInside, but those live inside the clause and are
-            // handled by the SQL translator, never extracted. Counting them made the guard fire on
-            // working nested-subquery and set-operation chains.
-            var declRef = capturedVar.DeclaringSyntaxReferences.FirstOrDefault();
-            if (declRef != null && lambda.Span.Contains(declRef.Span))
+            if (!IsExtractableCapture(capturedVar, lambda))
                 continue;
 
             var declScope = FindDeclaringScope(capturedVar, methodSyntax);
@@ -240,6 +243,15 @@ internal static class DisplayClassNameResolver
     /// <summary>
     /// Looks up the closure ordinal for a lambda using pre-computed analysis.
     /// Returns 0 if the lambda has no captured local/parameter variables.
+    /// <para>
+    /// Applies the same "declared outside the clause" filter as
+    /// <see cref="CountCaptureScopes"/>, and for the same reason: a nested subquery lambda
+    /// (<c>u =&gt; u.Orders.Any(o =&gt; …)</c>) contributes its own parameters to
+    /// <c>CapturedInside</c>, and taking the ordinal from one of those would name the inner
+    /// lambda's display class rather than the one the clause delegate actually targets. The two
+    /// must agree — otherwise a clause could be certified single-scope by the guard while being
+    /// emitted against a different scope's display class.
+    /// </para>
     /// </summary>
     internal static int LookupClosureOrdinal(
         MethodClosureAnalysis analysis,
@@ -251,15 +263,29 @@ internal static class DisplayClassNameResolver
 
         foreach (var capturedVar in dataFlow.CapturedInside)
         {
-            if (capturedVar is ILocalSymbol || (capturedVar is IParameterSymbol p && !p.IsThis))
-            {
-                var declScope = FindDeclaringScope(capturedVar, methodSyntax);
-                if (declScope != null && analysis.ScopeOrdinals.TryGetValue(declScope, out int ordinal))
-                    return ordinal;
-            }
+            if (!IsExtractableCapture(capturedVar, lambda))
+                continue;
+
+            var declScope = FindDeclaringScope(capturedVar, methodSyntax);
+            if (declScope != null && analysis.ScopeOrdinals.TryGetValue(declScope, out int ordinal))
+                return ordinal;
         }
 
         return 0;
+    }
+
+    /// <summary>
+    /// A captured symbol that is actually read out of a display class: a local or non-<c>this</c>
+    /// parameter, declared OUTSIDE the clause lambda. Variables declared inside the clause (a nested
+    /// subquery lambda's own parameters) are handled by the SQL translator and never extracted.
+    /// </summary>
+    private static bool IsExtractableCapture(ISymbol capturedVar, LambdaExpressionSyntax lambda)
+    {
+        if (capturedVar is not ILocalSymbol && !(capturedVar is IParameterSymbol p && !p.IsThis))
+            return false;
+
+        var declRef = capturedVar.DeclaringSyntaxReferences.FirstOrDefault();
+        return declRef == null || !lambda.Span.Contains(declRef.Span);
     }
 
     /// <summary>

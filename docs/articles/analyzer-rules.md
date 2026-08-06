@@ -208,6 +208,58 @@ var users = await db.Users()
 
 Use conditional branches (`if`/`else`) instead of dynamic chain construction -- the generator handles those natively via bitmask dispatch.
 
+QRY032 also covers two limits on what a single clause may **capture**.
+
+**A clause may only capture variables from one closure scope.** Chains inside lambdas, loops, `if`
+blocks, `using` blocks and `catch` blocks are all fine, and so is capturing an instance field
+alongside a local. What is rejected is one clause reaching into two scopes at once -- most often a
+loop variable together with a method-level local:
+
+```csharp
+var minId = 0;
+foreach (var name in names)
+{
+    // QRY032 -- `name` and `minId` live in different closure scopes
+    await db.Users()
+        .Where(u => u.UserName == name && u.UserId > minId)
+        .ExecuteFetchAllAsync();
+
+    // Fix: split so each clause captures from a single scope
+    await db.Users()
+        .Where(u => u.UserName == name)
+        .Where(u => u.UserId > minId)
+        .ExecuteFetchAllAsync();
+}
+```
+
+Copying the outer value into a local in the inner scope works too. The restriction exists because the
+compiler puts each scope's captured variables on a separate hidden class and links them with a field
+the generator cannot read without reflection.
+
+**An instance field captured alongside a local needs a nameable containing type.** If the class
+holding the field is generic or is not visible to generated code (for example a `private` nested
+class), the field cannot be read; copy it into a local before the chain:
+
+```csharp
+class Repo<T>
+{
+    int _minId;
+
+    async Task Run(AppDb db, string name)
+    {
+        // QRY032 -- `_minId` cannot be read from inside a generic type here
+        await db.Users().Where(u => u.UserId > _minId && u.UserName == name).ExecuteFetchAllAsync();
+
+        // Fix
+        var minId = _minId;
+        await db.Users().Where(u => u.UserId > minId && u.UserName == name).ExecuteFetchAllAsync();
+    }
+}
+```
+
+Both checks are build-time. Before they existed these shapes compiled and then threw
+`MissingFieldException` or `InvalidCastException` on the first execution of the chain.
+
 #### QRY011 -- Select clause required
 
 Every query chain must include a `.Select()` call before a terminal. The generator needs it to know which columns to emit.

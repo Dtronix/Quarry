@@ -363,10 +363,10 @@ internal static class CarrierEmitter
         if (extractor.ThisIndirectionDisplayClass == null)
             return "__target";
 
-        var local = ThisHopLocalName(extractor);
-        if (emittedThisLocals.Add(extractor.DisplayClassName))
+        const string local = "__self";
+        if (emittedThisLocals.Add(local))
         {
-            sb.AppendLine($"{indent}var {local} = {carrierClassName}.{ThisHopMethodName(extractor)}(__target);");
+            sb.AppendLine($"{indent}var {local} = {carrierClassName}.{extractor.ThisHopMethodName}(__target);");
         }
         return local;
     }
@@ -376,29 +376,16 @@ internal static class CarrierEmitter
     /// field through a display class. Keyed on the containing type so two fields on the same instance
     /// share one hop.
     /// </summary>
-    private static string ThisHopMethodName(CapturedVariableExtractor extractor)
-        => "__ExtractThis_" + SanitizeIdentifier(extractor.DisplayClassName);
-
     /// <summary>
-    /// Local variable name holding the instance read back through <c>&lt;&gt;4__this</c>.
+    /// Renders a containing-type name as a C# type expression for a <c>ref</c> return position.
+    /// <para>
+    /// The name comes from <c>NameAndContainingTypesAndNamespaces</c>, which already separates nested
+    /// types with '.', so only the <c>global::</c> qualifier is added — it is not a metadata name and
+    /// must not be pasted into an <c>[UnsafeAccessorType("…")]</c> string, which needs the '+' form.
+    /// </para>
     /// </summary>
-    private static string ThisHopLocalName(CapturedVariableExtractor extractor)
-        => "__self_" + SanitizeIdentifier(extractor.DisplayClassName);
-
-    private static string SanitizeIdentifier(string typeName)
-    {
-        var sb = new StringBuilder(typeName.Length);
-        foreach (var c in typeName)
-            sb.Append(char.IsLetterOrDigit(c) ? c : '_');
-        return sb.ToString();
-    }
-
-    /// <summary>
-    /// Converts a metadata-style type name (nested types joined with '+') into a C# type expression.
-    /// Display-class strings use '+', but a <c>ref</c> return type must be written with '.'.
-    /// </summary>
-    private static string ToCSharpTypeName(string metadataName)
-        => "global::" + metadataName.Replace('+', '.');
+    private static string ToCSharpTypeName(string typeName)
+        => "global::" + typeName;
 
     /// <summary>
     /// Emits a carrier class at namespace scope (outside the static interceptor class).
@@ -466,12 +453,12 @@ internal static class CarrierEmitter
             {
                 if (extractor.ThisIndirectionDisplayClass == null)
                     continue;
-                if (!emittedThisHops.Add(extractor.ThisIndirectionDisplayClass))
+                if (extractor.ThisHopMethodName == null || !emittedThisHops.Add(extractor.ThisHopMethodName))
                     continue;
 
                 sb.AppendLine("    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = \"<>4__this\")]");
                 sb.AppendLine($"    internal extern static ref {ToCSharpTypeName(extractor.DisplayClassName)} "
-                    + $"{ThisHopMethodName(extractor)}(");
+                    + $"{extractor.ThisHopMethodName}(");
                 sb.AppendLine($"        [UnsafeAccessorType(\"{extractor.ThisIndirectionDisplayClass}\")] object target);");
             }
 

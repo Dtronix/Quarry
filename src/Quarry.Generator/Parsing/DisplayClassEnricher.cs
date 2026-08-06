@@ -218,6 +218,19 @@ internal static class DisplayClassEnricher
             // downstream instead of emitting an extractor against the wrong display class.
             site.CapturedScopeCount = DisplayClassNameResolver.CountCaptureScopes(
                 analysis, lambda, analysisResult.MethodSyntax);
+
+            // A clause capturing an instance field alongside a local reads the field through the
+            // display class's <>4__this, which means writing the containing type as a real type name
+            // in the generated file. That is only possible when the type is non-generic and reachable
+            // from a file-scoped class in another file; otherwise the emitted accessor would be a
+            // CS0305/CS0122 build break, so flag it for disqualification instead.
+            if (site.CaptureKind == CaptureKind.ClosureCapture
+                && dataFlow != null
+                && dataFlow.CapturedInside.Any(s => s is IParameterSymbol tp && tp.IsThis)
+                && !IsNameableFromGeneratedCode(containingType))
+            {
+                site.ThisIndirectionUnavailable = true;
+            }
         }
 
         // === RawSql type resolution pass ===
@@ -227,6 +240,32 @@ internal static class DisplayClassEnricher
         EnrichRawSqlTypeInfo(sites, compilation, entityRegistry, semanticModelCache, cancellationToken);
 
         return sites;
+    }
+
+    /// <summary>
+    /// Whether a type can be written as a type NAME in generated code — needed when an accessor must
+    /// return the containing instance (the <c>&lt;&gt;4__this</c> hop), as opposed to merely naming it
+    /// inside an <c>[UnsafeAccessorType("…")]</c> string.
+    /// <para>
+    /// Generic types are excluded because the interceptor is a static method on a file-scoped carrier
+    /// with no type parameters in scope, so <c>Repo&lt;T&gt;</c> has nothing to bind <c>T</c> to (CS0305).
+    /// Private/protected types are excluded because the carrier lives in a different file (CS0122);
+    /// <c>internal</c> is fine, since generated code is compiled into the same assembly.
+    /// </para>
+    /// </summary>
+    private static bool IsNameableFromGeneratedCode(INamedTypeSymbol type)
+    {
+        for (INamedTypeSymbol? t = type; t != null; t = t.ContainingType)
+        {
+            if (t.IsGenericType)
+                return false;
+            if (t.DeclaredAccessibility != Accessibility.Public
+                && t.DeclaredAccessibility != Accessibility.Internal)
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     /// <summary>
