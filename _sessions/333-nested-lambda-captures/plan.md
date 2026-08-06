@@ -113,7 +113,7 @@ Three distinct causes:
   the INTAKE baseline (201 / 146 / 3501).
   *Depends on:* 7.
 
-- [ ] **9. File the separate issues.**
+- [x] **9. File the separate issues.** Filed as #338 (wrong context) and #339 (multi-scope, blocked on dotnet/runtime#119664).
   - Member-access chain root (`t.Lite.Users()`) emits an interceptor bound to the wrong context
     (CS9144 + CS0029). Pre-existing, reproduced with the fix stashed.
   - Multi-scope captures, blocked on [runtime#119664](https://github.com/dotnet/runtime/issues/119664) —

@@ -3,7 +3,7 @@
 platform: github
 base-branch: master
 ## State
-phase: PLAN
+phase: REVIEW
 status: active
 issue: #333
 pr:
@@ -88,8 +88,9 @@ Docker was available, so no container fixtures were `Assert.Ignore`d.
   the workaround that (a)+(b) make work: split the predicate into separate `.Where(...)` clauses.
 
 - **2026-08-04 — The two pre-existing bugs found while probing are out of scope and get their own issues:**
-  member-access chain root → wrong context (CS9144/CS0029). (The multi-scope gap was folded into this
-  branch by the decision above and so does *not* get a separate issue.)
+  member-access chain root → wrong context (CS9144/CS0029), filed as **#338**. Multi-scope captures could
+  not be fixed after all (upstream-blocked), so the guard shipped instead and the follow-up is tracked as
+  **#339**.
 
 ## Working Notes
 
@@ -305,3 +306,5 @@ generator fix stashed, so it is pre-existing and unrelated. Candidate separate i
 | 2026-08-04 | INTAKE | Loaded issue #333, created worktree/branch `333-nested-lambda-captures`, baseline green (201/146/3501) |
 | 2026-08-04 | DESIGN | Bisected 9 shapes; root-caused to AnonymousFunction unwrap + parameter scope resolution; dumped display-class ground truth from emitted IL; found 2 pre-existing unrelated bugs |
 | 2026-08-04 | PLAN | Wrote plan.md (10 steps); user chose full multi-scope fix + revert ConcurrencyTests workaround |
+| 2026-08-04 | IMPLEMENT | Step-1 gate failed (chained access not expressible); measured 10 end-user shapes; user approved re-plan into 3 fixes + 1 guard |
+| 2026-08-06 | IMPLEMENT | Steps 2-9 complete. Full suite green 201/146/3528. Filed #338 and #339 |
