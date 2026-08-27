@@ -85,12 +85,16 @@ Changes.
   signature shapes were tried and all were rejected, a result that matches the upstream issue above. The
   plan was rewritten against measured behaviour rather than continuing on the assumption.
 - **The `ConcurrencyTests` workaround was NOT reverted after all.** Inlining those worker bodies was
-  planned and done, and it passed locally — then failed in CI with `TypeLoadException`. Cause: for that
-  specific shape (an async lambda inside a loop whose clause captures a local) the predicted closure
-  ordinal is **not stable across compiler versions** — `<>c__DisplayClass5_3` under SDK 10.0.110 versus
-  `<>c__DisplayClass5_1` under 10.0.302, from identical source. The named worker methods are restored,
-  with the evidence recorded in the fixture and in `llm-testing.md`, and the fragility filed as **#344**.
-  Everything else in this PR is unaffected: the `LambdaCapture*` suites pass on both SDKs.
+  planned and done, and it passed locally — then failed in CI with `TypeLoadException`. The cause is
+  **`<Optimize>`, not the SDK**: Roslyn's `ClosureConversion` runs `MergeEnvironments()` only in
+  optimized builds, a merged-away environment never consumes a closure ordinal, and every later
+  ordinal shifts down. `dotnet test` defaults to Debug; CI runs `-c Release`. Reproduced on a single
+  SDK and compiler build, so no version difference is required. The named worker methods are restored
+  and the fixture records the mechanism; filed as **#344**.
+
+  Notably the multi-scope guard *cannot* catch this — the mispredicted clause is an ordinary
+  single-scope capture, and an unrelated lambda elsewhere in the method triggers the merge. Everything
+  else in this PR is unaffected: the full suite passes in **both** Debug and Release.
 
 - **"Pick the innermost captured scope as the Target" was dropped** in favour of just counting distinct
   scopes. Since every genuinely multi-scope clause is now rejected, surviving clauses capture from exactly
@@ -155,5 +159,9 @@ rejected partly on memory-safety grounds, so no undefined behaviour is introduce
   Pre-existing; reproduced with this branch's generator stashed.
 - **#342** — hardening: switch-expression arm variables, deriving the guard from the extraction plan, and
   an explicit "unanalysed" sentinel.
-- **#344** — display-class closure ordinals are not stable across compiler versions for async-lambda-in-loop
-  shapes. Found by this PR's own CI; pre-existing in the prediction approach, not introduced here.
+- **#344** — display-class closure ordinals shift under `<Optimize>` (Roslyn merges closure
+  environments only in optimized builds), so a prediction correct in Debug can be wrong in Release.
+  Found by this PR's own CI; pre-existing in the prediction approach, not introduced here. The
+  research behind it (`_research-roslyn-closures.md`) also establishes that **no Roslyn API can
+  remove the guessing** — display classes are synthesized during `Emit`, after generators finish —
+  and recommends a post-compile verifier that turns the whole class of failure into a build error.

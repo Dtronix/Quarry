@@ -94,6 +94,33 @@ Docker was available, so no container fixtures were `Assert.Ignore`d.
 
 ## Working Notes
 
+### #344 re-diagnosed: it is <Optimize>, not the SDK (2026-08-06)
+
+Filed #344 attributing the local-passes/CI-fails split to SDK 10.0.110 vs 10.0.302. **That was wrong.**
+Researched Roslyn directly (see `_research-roslyn-closures.md`). The real mechanism:
+`ClosureConversion.Analysis` calls `MergeEnvironments()` only when `OptimizationLevel == Release`; a
+merged-away environment never consumes a closure ordinal, so every later ordinal shifts down by one.
+`dotnet test` defaults to Debug, `ci.yml` runs `-c Release` - that alone explains it, and it was
+reproduced on a single SDK and compiler build. Roslyn 4.11/4.14/5.0 agreed on all 25 shapes tested;
+the `<Optimize>` axis changed 7. A `global.json` would NOT have helped.
+
+Two consequences worth keeping:
+- **No local guard can catch it.** The mispredicted clause is an ordinary single-scope capture; an
+  unrelated lambda elsewhere in the method triggers the merge. The multi-scope guard stays silent,
+  correctly. No syntax-based rule can model a renumbering caused by a lambda it never inspects.
+- **Always run the suite both ways.** Every affected test compiles either way; only execution
+  distinguishes them. This branch is green in Debug AND Release (201/146/3540 each, containers up).
+
+### Roslyn cannot supply display-class names (2026-08-06)
+
+Verified three ways: the types do not exist pre-`Emit` (pre-emit symbol table 1 type vs 6 display
+classes in the emitted PE); no public API exposes them (`SynthesizedClosureEnvironment`,
+`GeneratedNames` are NotPublic); and `ControlFlowGraph` is not a substitute - a lambda capturing
+three variables produces zero `IFlowCaptureOperation`s. Public API refused twice upstream
+(roslyn#11565, roslyn#55651). The prediction therefore cannot be replaced, only *verified* - hence
+the post-compile verifier recommendation in the research doc.
+
+
 ### Root cause (confirmed empirically, 2026-08-04)
 
 Two independent defects in display-class resolution combine to produce the CS0103:
@@ -309,5 +336,6 @@ generator fix stashed, so it is pre-existing and unrelated. Candidate separate i
 | 2026-08-04 | IMPLEMENT | Step-1 gate failed (chained access not expressible); measured 10 end-user shapes; user approved re-plan into 3 fixes + 1 guard |
 | 2026-08-06 | IMPLEMENT | Steps 2-9 complete. Full suite green 201/146/3528. Filed #338 and #339 |
 | 2026-08-06 | REVIEW | Rebased on #337. 26 findings (3H). Verified F5/F6/F1/F9/F8 by reproduction before classifying: 11A/7B/4C/4D |
-| 2026-08-06 | REMEDIATE | CI failed: ConcurrencyTests TypeLoadException on SDK 10.0.302 but passes on 10.0.110 - closure ordinal prediction is compiler-version-dependent for async-lambda-in-loop. Reverted that inlining, filed #344 |
+| 2026-08-06 | REMEDIATE | CI failed: ConcurrencyTests TypeLoadException. Reverted that inlining, filed #344 |
+| 2026-08-06 | REMEDIATE | Researched Roslyn closure APIs; re-diagnosed #344 as <Optimize>, not SDK. Verified green in Debug AND Release |
 | 2026-08-06 | REMEDIATE | All A+B fixed incl. 3 confirmed codegen breaks (CS0111, CS0122/CS0305, catch mis-scope). Filed #341, #342. Suite green 201/146/3540 |

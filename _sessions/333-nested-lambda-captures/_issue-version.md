@@ -1,94 +1,105 @@
 ## Description
 
-The generator predicts compiler-generated display-class names (`<>c__DisplayClass{M}_{C}`) in order to
-emit `[UnsafeAccessor]` extractors. For at least one shape, the **closure ordinal** the C# compiler
-assigns differs between compiler versions, so a prediction that is correct on one SDK is wrong on
-another — with no build-time signal. The chain compiles and throws on first execution:
+> **Re-diagnosed.** This issue was originally filed as "prediction is not stable across compiler
+> versions", inferred from a local pass on SDK 10.0.110 and a CI failure on 10.0.302. That was wrong.
+> The variable was never the SDK — it is the `<Optimize>` MSBuild property. Corrected below.
+
+The generator predicts compiler-generated display-class names (`<>c__DisplayClass{M}_{C}`) to emit
+`[UnsafeAccessor]` extractors. The **closure ordinal** `{C}` depends on whether the compiler is
+optimizing, so the same source yields different names in a Debug and a Release build. The prediction
+does not model this, so one of the two builds gets a wrong name and fails at runtime:
 
 ```
 System.TypeLoadException : Could not resolve type
-  'Quarry.Tests.Integration.ConcurrencyTests+<>c__DisplayClass5_3' in assembly 'Quarry.Tests'
+  '…+<>c__DisplayClass5_3' in assembly 'Quarry.Tests'
 ```
 
-Same source, same repo, same commit:
+## Mechanism
 
-| Environment | SDK | Predicted | Actually emitted |
-|---|---|---|---|
-| Local (Windows) | 10.0.110 | `<>c__DisplayClass5_3` | `<>c__DisplayClass5_3` — passes |
-| CI (ubuntu-latest) | 10.0.302 | `<>c__DisplayClass5_3` | `<>c__DisplayClass5_1` — `TypeLoadException` |
-
-The **method** ordinal (`5`) matched on both; only the **closure** ordinal diverged.
-
-## Location
-
-`src/Quarry.Generator/Parsing/DisplayClassNameResolver.cs` — `AnalyzeMethodClosures` /
-`AssignOrdinalsPreOrder`, which number capture scopes by a purely syntactic pre-order walk.
-
-## Diagnostics
-
-`System.TypeLoadException : Could not resolve type '…+<>c__DisplayClass{M}_{C}'` thrown from a generated
-`__ExtractVar_*` accessor at first execution of the chain.
-
-The affected shape is an **async lambda inside a loop, whose clause captures a local**:
+`src/Compilers/CSharp/Portable/Lowering/ClosureConversion/ClosureConversion.Analysis.cs`:
 
 ```csharp
-for (int i = 0; i < Workers; i++)
+analysis.MakeAndAssignEnvironments();
+analysis.ComputeLambdaScopesAndFrameCaptures();
+if (compilationState.Compilation.Options.OptimizationLevel == OptimizationLevel.Release)
 {
-    var index = i;
-    tasks[i] = Task.Run(async () =>
-    {
-        var (Lite, _, _, _) = harnesses[index];
-        var name = $"Worker{index}";
-        await Lite.Users().Update().Set(u => u.UserName = name)   // `name` extraction fails
-            .Where(u => u.UserId == 1).ExecuteNonQueryAsync();
-    });
+    // This can affect when a variable is in scope whilst debugging, so only do this in release mode.
+    analysis.MergeEnvironments();
 }
 ```
 
-Note a sibling test with the same lambda nesting but a clause that captures **nothing**
-(`o => o.Total > 100.00m`) is unaffected — no extraction, so no display class is named.
+`MergeEnvironments()` folds a child environment into its parent and sets
+`scope.DeclaredEnvironment = null`. `SynthesizeClosureEnvironments` only creates a frame for a scope
+that still has an environment, and the ordinal comes from `closureDebugInfo.Count`, which is
+incremented **only per surviving environment**. So a merged-away environment never consumes an
+ordinal and **every later closure ordinal shifts down by one**.
 
-## What Has Been Tried
+Introduced by [roslyn#32092](https://github.com/dotnet/roslyn/pull/32092) "Optimise DisplayClass
+Allocations" (2019), fixing [roslyn#29965](https://github.com/dotnet/roslyn/issues/29965). No
+breaking-change note was filed, because the emitted closure layout is explicitly not a contract.
 
-- **Confirmed it is not a source difference.** The failure reproduces from the same commit; the only
-  variable is the SDK. Reverting the fixture to named worker methods (making the captures ordinary method
-  locals) makes it pass on both.
-- **Confirmed the simpler shapes are stable.** `Generation/LambdaCaptureScopeTests` and
-  `Generation/LambdaCaptureExecutionTests` — covering chains inside single and nested lambdas, `foreach` /
-  `for` / `using` / `switch`-section / `catch` scopes, and instance fields mixed with locals — pass on
-  **both** SDKs. Only the async-lambda-in-a-loop shape diverges.
-- **Confirmed the method ordinal is not implicated**, only the closure ordinal.
+**The knob is `<Optimize>`, not the configuration name.** `OptimizationLevel` maps to `/optimize+`.
+A configuration called "Debug" with `<Optimize>true</Optimize>` merges; one called "Release" with
+`<Optimize>false</Optimize>` does not.
 
-## Gathered Information
+## Reproduction
 
-- The repo has no `global.json`, so CI resolves `10.0.x` to whatever is current on the runner while
-  developers build with whatever they have installed. That makes the divergence a moving target: the same
-  branch can pass locally and fail in CI, or vice versa, with no code change.
-- Async lambdas are the plausible trigger. The compiler rewrites an async lambda into a state machine, and
-  locals captured by a nested lambda are hoisted into display classes whose numbering relative to the
-  surrounding loop/method scopes is an implementation detail that no documented rule fixes.
-- Ground truth for the shapes that *are* stable is tabulated in the "Display Class Prediction" section of
-  `src/Quarry.Generator/llm.md`.
-- Related but distinct: #310 (prediction robustness for cross-partial ordinal shifts and generic
-  containing types) and #339 (multi-scope captures, upstream-blocked). This issue is about the same
-  prediction being version-dependent for a fixed source shape.
+Same SDK, same `Microsoft.CodeAnalysis.CSharp` build, only `OptimizationLevel` differs:
+
+```csharp
+int a = 1;
+if (a > 0) { var b = 2; Use(u => u > a && u > b); }
+foreach (var c in new[]{1,2}) { Use(u => u > c); }
+```
+
+```
+Debug:    _0 [a]       _1 [b, CS$<>8__locals1]   _2 [c]
+Release:  _0 [a, b]                              _1 [c]
+```
+
+Driving Quarry's own `DisplayClassNameResolver` over the identical trees predicts `_2` for
+`u => u > c` in both — correct in Debug, wrong in Release.
+
+Rebuilding the `ConcurrencyTests.ParallelHarnesses_MixedReadWrite_DoNotShareParameterState` shape
+from commit `9d3aaf2` reproduces the original report exactly: predicts `_3`; Release emits only
+`_0.._2`, with the captured `name` on `_2`.
+
+`dotnet test` defaults to Debug; `.github/workflows/ci.yml` runs `-c Release`. That is the entire
+"passes locally, fails in CI" split — **no SDK difference is required**, and Roslyn 4.11 / 4.14 / 5.0
+agreed on all 25 shapes tested while the `<Optimize>` axis changed 7 of them. A `global.json` would
+not have helped.
+
+## Why the existing guard does not catch it
+
+The mispredicted clause is an ordinary **single-scope** capture (`captureScopes = 1`), so the
+multi-scope disqualifier added in #333 correctly stays silent. It is an *unrelated* lambda elsewhere
+in the same method that causes the merge and the renumbering. The generator cannot guard on a lambda
+it never inspects, so no purely local, syntax-based rule can model this.
+
+## Scale
+
+`Quarry.Tests.dll` today contains **531** display classes in Debug and **527** in Release. The
+current fixtures happen to sit upstream of every merge, which is why the suite passes both ways —
+that is luck, not design.
 
 ## Suggested Approach
 
-Ordered by preference:
+1. **Post-compile verification (recommended).** After `CoreCompile`, read the emitted assembly with
+   `System.Reflection.Metadata` and check every `[UnsafeAccessorType]` string against the real
+   typedefs and every `Name =` against the real fields. A prototype over the real `Quarry.Tests.dll`
+   checked 667 accessors / 168 distinct display classes in **0.72 s**, and a negative test caught both
+   a wrong ordinal and a wrong field name. This does not fix a bad prediction — it converts the whole
+   *class* of failure (this issue, #310's ordinal shifts, any future compiler change) from a runtime
+   `TypeLoadException` into a build error. Shipping it in the generator's `build/*.targets` protects
+   consumers too, not just this repo.
+2. **Add an `<Optimize>` axis to CI.** Every affected test compiles either way; only *execution*
+   distinguishes them, so the suite must run both.
+3. **Fail legibly at runtime** if a prediction is ever wrong in a shipped build — name the predicted
+   type and point here, rather than surfacing a bare `TypeLoadException`.
+4. **Document the escape hatch.** A non-capturing lambda emits no display class at all, so an
+   explicit-parameter overload (`Where((u, p) => u.UserId > p, minId)`) sidesteps prediction entirely.
 
-1. **Stop guessing the ordinal for this shape.** Detect an async lambda between the clause and its
-   containing method and disqualify with a QRY diagnostic, the way multi-scope captures already are.
-   A build error naming the shape beats a `TypeLoadException` in production.
-2. **Verify the prediction at runtime, cheaply.** The generated carrier could fail fast with a message
-   naming the predicted vs. actual display class instead of a bare `TypeLoadException` — this took
-   a full CI cycle to diagnose from the raw exception.
-3. **Pin the SDK with `global.json`** so the repo at least fails consistently. This narrows the blast
-   radius for contributors but does nothing for consumers, who compile with their own SDK — so it is a
-   mitigation, not a fix.
-4. Longer term, the whole prediction approach is exposed to this class of break. If
-   [dotnet/runtime#119664](https://github.com/dotnet/runtime/issues/119664) ever makes closure fields
-   readable without prediction, that removes the root cause.
-
-Add a regression test that asserts the shape either works or is rejected — it must **execute**, since a
-wrong prediction still compiles.
+Note there is no Roslyn API that can remove the guessing: display classes are synthesized during
+`Emit`, long after generators run. See `_research-roslyn-closures.md` on the #333 branch, and
+[roslyn#11565](https://github.com/dotnet/roslyn/issues/11565) /
+[roslyn#55651](https://github.com/dotnet/roslyn/issues/55651).

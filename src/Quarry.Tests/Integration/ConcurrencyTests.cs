@@ -30,15 +30,20 @@ namespace Quarry.Tests.Integration;
 /// The original reason was issue #333 (a chain inside a lambda emitted an interceptor
 /// referencing captured locals directly, CS0103). That is fixed, and these bodies were
 /// briefly inlined — but inlining them made this fixture depend on a display-class name
-/// the generator PREDICTS, and for this particular shape (an async lambda inside a loop,
-/// whose clause captures a local) the prediction is not stable across C# compiler
-/// versions: the same source produced <c>&lt;&gt;c__DisplayClass5_3</c> on SDK 10.0.110
-/// and <c>&lt;&gt;c__DisplayClass5_1</c> on SDK 10.0.302, so CI failed with
-/// <c>TypeLoadException</c> while the identical run passed locally. Tracked as issue #344.
+/// the generator PREDICTS, and that prediction is wrong under <c>&lt;Optimize&gt;</c>.
+/// Roslyn's <c>ClosureConversion</c> runs <c>MergeEnvironments()</c> only when
+/// <c>OptimizationLevel == Release</c>; a merged-away environment never consumes a closure
+/// ordinal, so every later ordinal shifts down. This method has enough capture scopes for
+/// that to move the clause's display class from <c>_3</c> to <c>_2</c>, and the interceptor
+/// then fails with <c>TypeLoadException</c>. <c>dotnet test</c> defaults to Debug while CI
+/// runs <c>-c Release</c>, which is why it passed locally and failed in CI. Tracked as #344.
 /// </para>
 /// <para>
-/// Hoisting each body into a named method makes the chain's captures ordinary method
-/// locals, which predict stably. Do not inline them again until #344 is resolved.
+/// Hoisting each body into a named method makes the chain's captures ordinary method locals,
+/// which are not affected by environment merging. Do not inline them again until #344 is
+/// resolved. Note the multi-scope guard cannot catch this: the mispredicted clause is an
+/// ordinary single-scope capture, and it is an unrelated lambda elsewhere in the method that
+/// triggers the merge.
 /// </para>
 /// </remarks>
 [TestFixture]

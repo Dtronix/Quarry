@@ -249,7 +249,19 @@ The scope count deliberately ignores variables **declared inside the clause lamb
 - Partial classes contribute members in compilation unit order
 - The scope→display-class mapping in the table above
 
-**Closure ordinals are not stable across compiler versions for every shape.** An async lambda inside a loop whose clause captures a local predicted `<>c__DisplayClass5_3` under SDK 10.0.110 and `<>c__DisplayClass5_1` under 10.0.302 — same source, `TypeLoadException` at runtime on the newer one only. The repo has no `global.json`, so this can differ between a contributor's machine and CI. Issue #344. The shapes tabulated above were verified stable on both.
+**Closure ordinals depend on `<Optimize>`, not just on source.** `ClosureConversion.Analysis` calls `MergeEnvironments()` only when `OptimizationLevel == Release` (gated by the MSBuild `<Optimize>` property — *not* the configuration name, `DebugType`, or `DebugSymbols`). A merged-away environment never consumes an ordinal, so **every later `closureOrdinal` shifts down by one**. Verified on one SDK and one compiler build:
+
+```
+Debug:    _0 [a]       _1 [b, CS$<>8__locals1]   _2 [c]
+Release:  _0 [a, b]                              _1 [c]
+```
+
+`dotnet test` defaults to Debug; CI runs `-c Release`. This is issue #344, and it is the mechanism behind "passes locally, fails in CI". Two consequences worth internalising:
+
+- **The multi-scope guard cannot catch it.** The mispredicted clause is an ordinary single-scope capture; it is an *unrelated* lambda elsewhere in the same method that causes the merge. The generator cannot guard on a lambda it never inspects.
+- **Compiler *version* was NOT the variable.** Roslyn 4.11 / 4.14 / 5.0 agreed on all 25 shapes tested; the `<Optimize>` axis changed 7 of them. Pinning an SDK would not have helped.
+
+The shapes tabulated above were verified under both settings.
 
 A prediction that is merely *wrong* still compiles and then throws `MissingFieldException` (bad field name), `InvalidCastException` (bad display class) or `TypeLoadException` (no such display class) on first execution — so codegen tests alone cannot validate this area. `Generation/LambdaCaptureExecutionTests` exists for exactly that reason.
 
