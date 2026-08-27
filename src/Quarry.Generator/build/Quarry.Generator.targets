@@ -1,0 +1,268 @@
+<Project>
+
+  <!--
+    Verifies the display-class names Quarry PREDICTS.
+
+    Quarry emits [UnsafeAccessor] externs to read captured variables out of compiler-generated
+    display classes, and the type name in [UnsafeAccessorType("…+<>c__DisplayClass{M}_{C}")] is a
+    prediction reconstructed from syntax. Neither ordinal is a documented contract, and both move for
+    reasons a source generator cannot observe:
+
+      * <Optimize>        ClosureConversion merges closure environments only in optimized builds, so a
+                          merged-away environment never consumes an ordinal and every later one shifts
+                          down (issue #344).
+      * added members     methodOrdinal is the GetMembers() index, so an unrelated field renumbers
+                          every display class in the type (issue #310).
+      * compiler changes  e.g. roslyn#82430 defers display-class allocation for async local functions.
+
+    A wrong prediction is NOT a compile error: [UnsafeAccessorType] resolves its string at runtime, so
+    it surfaces as TypeLoadException / MissingFieldException / InvalidCastException the first time the
+    chain executes - in production, far from the cause.
+
+    This target reads the assembly the compiler just emitted and checks every predicted name against
+    what is actually there, turning that whole class of failure into a build error. It does not make a
+    bad prediction correct; it makes one impossible to ship silently. See issue #345.
+  -->
+
+  <PropertyGroup>
+    <!-- Reference path for the BCL contracts the inline task compiles against.
+
+         RoslynCodeTaskFactory's default reference set does not cover the types
+         System.Reflection.MetadataLoadContext's API surface exposes, so they must be supplied
+         explicitly. These must be the TARGETING PACK reference assemblies, not the shared
+         framework's implementation assemblies: the latter type-forward to System.Private.CoreLib,
+         which csc reports as CS0012, and adding CoreLib itself then gives it two corlibs (CS0518).
+
+         The path is composed from SDK properties because MSBuild property functions may not call
+         RuntimeEnvironment.GetRuntimeDirectory(). $(BundledNETCoreAppTargetFramework) is not set in
+         this context, so the TFM folder is derived from the bundled runtime version. -->
+    <_QuarryRefMajor>$([System.Version]::Parse('$(BundledNETCoreAppPackageVersion)').Major)</_QuarryRefMajor>
+    <_QuarryRefMinor>$([System.Version]::Parse('$(BundledNETCoreAppPackageVersion)').Minor)</_QuarryRefMinor>
+    <_QuarryRefDir>$(NetCoreTargetingPackRoot)\Microsoft.NETCore.App.Ref\$(BundledNETCoreAppPackageVersion)\ref\net$(_QuarryRefMajor).$(_QuarryRefMinor)\</_QuarryRefDir>
+  </PropertyGroup>
+
+  <UsingTask TaskName="VerifyQuarryAccessors"
+             TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll"
+             Condition="'$(MSBuildRuntimeType)' == 'Core'">
+    <ParameterGroup>
+      <AssemblyPath ParameterType="System.String" Required="true" />
+      <ReferenceDirectories ParameterType="System.String" />
+      <Verified ParameterType="System.Int32" Output="true" />
+    </ParameterGroup>
+    <Task>
+      <Reference Include="$(_QuarryRefDir)System.Runtime.dll" />
+      <Reference Include="$(_QuarryRefDir)System.Collections.dll" />
+      <Reference Include="$(_QuarryRefDir)System.Linq.dll" />
+      <Reference Include="System.Reflection.MetadataLoadContext" />
+      <Code Type="Class" Language="cs"><![CDATA[
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using Microsoft.Build.Framework;
+using Microsoft.Build.Utilities;
+
+public class VerifyQuarryAccessors : Task
+{
+    public string AssemblyPath { get; set; }
+
+    /// Semicolon-separated directories to resolve references from, in addition to the assembly's own.
+    public string ReferenceDirectories { get; set; }
+
+    [Output]
+    public int Verified { get; set; }
+
+    // Only accessors Quarry generated are checked. A consumer's own [UnsafeAccessor] may legitimately
+    // name a type in another assembly, which this single-assembly check would report as missing.
+    // CarrierAnalyzer/CarrierEmitter name ours __ExtractVar_{variable}_{clause} and __ExtractThis_{clause}.
+    private const string VarPrefix = "__ExtractVar_";
+    private const string ThisPrefix = "__ExtractThis_";
+
+    public override bool Execute()
+    {
+        if (string.IsNullOrEmpty(AssemblyPath) || !File.Exists(AssemblyPath))
+            return true;   // nothing emitted - nothing to verify
+
+        var problems = new List<string>();
+        int checkedCount = 0;
+
+        try
+        {
+            var paths = new List<string>();
+            AddDlls(paths, Path.GetDirectoryName(Path.GetFullPath(AssemblyPath)));
+            AddDlls(paths, Path.GetDirectoryName(typeof(object).Assembly.Location));
+            if (!string.IsNullOrEmpty(ReferenceDirectories))
+            {
+                foreach (var dir in ReferenceDirectories.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
+                    AddDlls(paths, dir.Trim());
+            }
+
+            using (var mlc = new MetadataLoadContext(new PathAssemblyResolver(paths)))
+            {
+                var assembly = mlc.LoadFromAssemblyPath(Path.GetFullPath(AssemblyPath));
+
+                Type[] allTypes;
+                try { allTypes = assembly.GetTypes(); }
+                catch (ReflectionTypeLoadException ex) { allTypes = ex.Types.Where(t => t != null).ToArray(); }
+
+                var displayClasses = allTypes
+                    .Where(t => t.FullName != null && t.FullName.IndexOf("<>c__DisplayClass", StringComparison.Ordinal) >= 0)
+                    .Select(t => t.FullName)
+                    .ToArray();
+
+                const BindingFlags All = BindingFlags.Public | BindingFlags.NonPublic
+                                       | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly;
+
+                foreach (var type in allTypes)
+                {
+                    foreach (var method in type.GetMethods(All))
+                    {
+                        if (!method.Name.StartsWith(VarPrefix, StringComparison.Ordinal) &&
+                            !method.Name.StartsWith(ThisPrefix, StringComparison.Ordinal))
+                        {
+                            continue;
+                        }
+
+                        var accessor = method.GetCustomAttributesData()
+                            .FirstOrDefault(a => a.AttributeType.Name == "UnsafeAccessorAttribute");
+                        if (accessor == null)
+                            continue;
+
+                        var fieldName = accessor.NamedArguments
+                            .Where(n => n.MemberName == "Name")
+                            .Select(n => n.TypedValue.Value as string)
+                            .FirstOrDefault();
+                        if (fieldName == null)
+                            continue;   // not a named field/property accessor
+
+                        var predicted = method.GetParameters()
+                            .SelectMany(p => p.GetCustomAttributesData())
+                            .Where(a => a.AttributeType.Name == "UnsafeAccessorTypeAttribute")
+                            .Select(a => a.ConstructorArguments.Count > 0 ? a.ConstructorArguments[0].Value as string : null)
+                            .FirstOrDefault(v => v != null);
+                        if (predicted == null)
+                            continue;   // target is a nameable type - nothing was predicted
+
+                        // An assembly-qualified name points outside this assembly; not checkable here.
+                        if (predicted.IndexOf(',') >= 0)
+                            continue;
+
+                        checkedCount++;
+
+                        var target = allTypes.FirstOrDefault(t =>
+                            string.Equals(t.FullName, predicted, StringComparison.Ordinal));
+
+                        if (target == null)
+                        {
+                            var near = displayClasses
+                                .Where(n => SharesPrefix(n, predicted))
+                                .OrderBy(n => n, StringComparer.Ordinal)
+                                .Take(8)
+                                .ToArray();
+
+                            problems.Add(
+                                "  " + Describe(type) + "." + method.Name + Environment.NewLine +
+                                "    predicted type : " + predicted + Environment.NewLine +
+                                (near.Length == 0
+                                    ? "    assembly has no display class with that prefix." + Environment.NewLine
+                                    : "    assembly has    : " + string.Join(Environment.NewLine + "                      ", near) + Environment.NewLine));
+                            continue;
+                        }
+
+                        if (target.GetField(fieldName, All) == null)
+                        {
+                            var actual = target.GetFields(All).Select(f => f.Name)
+                                .OrderBy(f => f, StringComparer.Ordinal).ToArray();
+
+                            problems.Add(
+                                "  " + Describe(type) + "." + method.Name + Environment.NewLine +
+                                "    type            : " + predicted + Environment.NewLine +
+                                "    predicted field : " + fieldName + Environment.NewLine +
+                                "    actual fields   : " +
+                                (actual.Length == 0 ? "(none)" : string.Join(", ", actual)) + Environment.NewLine);
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            // A verifier fault must not be reported as a Quarry codegen bug, and must not silently
+            // pass either - surface it as itself.
+            Log.LogError("Quarry accessor verification failed to run over '" + AssemblyPath + "': " +
+                         ex.GetType().Name + ": " + ex.Message);
+            return false;
+        }
+
+        Verified = checkedCount;
+
+        if (problems.Count > 0)
+        {
+            Log.LogError(
+                "Quarry emitted " + problems.Count + " accessor(s) naming a compiler-generated type or " +
+                "field that does not exist in " + Path.GetFileName(AssemblyPath) + ":" + Environment.NewLine +
+                Environment.NewLine +
+                string.Join(Environment.NewLine, problems) +
+                "These names are predicted from source, and the prediction is wrong here - the affected " +
+                "queries would throw TypeLoadException or MissingFieldException at runtime instead of " +
+                "failing now. Closure numbering shifts with <Optimize>, with unrelated members added to " +
+                "the same type, and across compiler versions." + Environment.NewLine +
+                "Please report this at https://github.com/Dtronix/Quarry/issues, quoting the query above " +
+                "(see issues #310, #344, #345).");
+            return false;
+        }
+
+        Log.LogMessage(MessageImportance.Low,
+            "Quarry: verified " + checkedCount + " generated accessor(s) against " +
+            Path.GetFileName(AssemblyPath) + ".");
+        return true;
+    }
+
+    private static void AddDlls(List<string> paths, string dir)
+    {
+        if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir))
+            return;
+        foreach (var f in Directory.GetFiles(dir, "*.dll"))
+        {
+            if (!paths.Contains(f, StringComparer.OrdinalIgnoreCase))
+                paths.Add(f);
+        }
+    }
+
+    /// Everything up to and including "…+<>c__DisplayClass", used to list sibling candidates.
+    private static bool SharesPrefix(string candidate, string predicted)
+    {
+        var marker = predicted.IndexOf("+<>c__DisplayClass", StringComparison.Ordinal);
+        return marker >= 0 && candidate.StartsWith(predicted.Substring(0, marker + 1), StringComparison.Ordinal);
+    }
+
+    /// Carriers are file-scoped, so their metadata name is <File>F<hash>__Chain_N; show the readable tail.
+    private static string Describe(Type type)
+    {
+        var name = type.FullName ?? type.Name;
+        var tail = name.LastIndexOf("__", StringComparison.Ordinal);
+        return tail >= 0 && tail + 2 < name.Length ? name.Substring(tail + 2) : name;
+    }
+}
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
+  <!--
+    Runs only under `dotnet build` / `dotnet msbuild` (MSBuildRuntimeType == Core). Visual Studio's
+    MSBuild is .NET Framework, where System.Reflection.MetadataLoadContext is not resolvable from
+    $(MSBuildToolsPath); the check is skipped there rather than failing the IDE build. Command-line
+    and CI builds - where a mispredicted accessor would otherwise reach a package - are covered.
+  -->
+  <Target Name="QuarryVerifyAccessors"
+          AfterTargets="CoreCompile"
+          Condition="'$(MSBuildRuntimeType)' == 'Core' AND '$(DesignTimeBuild)' != 'true' AND Exists('$(_QuarryRefDir)System.Runtime.dll')">
+    <VerifyQuarryAccessors AssemblyPath="@(IntermediateAssembly)"
+                           Condition="Exists('%(IntermediateAssembly.FullPath)')">
+      <Output TaskParameter="Verified" PropertyName="_QuarryAccessorsVerified" />
+    </VerifyQuarryAccessors>
+  </Target>
+
+</Project>

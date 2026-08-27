@@ -71,6 +71,7 @@
     <QuarrySqlManifestPath>ManifestOutput</QuarrySqlManifestPath>
   </PropertyGroup>
   <Import Project="..\Quarry.Generator\build\Quarry.Generator.props" />
+  <Import Project="..\Quarry.Generator\build\Quarry.Generator.targets" />
 
   <!-- Shared project (selective: BackupGenerator + Scaffold only, Sql comes from Quarry.dll) -->
   <Import Project="..\Quarry.Shared\Quarry.Shared.projitems" Label="Shared" />
