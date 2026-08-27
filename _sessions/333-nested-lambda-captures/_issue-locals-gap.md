@@ -127,10 +127,17 @@ different risk class from reconstructing two ordinals.
 
 ## Gathered Information
 
-Full write-ups on the #333 branch, both with reproducible experiments:
-`_sessions/333-nested-lambda-captures/_research-roslyn-closures.md` and
-`_research-symbol-to-name.md`. Scope→display-class ground truth is tabulated in the "Display Class
-Prediction" section of `src/Quarry.Generator/llm.md`.
+Both full research write-ups, with reproducible experiments, are archived **as comments on this
+issue** (they were written to the #333 branch's session directory, which is removed when that PR
+merges):
+
+1. *Can Roslyn supply display-class names?* — the API survey, the `<Optimize>`/`MergeEnvironments`
+   mechanism, and the alternative-mechanism prototypes.
+2. *The symbol → emitted-name direction* — `SymbolKey`, PDB local tables, `EmitBaseline`, and the full
+   upstream issue survey.
+
+Scope→display-class ground truth is tabulated in the "Display Class Prediction" section of
+`src/Quarry.Generator/llm.md`, which stays in the repo.
 
 Related: **#310** (prediction robustness — cross-partial ordinal shifts, generic containing types),
 **#339** (multi-scope captures, blocked on runtime#119664), **#344** (the `<Optimize>` break),
