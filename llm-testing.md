@@ -250,7 +250,27 @@ Per-test isolation (transactional Pg/My/Ss + in-memory SQLite) means tests are s
 - **`PRAGMA foreign_keys` is OFF on SQLite** by default in the harness. Tests that delete a parent row leaving orphans pass on SQLite and on Pg/My/Ss (no FKs replicated). If you need FK enforcement, opt in per-test on SQLite *and* add explicit FKs to the container DDL.
 - **Mask integration tests need to verify each mask value separately.** A passing single-case test only proves one variant of `_sql[]`. Use `[TestCase]` over the bool inputs and assert each variant's SQL + post-execute row state.
 - **`q.All()` after a conditional `q = q.Where(...)`** typechecks only because both `IUpdateBuilder<T>` and `IExecutableUpdateBuilder<T>` expose the same conditional-friendly surface in the codegen tests, where the source is a string. In integration tests the C# must compile — put conditional `Set` calls before `.Where()` (or after, on the executable builder) and route to `.All()`/`.Where()` via the un-conditional path.
-- **A chain inside a doubly-nested lambda does not compile.** Writing a parallel worker as `harnesses.Select((h, i) => Task.Run(async () => { var name = $"Worker{i}"; … .Set(u => u.UserName = name) … }))` makes the generator emit interceptors that reference `name` directly, but that local lives in a display class the interceptor cannot see — `CS0103: The name 'name' does not exist in the current context` in the generated `*.Interceptors.*.g.cs`. Write each worker body as a named `private static async Task<T> Run…WorkerAsync(...)` method so the chain's captures are ordinary method locals. Tracked as issue #333.
+- **A clause may only capture from ONE closure scope.** Chains inside lambdas, loop bodies, `if` blocks and `using` blocks all work, and so do captures of an instance field alongside a local. What does *not* work is a single clause reaching into two different scopes at once — the classic case being a loop variable and a method-level local in the same predicate:
+
+  ```csharp
+  var minId = 0;
+  foreach (var name in names)
+      … .Where(u => u.UserName == name && u.UserId > minId) …   // QRY032
+  ```
+
+  This is a build-time error, not a runtime surprise. The delegate's `Target` is the innermost display class, and the outer one is reachable only through a compiler-generated closure link field whose type is another display class — unreadable, because an `[UnsafeAccessor]` field accessor must return byref and a byref return cannot name an inaccessible type ([dotnet/runtime#119664](https://github.com/dotnet/runtime/issues/119664)). Split the predicate so each clause captures from one scope:
+
+  ```csharp
+  … .Where(u => u.UserName == name).Where(u => u.UserId > minId) …   // fine
+  ```
+
+  Or copy the outer value into a local in the inner scope. Before #333 these shapes were emitted anyway and threw `MissingFieldException`/`InvalidCastException` on first execution.
+
+- **Do not inline a worker body into an async lambda inside a loop.** `ConcurrencyTests` keeps each worker in a named `private static async Task<T> Run…WorkerAsync(...)` method. Chains inside lambdas are supported now, but this fixture has enough capture scopes that the predicted display-class name changes under `<Optimize>`: Roslyn merges closure environments only in optimized builds, and a merged-away environment never consumes a closure ordinal, so every later ordinal shifts down. `dotnet test` defaults to Debug while CI runs `-c Release`, so this shape passes locally and fails CI with `TypeLoadException`. A named method turns the captures into ordinary method locals, which are unaffected. Tracked as issue #344.
+
+  **Run the suite both ways before trusting it.** `dotnet test Quarry.sln` (Debug) and `dotnet test Quarry.sln -c Release` exercise different closure numbering, and only *execution* distinguishes them — every one of these tests compiles either way.
+
+- **Enclosing lambdas must be arguments to an invocation for capture bugs to be visible.** `Select(…)` and `Task.Run(…)` are; `new Func<…>(lambda)` is not — that shape trips the QRY032 lambda-capture disqualifier first, so a chain inside it is rejected before capture resolution ever runs. When writing a test that probes capture behaviour, use an invocation-argument lambda or the test will silently prove nothing.
 - **A partial chain passed as a method argument is not intercepted, and fails at runtime rather than at build time.** Handing `Lite.Users().OrderBy(...).Select(...)` to a helper that applies the terminal throws `NotSupportedException: Entity accessor methods must be intercepted by the Quarry source generator` — with no build-time diagnostic. The chain must terminate at the call site; pass the terminal's *result* (`IAsyncEnumerable<T>`, `Task<T>`) to helpers instead.
 - **A chain consumed by both `ToDiagnostics()` and a terminal needs `.Prepare()`** — otherwise QRY033 "consumed by multiple execution paths" fails the build.
 - **Co-locating `ToDiagnostics()` with a conditional clause collapses variants.** Putting `var sql = q.ToDiagnostics().Sql;` inside the same `if (...)` block as a conditional `.Set()` makes the chain analyzer see the terminal at the same nesting depth as the clause — `relativeDepth <= 0` — and the clause is reclassified as unconditional. The mask table degenerates to a single variant. Always call `Prepare()` / `ToDiagnostics()` at the chain's outer scope.

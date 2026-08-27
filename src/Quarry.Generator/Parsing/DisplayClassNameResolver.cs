@@ -50,23 +50,99 @@ internal static class DisplayClassNameResolver
         }
     }
 
+    /// <summary>
+    /// Returns the closure scope a captured variable belongs to, keyed so that two variables the
+    /// compiler places on the same display class always produce the same key.
+    /// <para>
+    /// A scope is a <see cref="BlockSyntax"/>. Parameters are the subtle case: a lambda's (or local
+    /// function's, or method's) parameters live on the SAME display class as the top-level locals of
+    /// its body — verified against emitted IL, where <c>src.Select(p =&gt; { var bodyLocal = …; … })</c>
+    /// yields a single <c>&lt;&gt;c__DisplayClass0_0 { p, bodyLocal }</c>. So a parameter resolves to
+    /// its owner's body block, NOT to the block enclosing the owner. Walking a lambda parameter up to
+    /// the enclosing block instead (the pre-#333 behaviour) merged the lambda's scope into its
+    /// parent's and shifted every later closure ordinal down by one.
+    /// </para>
+    /// <para>
+    /// Expression-bodied owners have no body block; they key on the owner node itself, which is
+    /// still unique and still visited in the same pre-order position.
+    /// </para>
+    /// </summary>
     private static SyntaxNode FindDeclaringScope(ISymbol variable, SyntaxNode methodRoot)
     {
         var declRef = variable.DeclaringSyntaxReferences.FirstOrDefault();
         if (declRef == null)
             return methodRoot;
 
-        var declNode = declRef.GetSyntax();
-        var current = declNode.Parent;
+        // Start at the declaration node itself, not its parent: a foreach variable's declaring
+        // syntax IS the ForEachStatement, so starting at .Parent would walk straight past the
+        // scope that owns it and land in the enclosing block.
+        var current = declRef.GetSyntax();
         while (current != null)
         {
+            // A local's scope is the innermost block that contains its declaration.
             if (current is BlockSyntax)
                 return current;
+
+            // Statements that own a scope for the variable they declare, distinct from both the
+            // enclosing block and their own body block.
+            if (IsOwnScopeStatement(current))
+                return current;
+
+            // A parameter's scope is its OWNER's body, reached before any enclosing block.
+            var ownerScope = TryGetOwnerBodyScope(current);
+            if (ownerScope != null)
+                return ownerScope;
+
             if (current == methodRoot)
                 return methodRoot;
             current = current.Parent;
         }
         return methodRoot;
+    }
+
+    /// <summary>
+    /// True for statements whose declared variable lives on its OWN display class, separate from the
+    /// enclosing block and separate from the statement's own body block.
+    /// <para>
+    /// Verified against emitted IL — <c>foreach (var name in names) { var body = …; … }</c> yields
+    /// <c>_0 { name }</c> and <c>_1 { body, CS$&lt;&gt;8__locals1 → _0 }</c>, i.e. TWO display classes, not
+    /// one. <c>for</c> and <c>using</c> behave identically; a <c>switch</c> section holds all of its own
+    /// locals in a single class. Resolving any of these to the enclosing block (the pre-fix behaviour)
+    /// merged the loop scope into the method scope and shifted every later closure ordinal.
+    /// </para>
+    /// <para>
+    /// Pre-order ordinal assignment visits the statement before its body block, which is the order the
+    /// compiler numbers them in.
+    /// </para>
+    /// </summary>
+    private static bool IsOwnScopeStatement(SyntaxNode node)
+        => node is ForEachStatementSyntax
+            or ForEachVariableStatementSyntax
+            or ForStatementSyntax
+            or UsingStatementSyntax
+            or SwitchSectionSyntax
+            or CatchClauseSyntax;
+
+    /// <summary>
+    /// If <paramref name="node"/> declares a parameter scope (lambda, anonymous method, local
+    /// function, or method), returns its body block — or the node itself when expression-bodied.
+    /// Returns null for any other node so the caller keeps walking.
+    /// </summary>
+    private static SyntaxNode? TryGetOwnerBodyScope(SyntaxNode node)
+    {
+        switch (node)
+        {
+            case AnonymousFunctionExpressionSyntax anon:
+                return anon.Block ?? (SyntaxNode)anon;
+            case LocalFunctionStatementSyntax localFunc:
+                return localFunc.Body ?? (SyntaxNode)localFunc;
+            case BaseMethodDeclarationSyntax baseMethod:
+                return baseMethod.Body ?? (SyntaxNode)baseMethod;
+            case AccessorDeclarationSyntax accessor:
+                return accessor.Body ?? (SyntaxNode)accessor;
+            default:
+                return null;
+        }
     }
 
     /// <summary>
@@ -99,6 +175,12 @@ internal static class DisplayClassNameResolver
             if (closure is LambdaExpressionSyntax lam)
                 dataFlowByNode[lam] = dataFlow;
 
+            // No "declared outside the clause" filter here, unlike CountCaptureScopes and
+            // LookupClosureOrdinal. This builds the METHOD-WIDE scope map, so it must register every
+            // scope that gets a display class — including those belonging to nested lambdas — or the
+            // pre-order ordinals would skip numbers the compiler actually assigns. The other two ask a
+            // different question ("which scopes does THIS clause read from"), where an inner lambda's
+            // own variables are irrelevant. Do not "unify" these loops.
             foreach (var capturedVar in dataFlow.CapturedInside)
             {
                 if (capturedVar is ILocalSymbol || (capturedVar is IParameterSymbol p && !p.IsThis))
@@ -118,8 +200,58 @@ internal static class DisplayClassNameResolver
     }
 
     /// <summary>
+    /// Counts the DISTINCT closure scopes a lambda captures locals/parameters from.
+    /// <para>
+    /// A count above 1 means the delegate's <c>Target</c> is the innermost of those display classes and
+    /// the outer ones are only reachable through the compiler's <c>CS$&lt;&gt;8__locals</c> link fields —
+    /// which cannot be read, because a field accessor must return byref and a byref return cannot name an
+    /// inaccessible type (dotnet/runtime#119664, open). Those chains are disqualified rather than emitted
+    /// wrongly; see the guard in <c>ChainAnalyzer.CheckDisqualifiers</c>.
+    /// </para>
+    /// <para>
+    /// <c>this</c> is excluded (as everywhere else here), so a clause mixing an instance field with a
+    /// local counts as ONE scope and is correctly not disqualified — that case is handled by reading
+    /// <c>&lt;&gt;4__this</c> off the display class instead.
+    /// </para>
+    /// </summary>
+    internal static int CountCaptureScopes(
+        MethodClosureAnalysis analysis,
+        LambdaExpressionSyntax lambda,
+        SyntaxNode methodSyntax)
+    {
+        if (!analysis.DataFlowByNode.TryGetValue(lambda, out var dataFlow) || !dataFlow.Succeeded)
+            return 0;
+
+        // Only variables declared OUTSIDE this lambda are read out of a display class. A nested
+        // subquery lambda inside the clause (u => u.Orders.Any(o => …)) contributes its own
+        // parameters and locals to CapturedInside, but those live inside the clause and are handled
+        // by the SQL translator, never extracted. Counting them made the guard fire on working
+        // nested-subquery and set-operation chains.
+        var scopes = new HashSet<SyntaxNode>(SyntaxNodeComparer.Instance);
+        foreach (var capturedVar in dataFlow.CapturedInside)
+        {
+            if (!IsExtractableCapture(capturedVar, lambda))
+                continue;
+
+            var declScope = FindDeclaringScope(capturedVar, methodSyntax);
+            if (declScope != null)
+                scopes.Add(declScope);
+        }
+        return scopes.Count;
+    }
+
+    /// <summary>
     /// Looks up the closure ordinal for a lambda using pre-computed analysis.
     /// Returns 0 if the lambda has no captured local/parameter variables.
+    /// <para>
+    /// Applies the same "declared outside the clause" filter as
+    /// <see cref="CountCaptureScopes"/>, and for the same reason: a nested subquery lambda
+    /// (<c>u =&gt; u.Orders.Any(o =&gt; …)</c>) contributes its own parameters to
+    /// <c>CapturedInside</c>, and taking the ordinal from one of those would name the inner
+    /// lambda's display class rather than the one the clause delegate actually targets. The two
+    /// must agree — otherwise a clause could be certified single-scope by the guard while being
+    /// emitted against a different scope's display class.
+    /// </para>
     /// </summary>
     internal static int LookupClosureOrdinal(
         MethodClosureAnalysis analysis,
@@ -131,15 +263,29 @@ internal static class DisplayClassNameResolver
 
         foreach (var capturedVar in dataFlow.CapturedInside)
         {
-            if (capturedVar is ILocalSymbol || (capturedVar is IParameterSymbol p && !p.IsThis))
-            {
-                var declScope = FindDeclaringScope(capturedVar, methodSyntax);
-                if (declScope != null && analysis.ScopeOrdinals.TryGetValue(declScope, out int ordinal))
-                    return ordinal;
-            }
+            if (!IsExtractableCapture(capturedVar, lambda))
+                continue;
+
+            var declScope = FindDeclaringScope(capturedVar, methodSyntax);
+            if (declScope != null && analysis.ScopeOrdinals.TryGetValue(declScope, out int ordinal))
+                return ordinal;
         }
 
         return 0;
+    }
+
+    /// <summary>
+    /// A captured symbol that is actually read out of a display class: a local or non-<c>this</c>
+    /// parameter, declared OUTSIDE the clause lambda. Variables declared inside the clause (a nested
+    /// subquery lambda's own parameters) are handled by the SQL translator and never extracted.
+    /// </summary>
+    private static bool IsExtractableCapture(ISymbol capturedVar, LambdaExpressionSyntax lambda)
+    {
+        if (capturedVar is not ILocalSymbol && !(capturedVar is IParameterSymbol p && !p.IsThis))
+            return false;
+
+        var declRef = capturedVar.DeclaringSyntaxReferences.FirstOrDefault();
+        return declRef == null || !lambda.Span.Contains(declRef.Span);
     }
 
     /// <summary>

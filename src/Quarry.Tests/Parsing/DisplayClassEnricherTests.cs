@@ -388,6 +388,172 @@ class TestClass
         Assert.That(result[0].CapturedVariableTypes!, Does.ContainKey("threshold"));
     }
 
+    /// <summary>
+    /// A chain inside a lambda must still resolve to the containing METHOD's display-class prefix.
+    /// Before #333 the enclosing lambda's anonymous-function symbol was not unwrapped, so
+    /// ComputeMethodOrdinal returned -1, the site was skipped entirely, and the interceptor ended up
+    /// referencing the captured local by name — CS0103 inside generated code.
+    /// </summary>
+    [Test]
+    public void EnrichAll_LambdaInsideLambda_StillResolvesDisplayClass()
+    {
+        var source = @"
+using System;
+using System.Linq;
+using System.Collections.Generic;
+class TestClass
+{
+    void TestMethod(IEnumerable<int> src)
+    {
+        var outer = src.Select(i => new Func<Func<bool>>(() =>
+        {
+            var threshold = i + 1;
+            return () => threshold > 0;
+        })).ToList();
+    }
+}
+";
+        var compilation = CreateCompilation(source);
+        var tree = compilation.SyntaxTrees.First();
+
+        // The innermost lambda — the one a clause would correspond to.
+        var lambda = tree.GetRoot().DescendantNodes()
+            .OfType<LambdaExpressionSyntax>().Last();
+
+        var result = DisplayClassEnricher.EnrichAll(
+            ImmutableArray.Create(CreateSite("nested-lambda", lambda)), compilation, null!, CancellationToken.None);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result[0].DisplayClassName, Is.Not.Null,
+                "site inside a lambda must still be enriched");
+            Assert.That(result[0].DisplayClassName, Does.Contain("<>c__DisplayClass"));
+            Assert.That(result[0].CaptureKind, Is.EqualTo(CaptureKind.ClosureCapture));
+            Assert.That(result[0].CapturedVariableTypes!, Does.ContainKey("threshold"));
+        });
+    }
+
+    /// <summary>
+    /// A `foreach` variable lives on its own per-iteration display class, NOT the enclosing method's.
+    /// Resolving it to the enclosing block merged the two scopes and shifted every later ordinal, which
+    /// broke chains that captured a loop variable alongside a method-scope local in separate clauses.
+    /// </summary>
+    [Test]
+    public void EnrichAll_ForeachVariable_ResolvesToItsOwnScope()
+    {
+        var source = @"
+using System;
+using System.Collections.Generic;
+class TestClass
+{
+    void TestMethod(string[] names)
+    {
+        var minId = 0;
+        Func<int> outerScope = () => minId;
+        foreach (var name in names)
+        {
+            Func<bool> loopScope = () => name.Length > 0;
+        }
+    }
+}
+";
+        var compilation = CreateCompilation(source);
+        var tree = compilation.SyntaxTrees.First();
+        var lambdas = tree.GetRoot().DescendantNodes().OfType<LambdaExpressionSyntax>().ToArray();
+
+        var result = DisplayClassEnricher.EnrichAll(
+            ImmutableArray.Create(
+                CreateSite("method-scope", lambdas[0]),
+                CreateSite("loop-scope", lambdas[1])),
+            compilation, null!, CancellationToken.None);
+
+        // Ground truth from emitted IL: `_0 { minId }` for the method scope, `_1 { name }` for the
+        // loop's own per-iteration scope. Pin both ordinals — asserting only that they differ would
+        // pass for any off-by-one in AssignOrdinalsPreOrder.
+        Assert.Multiple(() =>
+        {
+            Assert.That(result[0].DisplayClassName, Does.EndWith("_0"), "method scope");
+            Assert.That(result[1].DisplayClassName, Does.EndWith("_1"), "foreach scope");
+        });
+    }
+
+    /// <summary>
+    /// The multi-scope guard's input. A clause capturing from one scope is fine; one capturing across
+    /// two is not emittable, because the outer scope is only reachable through a CS$&lt;&gt;8__locals link
+    /// field and those cannot be read (dotnet/runtime#119664).
+    /// </summary>
+    [Test]
+    public void EnrichAll_CapturedScopeCount_CountsDistinctScopes()
+    {
+        var source = @"
+using System;
+using System.Collections.Generic;
+class TestClass
+{
+    void TestMethod(string[] names)
+    {
+        var minId = 0;
+        foreach (var name in names)
+        {
+            Func<bool> singleScope = () => name.Length > 0;
+            Func<bool> multiScope = () => name.Length > minId;
+        }
+    }
+}
+";
+        var compilation = CreateCompilation(source);
+        var tree = compilation.SyntaxTrees.First();
+        var lambdas = tree.GetRoot().DescendantNodes().OfType<LambdaExpressionSyntax>().ToArray();
+
+        var result = DisplayClassEnricher.EnrichAll(
+            ImmutableArray.Create(
+                CreateSite("single", lambdas[0]),
+                CreateSite("multi", lambdas[1])),
+            compilation, null!, CancellationToken.None);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result[0].CapturedScopeCount, Is.EqualTo(1), "captures only the loop variable");
+            Assert.That(result[1].CapturedScopeCount, Is.EqualTo(2), "captures loop variable AND method local");
+        });
+    }
+
+    /// <summary>
+    /// A nested subquery lambda contributes its own parameters to the outer lambda's CapturedInside.
+    /// Those live inside the clause and are never extracted, so they must not inflate the scope count —
+    /// counting them made the guard reject working nested-subquery and set-operation chains.
+    /// </summary>
+    [Test]
+    public void EnrichAll_CapturedScopeCount_IgnoresVariablesDeclaredInsideTheClause()
+    {
+        var source = @"
+using System;
+using System.Linq;
+using System.Collections.Generic;
+class TestClass
+{
+    void TestMethod(List<List<int>> rows)
+    {
+        var threshold = 1;
+        Func<bool> nested = () => rows.Any(r => r.Any(x => x > threshold && r.Count > 0));
+    }
+}
+";
+        var compilation = CreateCompilation(source);
+        var tree = compilation.SyntaxTrees.First();
+        var lambda = tree.GetRoot().DescendantNodes().OfType<LambdaExpressionSyntax>().First();
+
+        var result = DisplayClassEnricher.EnrichAll(
+            ImmutableArray.Create(CreateSite("nested-subquery", lambda)),
+            compilation, null!, CancellationToken.None);
+
+        // `r` is captured by the innermost lambda, so it genuinely appears in the clause's
+        // CapturedInside — without the "declared inside the clause" filter this returns 2 and the
+        // guard would reject a working nested-subquery chain.
+        Assert.That(result[0].CapturedScopeCount, Is.EqualTo(1),
+            "inner lambda parameters are declared inside the clause and must not count as scopes");
+    }
+
     [Test]
     public void EnrichAll_CapturedEntityVariable_UsesContextNamespaceNotSchemaNamespace()
     {

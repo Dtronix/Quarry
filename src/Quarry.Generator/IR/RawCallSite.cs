@@ -230,6 +230,21 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
     // Capture classification set by DisplayClassEnricher. Not part of Equals/GetHashCode.
     public CaptureKind CaptureKind { get; set; }
 
+    // Number of DISTINCT closure scopes this site's clause lambda captures locals/parameters from,
+    // set by DisplayClassEnricher. Above 1 means the outer scopes are only reachable through the
+    // compiler's CS$<>8__locals link fields, which cannot be read (dotnet/runtime#119664) — such
+    // chains are disqualified in ChainAnalyzer.CheckDisqualifiers rather than emitted wrongly.
+    // Not part of Equals/GetHashCode.
+    public int CapturedScopeCount { get; set; }
+
+    // True when this clause captures an instance field alongside a local — the field then lives on
+    // the instance behind the display class's <>4__this — but the containing type cannot be written
+    // as a type name in the generated file, because it is generic (unbound type parameters) or not
+    // accessible from a file-scoped class in another file. Emitting the hop anyway produces CS0305 /
+    // CS0122, so such chains are disqualified in ChainAnalyzer.CheckDisqualifiers instead.
+    // Not part of Equals/GetHashCode.
+    public bool ThisIndirectionUnavailable { get; set; }
+
     // RawSql type info resolved by DisplayClassEnricher using supplemental compilation.
     // Not part of Equals/GetHashCode — computed after Collect() to avoid cache instability.
     public RawSqlTypeInfo? RawSqlTypeInfo { get; set; }
@@ -309,6 +324,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         copy.DisplayClassName = DisplayClassName;
         copy.CapturedVariableTypes = CapturedVariableTypes;
         copy.CaptureKind = CaptureKind;
+        copy.CapturedScopeCount = CapturedScopeCount;
+        copy.ThisIndirectionUnavailable = ThisIndirectionUnavailable;
         copy.RawSqlTypeInfo = RawSqlTypeInfo;
         copy.MaterializabilityError = MaterializabilityError;
         copy.EnrichmentLambda = EnrichmentLambda;
@@ -374,6 +391,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         copy.DisplayClassName = DisplayClassName;
         copy.CapturedVariableTypes = CapturedVariableTypes;
         copy.CaptureKind = CaptureKind;
+        copy.CapturedScopeCount = CapturedScopeCount;
+        copy.ThisIndirectionUnavailable = ThisIndirectionUnavailable;
         copy.RawSqlTypeInfo = RawSqlTypeInfo;
         copy.MaterializabilityError = MaterializabilityError;
         copy.EnrichmentLambda = EnrichmentLambda;
@@ -442,6 +461,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         copy.DisplayClassName = DisplayClassName;
         copy.CapturedVariableTypes = CapturedVariableTypes;
         copy.CaptureKind = CaptureKind;
+        copy.CapturedScopeCount = CapturedScopeCount;
+        copy.ThisIndirectionUnavailable = ThisIndirectionUnavailable;
         copy.RawSqlTypeInfo = RawSqlTypeInfo;
         copy.MaterializabilityError = MaterializabilityError;
         copy.EnrichmentLambda = EnrichmentLambda;

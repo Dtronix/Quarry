@@ -2677,6 +2677,26 @@ internal static class ChainAnalyzer
                 return "Chain variable passed as argument to non-Quarry method or captured in lambda";
             if (raw.IsAssignedFromNonQuarryMethod)
                 return "Chain variable assigned from non-Quarry method";
+
+            // A clause that captures from more than one closure scope cannot be extracted. The delegate's
+            // Target is the innermost display class; the outer ones are reachable only through the
+            // compiler's CS$<>8__locals link fields, and those cannot be read — a field accessor must
+            // return byref and a byref return cannot name an inaccessible type (dotnet/runtime#119664,
+            // open/Future). Emitting anyway produced a MissingFieldException or InvalidCastException at
+            // execution time, so disqualify at build time instead.
+            // The clause reads an instance field through the display class's <>4__this, but the
+            // containing type cannot be named in generated code (generic, or not accessible from a
+            // file-scoped class in another file). Emitting the hop would be a CS0305/CS0122 build
+            // break inside generated source, which is worse than a diagnostic at the call site.
+            if (raw.ThisIndirectionUnavailable)
+                return $"Clause at line {raw.Line} captures an instance field alongside a local, but the "
+                    + "containing type is generic or not accessible from generated code, so the field "
+                    + "cannot be read — copy it into a local before the chain";
+
+            if (raw.CapturedScopeCount > 1)
+                return $"Clause at line {raw.Line} captures variables from {raw.CapturedScopeCount} different "
+                    + "closure scopes (for example a loop variable together with a method-level local) — "
+                    + "split it into separate .Where(...) calls so each captures from one scope";
         }
         if (anyInLoop && anyOutsideLoop)
             return "Chain crosses a loop boundary (some clauses inside loop, some outside)";

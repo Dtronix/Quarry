@@ -206,23 +206,67 @@ Chains that cannot be statically analyzed receive `OptimizationTier.RuntimeBuild
 | Conditional nesting depth > 2 | Conditional clause in a cascade nested 3 cascade levels below the terminal (flat `else if` chains are ONE level) |
 | Conditional bits > 8 | More than 8 conditional clause sites across all cascades |
 | Reachable mask without a variant | Validator backstop (`ValidateMaskEnumeration`) — should never fire; indicates an enumeration bug |
+| Clause captures across >1 closure scope | `var minId = …; foreach (var name in names) … .Where(u => u.UserName == name && u.UserId > minId)` — see "Display Class Prediction"; split into separate `.Where(...)` clauses |
 
 ### Display Class Prediction
 
 The generator predicts compiler-generated closure class names to emit `[UnsafeAccessor]` methods for captured variable extraction without reflection.
 
 **Algorithm** (DisplayClassEnricher + DisplayClassNameResolver):
-1. Group all RawCallSites by enclosing method (walked up past local functions)
+1. Group all RawCallSites by enclosing method, walked up past local functions **and lambdas** — `GetEnclosingSymbol` returns the `MethodKind.AnonymousFunction` symbol for a chain written inside a lambda, and failing to unwrap it made `ComputeMethodOrdinal` return -1 and skip the site entirely (issue #333)
 2. Compute `methodOrdinal` = index of method in `containingType.GetMembers()` (linear scan)
 3. Analyze closures: pre-order traversal of lambda/local-function descendants, assign ordinals to scopes with captures
 4. Final name: `"{FullyQualifiedType}+<>c__DisplayClass{methodOrdinal}_{closureOrdinal}"`
 5. Classify capture kind (ClosureCapture vs FieldCapture) via `dataFlow.CapturedInside`
+
+**What counts as a scope** — `FindDeclaringScope`. Ground truth below is dumped from emitted IL; every row was a prediction bug before #333.
+
+| Source shape | Emitted display classes |
+|---|---|
+| lambda param + its own body-block local | `_0 { p, bodyLocal }` — **one** class; a parameter shares with its owner's body |
+| local-function param + its body local | `_0 { lfParam, lfLocal }` — one class |
+| method local / lambda param / inner-lambda local | `_0 { methodLocal }`, `_1 { p, … }`, `_2 { innerLocal, … }` |
+| `foreach` var + its body-block local | `_0 { name }`, `_1 { body, … }` — **two**; the loop variable owns a scope separate from the body |
+| `for` decl var + body local | `_0 { i }`, `_1 { body, … }` — same |
+| `using` decl var + body local | `_0 { d }`, `_1 { body, … }` — same |
+| `switch` section locals | `_0 { a, b }` — one class for the whole section |
+| `catch (E ex)` + its body local | `_0 { ex }`, `_1 { bodyLocal, … }` — the catch variable owns a scope |
+
+So: a scope is a `BlockSyntax`; a **parameter** resolves to its owner's body block (not the enclosing block); and `foreach`/`for`/`using`/`switch`-section/`catch` **declarations** own a scope distinct from both the enclosing block and their own body — see `IsOwnScopeStatement`.
+
+**Known unhandled form:** a `switch`-*expression* arm variable (`o switch { string s => … }`) also owns a display class, and its field is name-mangled to `<s>5__2` rather than `s` — so both the ordinal and the accessor's field name would be wrong. It resolves to the enclosing block today and is not detected; tracked separately. Adding a form to `IsOwnScopeStatement` is only safe once the emitted field NAME has been checked too, not just the scope. Resolving any of these to the enclosing block merges two scopes and shifts every later ordinal — invisible until a method has two capture scopes, since ordinal 0 is otherwise correct by accident.
+
+**Instance fields mixed with locals.** With only a field captured, the delegate `Target` IS the containing instance and the field is read straight off it (`FieldCapture`). Add a captured local and the compiler interposes a display class holding the local plus `<>4__this`; the field then lives on the instance behind that back-reference. The emitter detects this (a captured name absent from `CapturedVariableTypes`, which holds exactly the locals/parameters) and emits an `<>4__this` accessor returning `ref TContaining`. That hop is expressible precisely because `<>4__this`'s type is the user's own class and needs no `[return: UnsafeAccessorType]`.
+
+**Multi-scope captures are rejected, not emitted.** A clause capturing locals from two or more distinct scopes is disqualified (`ChainAnalyzer.CheckDisqualifiers` → QRY032) with a message naming the shape and the workaround. The outer scope is reachable only via the compiler's `CS$<>8__locals` link field, whose type is another display class — and a field accessor must return byref while a byref return cannot name an inaccessible type ([dotnet/runtime#119664](https://github.com/dotnet/runtime/issues/119664), open/`Future`, deliberately excluded as not memory safe). The `Unsafe.As` shadow-overlay alternative was rejected: it is UB ([discussion #111049](https://github.com/dotnet/runtime/discussions/111049) — display classes hold reference fields, so they are non-blittable and get `Auto` layout with no guaranteed offsets), and its failure mode is silently swapped values rather than an exception.
+
+The scope count deliberately ignores variables **declared inside the clause lambda**: a nested subquery lambda (`u => u.Orders.Any(o => …)`) contributes its own parameters to `CapturedInside`, and counting those made the guard reject working nested-subquery and set-operation chains.
 
 **Compiler assumptions** (undocumented implementation details, not guaranteed contracts):
 - `GetMembers()` returns members in declaration order (all members count: backing fields, properties, accessors, methods)
 - Display class naming follows `<>c__DisplayClass{M}_{C}` pattern
 - Closure ordinals assigned in pre-order source traversal order
 - Partial classes contribute members in compilation unit order
+- The scope→display-class mapping in the table above
+
+**Closure ordinals depend on `<Optimize>`, not just on source.** `ClosureConversion.Analysis` calls `MergeEnvironments()` only when `OptimizationLevel == Release` (gated by the MSBuild `<Optimize>` property — *not* the configuration name, `DebugType`, or `DebugSymbols`). A merged-away environment never consumes an ordinal, so **every later `closureOrdinal` shifts down by one**. Verified on one SDK and one compiler build:
+
+```
+Debug:    _0 [a]       _1 [b, CS$<>8__locals1]   _2 [c]
+Release:  _0 [a, b]                              _1 [c]
+```
+
+`dotnet test` defaults to Debug; CI runs `-c Release`. This is issue #344, and it is the mechanism behind "passes locally, fails in CI". Two consequences worth internalising:
+
+- **The multi-scope guard cannot catch it.** The mispredicted clause is an ordinary single-scope capture; it is an *unrelated* lambda elsewhere in the same method that causes the merge. The generator cannot guard on a lambda it never inspects.
+- **Compiler *version* was NOT the variable** in that instance. Roslyn 4.11 / 4.14 / 5.0 agreed on all 25 shapes tested; the `<Optimize>` axis changed 7 of them. Pinning an SDK would not have helped.
+- **But versions do change it over time.** [roslyn#82430](https://github.com/dotnet/roslyn/issues/82430) (Feb-Mar 2026) defers display-class allocation for async local functions — `IntroduceFrame` skips frame creation for eligible environments, so later ordinals renumber. Same file, same `<Optimize>` gate. Treat the numbering as a moving target.
+
+**No Roslyn API can replace the prediction.** Display classes are synthesized during `Emit`, after generators finish; every closure type in `Microsoft.CodeAnalysis.CSharp` is `NotPublic`; and for a captured local every shipped `SymbolDisplayFormat` — `FullyQualifiedFormat` included — returns just the bare name, with a null documentation-comment id. The two upstream issues often cited here (roslyn#11565, #55651) are the *opposite* direction (mangled name → original) and do not represent a refusal of this direction. See `_research-roslyn-closures.md` and `_research-symbol-to-name.md`. The practical consequence: the prediction can only be **verified**, not eliminated.
+
+The shapes tabulated above were verified under both settings.
+
+A prediction that is merely *wrong* still compiles and then throws `MissingFieldException` (bad field name), `InvalidCastException` (bad display class) or `TypeLoadException` (no such display class) on first execution — so codegen tests alone cannot validate this area. `Generation/LambdaCaptureExecutionTests` exists for exactly that reason.
 
 **Supplemental compilation**: `DisplayClassEnricher.BuildSupplementalCompilation` adds generated entity classes and context partial classes to the compilation before creating semantic models. This lets Roslyn resolve all generated types natively — no manual error-type fallbacks needed. Variables flowing from generated methods (e.g., `db.Equipments().ExecuteFetchAllAsync()`) resolve to their correct types automatically. When `TypeKind.Error` persists (e.g., types from other generators), the fallback is `"object"`.
 

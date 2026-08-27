@@ -287,9 +287,10 @@ internal static class CarrierEmitter
                 // captures; when every extractor is a static field it would be dead.
                 if (extractionPlan.Extractors.Any(e => !e.IsStaticField))
                     sb.AppendLine($"        var __target = {delegateParamName}.Target!;");
+                var emittedThisLocals = new HashSet<string>();
                 foreach (var extractor in extractionPlan.Extractors)
                 {
-                    var targetExpr = extractor.IsStaticField ? "null!" : "__target";
+                    var targetExpr = ResolveExtractorTarget(sb, carrier.ClassName, extractor, emittedThisLocals, "        ");
                     sb.AppendLine($"        var {extractor.VariableName} = {carrier.ClassName}.{extractor.MethodName}({targetExpr});");
                 }
             }
@@ -338,6 +339,53 @@ internal static class CarrierEmitter
         // Always use Unsafe.As for the return — handles interface crossings
         sb.AppendLine($"        return Unsafe.As<{returnInterface}>(builder);");
     }
+
+    /// <summary>
+    /// Returns the target expression to pass to an extractor, emitting the <c>&lt;&gt;4__this</c> hop
+    /// local first when the extractor reads an instance field through a display class.
+    /// <list type="bullet">
+    /// <item>static field — no target;</item>
+    /// <item>plain closure capture, or a field capture with no display class — the delegate target;</item>
+    /// <item>instance field behind a display class — the instance recovered via <c>&lt;&gt;4__this</c>.</item>
+    /// </list>
+    /// The hop local is emitted once per containing type per clause.
+    /// </summary>
+    private static string ResolveExtractorTarget(
+        StringBuilder sb,
+        string carrierClassName,
+        CapturedVariableExtractor extractor,
+        HashSet<string> emittedThisLocals,
+        string indent)
+    {
+        if (extractor.IsStaticField)
+            return "null!";
+
+        if (extractor.ThisIndirectionDisplayClass == null)
+            return "__target";
+
+        const string local = "__self";
+        if (emittedThisLocals.Add(local))
+        {
+            sb.AppendLine($"{indent}var {local} = {carrierClassName}.{extractor.ThisHopMethodName}(__target);");
+        }
+        return local;
+    }
+
+    /// <summary>
+    /// Name of the generated <c>&lt;&gt;4__this</c> hop accessor for an extractor that reads an instance
+    /// field through a display class. Keyed on the containing type so two fields on the same instance
+    /// share one hop.
+    /// </summary>
+    /// <summary>
+    /// Renders a containing-type name as a C# type expression for a <c>ref</c> return position.
+    /// <para>
+    /// The name comes from <c>NameAndContainingTypesAndNamespaces</c>, which already separates nested
+    /// types with '.', so only the <c>global::</c> qualifier is added — it is not a metadata name and
+    /// must not be pasted into an <c>[UnsafeAccessorType("…")]</c> string, which needs the '+' form.
+    /// </para>
+    /// </summary>
+    private static string ToCSharpTypeName(string typeName)
+        => "global::" + typeName;
 
     /// <summary>
     /// Emits a carrier class at namespace scope (outside the static interceptor class).
@@ -399,6 +447,21 @@ internal static class CarrierEmitter
         // Emit [UnsafeAccessor] extern methods from per-clause extraction plans
         foreach (var extractionPlan in info.ExtractionPlans)
         {
+            // One <>4__this hop per (display class -> containing type) pair used by this clause.
+            var emittedThisHops = new HashSet<string>();
+            foreach (var extractor in extractionPlan.Extractors)
+            {
+                if (extractor.ThisIndirectionDisplayClass == null)
+                    continue;
+                if (extractor.ThisHopMethodName == null || !emittedThisHops.Add(extractor.ThisHopMethodName))
+                    continue;
+
+                sb.AppendLine("    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = \"<>4__this\")]");
+                sb.AppendLine($"    internal extern static ref {ToCSharpTypeName(extractor.DisplayClassName)} "
+                    + $"{extractor.ThisHopMethodName}(");
+                sb.AppendLine($"        [UnsafeAccessorType(\"{extractor.ThisIndirectionDisplayClass}\")] object target);");
+            }
+
             foreach (var extractor in extractionPlan.Extractors)
             {
                 var accessorKind = extractor.IsStaticField ? "UnsafeAccessorKind.StaticField" : "UnsafeAccessorKind.Field";
@@ -508,9 +571,10 @@ internal static class CarrierEmitter
             // captures; when every extractor is a static field it would be dead.
             if (extractionPlan.Extractors.Any(e => !e.IsStaticField))
                 sb.AppendLine($"        var __target = {extractionPlan.DelegateParamName}.Target!;");
+            var emittedThisLocals = new HashSet<string>();
             foreach (var extractor in extractionPlan.Extractors)
             {
-                var targetExpr = extractor.IsStaticField ? "null!" : "__target";
+                var targetExpr = ResolveExtractorTarget(sb, carrier.ClassName, extractor, emittedThisLocals, "        ");
                 sb.AppendLine($"        var {extractor.VariableName} = {carrier.ClassName}.{extractor.MethodName}({targetExpr});");
             }
         }
@@ -536,9 +600,10 @@ internal static class CarrierEmitter
             // captures; when every extractor is a static field it would be dead.
             if (extractionPlan.Extractors.Any(e => !e.IsStaticField))
                 sb.AppendLine($"        var __target = {extractionPlan.DelegateParamName}.Target!;");
+            var emittedThisLocals = new HashSet<string>();
             foreach (var extractor in extractionPlan.Extractors)
             {
-                var targetExpr = extractor.IsStaticField ? "null!" : "__target";
+                var targetExpr = ResolveExtractorTarget(sb, carrier.ClassName, extractor, emittedThisLocals, "        ");
                 sb.AppendLine($"        var {extractor.VariableName} = {carrier.ClassName}.{extractor.MethodName}({targetExpr});");
             }
         }
