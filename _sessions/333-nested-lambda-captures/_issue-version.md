@@ -99,7 +99,38 @@ that is luck, not design.
 4. **Document the escape hatch.** A non-capturing lambda emits no display class at all, so an
    explicit-parameter overload (`Where((u, p) => u.UserId > p, minId)`) sidesteps prediction entirely.
 
-Note there is no Roslyn API that can remove the guessing: display classes are synthesized during
-`Emit`, long after generators run. See `_research-roslyn-closures.md` on the #333 branch, and
-[roslyn#11565](https://github.com/dotnet/roslyn/issues/11565) /
-[roslyn#55651](https://github.com/dotnet/roslyn/issues/55651).
+## No Roslyn API can remove the guessing
+
+Display classes are synthesized during `Emit`, long after generators run, so a generator cannot learn
+the name. Verified: the pre-emit symbol table holds the user's type only, while the emitted PE holds
+the display classes; every closure/frame type in `Microsoft.CodeAnalysis.CSharp` is `NotPublic`; and
+for a captured local, **every** shipped `SymbolDisplayFormat` — `FullyQualifiedFormat` included —
+returns just `minId`, with `GetDocumentationCommentId()` returning `null` and `ContainingSymbol` being
+the user's own method.
+
+> **Correction.** An earlier revision of this issue said a public API had been "requested and refused
+> twice", citing roslyn#11565 and #55651. That was wrong on both counts. Both issues are the
+> **opposite direction** — mangled/generated name → original name — and #55651 is still open:
+>
+> | Issue | Title | State | Direction |
+> |---|---|---|---|
+> | [#11565](https://github.com/dotnet/roslyn/issues/11565) | Provide a public API to **parse** generated names | closed / not_planned | name → parsed parts |
+> | [#55651](https://github.com/dotnet/roslyn/issues/55651) | Support retrieving original type name **from mangled** type name | **open** | mangled → original |
+>
+> The direction Quarry needs (symbol → emitted name) appears once, in #55651's "Alternative Designs",
+> and drew no maintainer reply. So there is no refusal on the merits — the API is absent because it
+> was never really proposed. `SymbolKey`, the closest symbol→identity mechanism, is internal, encodes
+> source spans rather than emitted names, and its lambda keys stop resolving when an unrelated
+> statement is inserted.
+
+The relevant maintainer position is on
+[roslyn#50978](https://github.com/dotnet/roslyn/issues/50978) ("Emitting compiler details"), where any
+such API was required to "not leak implementation details out, **so that we allow the compiler to
+change how code is emitted without breaking the API consumers**."
+
+**They are still changing it.** [roslyn#82430](https://github.com/dotnet/roslyn/issues/82430)
+(Feb–Mar 2026) modifies `ClosureConversion.Analysis.cs` to defer display-class allocation for async
+local functions: it adds `IsDeferrableEnvironment`, and `IntroduceFrame` skips frame creation for
+eligible environments — gated, again, on optimized builds. Fewer frames created means later closure
+ordinals renumber. That is this issue's failure mode, from a change that shipped months ago, which is
+the strongest argument that prediction must be *verified* rather than trusted.

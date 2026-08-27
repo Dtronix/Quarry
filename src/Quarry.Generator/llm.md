@@ -259,7 +259,10 @@ Release:  _0 [a, b]                              _1 [c]
 `dotnet test` defaults to Debug; CI runs `-c Release`. This is issue #344, and it is the mechanism behind "passes locally, fails in CI". Two consequences worth internalising:
 
 - **The multi-scope guard cannot catch it.** The mispredicted clause is an ordinary single-scope capture; it is an *unrelated* lambda elsewhere in the same method that causes the merge. The generator cannot guard on a lambda it never inspects.
-- **Compiler *version* was NOT the variable.** Roslyn 4.11 / 4.14 / 5.0 agreed on all 25 shapes tested; the `<Optimize>` axis changed 7 of them. Pinning an SDK would not have helped.
+- **Compiler *version* was NOT the variable** in that instance. Roslyn 4.11 / 4.14 / 5.0 agreed on all 25 shapes tested; the `<Optimize>` axis changed 7 of them. Pinning an SDK would not have helped.
+- **But versions do change it over time.** [roslyn#82430](https://github.com/dotnet/roslyn/issues/82430) (Feb-Mar 2026) defers display-class allocation for async local functions — `IntroduceFrame` skips frame creation for eligible environments, so later ordinals renumber. Same file, same `<Optimize>` gate. Treat the numbering as a moving target.
+
+**No Roslyn API can replace the prediction.** Display classes are synthesized during `Emit`, after generators finish; every closure type in `Microsoft.CodeAnalysis.CSharp` is `NotPublic`; and for a captured local every shipped `SymbolDisplayFormat` — `FullyQualifiedFormat` included — returns just the bare name, with a null documentation-comment id. The two upstream issues often cited here (roslyn#11565, #55651) are the *opposite* direction (mangled name → original) and do not represent a refusal of this direction. See `_research-roslyn-closures.md` and `_research-symbol-to-name.md`. The practical consequence: the prediction can only be **verified**, not eliminated.
 
 The shapes tabulated above were verified under both settings.
 
